@@ -1,4 +1,5 @@
-// Opening/saving .pen files via the local workspace server, or the browser File System Access API.
+// Opening/saving designs via the local workspace server, or the browser File System Access API.
+// .spen (Superpencil, the default for new files) and .pen (pen.dev) hold the same JSON, so either converts losslessly.
 import type { PenDoc } from '../model/types';
 import { useStore, isDirty } from './store';
 import { flushEdits, inVsCode, post, vscodeBaseUri } from './host';
@@ -22,13 +23,31 @@ export async function workspaceInfo(): Promise<{ workspace: string; files: strin
   }
 }
 
+export const DESIGN_EXTS = ['.spen', '.pen'];
+const PICKER_TYPES = [{ description: 'Superpencil / pen.dev design', accept: { 'application/json': DESIGN_EXTS } }];
+
+export function isDesignFile(name: string): boolean {
+  const n = name.toLowerCase();
+  return DESIGN_EXTS.some(x => n.endsWith(x));
+}
+
+/** Adds .spen unless the name already ends in a design extension. */
+export function withDesignExt(name: string): string {
+  return isDesignFile(name) ? name : `${name}.spen`;
+}
+
+/** Same name with the other design extension (a.pen <-> a.spen). */
+export function swapDesignExt(name: string, ext: '.pen' | '.spen'): string {
+  return name.replace(/\.s?pen$/i, '') + ext;
+}
+
 export function serialize(doc: PenDoc): string {
   return JSON.stringify(doc, null, 2);
 }
 
 export function parsePen(text: string): PenDoc {
   const doc = JSON.parse(text);
-  if (!doc || typeof doc !== 'object' || !Array.isArray(doc.children)) throw new Error('Not a .pen document (missing "children")');
+  if (!doc || typeof doc !== 'object' || !Array.isArray(doc.children)) throw new Error('Not a .spen/.pen design (missing "children")');
   return doc as PenDoc;
 }
 
@@ -47,7 +66,7 @@ export async function openFromWorkspace(path: string) {
 export async function openLocalFile() {
   const w = window as any;
   if (w.showOpenFilePicker) {
-    const [handle] = await w.showOpenFilePicker({ types: [{ description: 'pen.dev design', accept: { 'application/json': ['.pen'] } }] });
+    const [handle] = await w.showOpenFilePicker({ types: PICKER_TYPES });
     const file = await handle.getFile();
     useStore.getState().openDoc(parsePen(await file.text()), { name: file.name, path: null, handle });
     return;
@@ -60,7 +79,7 @@ function pickFileFallback(): Promise<File | null> {
   return new Promise(resolve => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.pen,application/json';
+    input.accept = '.spen,.pen,application/json';
     input.onchange = () => resolve(input.files?.[0] ?? null);
     input.click();
   });
@@ -115,10 +134,10 @@ export async function saveDocAs(): Promise<boolean> {
   }
   const text = serialize(s.doc);
   if (await serverAvailable) {
-    const suggested = s.file?.path ?? s.file?.name ?? 'untitled.pen';
+    const suggested = s.file?.path ?? s.file?.name ?? 'untitled.spen';
     const name = prompt('Save as (path relative to the workspace folder):', suggested);
     if (!name) return false;
-    const path = name.endsWith('.pen') ? name : `${name}.pen`;
+    const path = withDesignExt(name);
     const r = await fetch(`/api/file?path=${encodeURIComponent(path)}`, { method: 'PUT', body: text });
     if (!r.ok) {
       s.notify('Save failed');
@@ -133,7 +152,7 @@ export async function saveDocAs(): Promise<boolean> {
   }
   const w = window as any;
   if (w.showSaveFilePicker) {
-    const handle = await w.showSaveFilePicker({ suggestedName: s.file?.name ?? 'untitled.pen', types: [{ description: 'pen.dev design', accept: { 'application/json': ['.pen'] } }] });
+    const handle = await w.showSaveFilePicker({ suggestedName: s.file?.name ?? 'untitled.spen', types: PICKER_TYPES });
     const wr = await handle.createWritable();
     await wr.write(text);
     await wr.close();
@@ -143,9 +162,35 @@ export async function saveDocAs(): Promise<boolean> {
   }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
-  a.download = s.file?.name ?? 'untitled.pen';
+  a.download = s.file?.name ?? 'untitled.spen';
   a.click();
   useStore.getState().markSaved();
+  return true;
+}
+
+/** Writes a copy in the other format (.pen for pen.dev, .spen for Superpencil); the open file stays as it is. */
+export async function saveCopyAs(ext: '.pen' | '.spen'): Promise<boolean> {
+  const s = useStore.getState();
+  if (!s.doc) return false;
+  if (inVsCode) {
+    flushEdits();
+    post({ type: 'saveCopy', ext });
+    return true;
+  }
+  const text = serialize(s.doc);
+  const suggested = swapDesignExt(s.file?.path ?? s.file?.name ?? 'untitled', ext);
+  if (await serverAvailable) {
+    const name = prompt(`Save a copy as ${ext} (path relative to the workspace folder):`, suggested);
+    if (!name) return false;
+    const path = swapDesignExt(name, ext);
+    const r = await fetch(`/api/file?path=${encodeURIComponent(path)}`, { method: 'PUT', body: text });
+    s.notify(r.ok ? `Saved a copy as ${path}` : 'Save failed');
+    return r.ok;
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  a.download = suggested.split('/').pop()!;
+  a.click();
   return true;
 }
 

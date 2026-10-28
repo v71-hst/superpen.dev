@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { FilePlus, FolderOpen, PenLine, File } from 'lucide-react';
 import { useStore } from '../editor/store';
-import { newDocument, openFromWorkspace, openLocalFile, recentFiles, workspaceInfo } from '../editor/fileio';
+import { newDocument, withDesignExt, openFromWorkspace, openLocalFile, recentFiles, workspaceInfo } from '../editor/fileio';
 
 export function Home() {
   const [info, setInfo] = useState<{ workspace: string; files: string[] } | null | undefined>(undefined);
@@ -14,14 +14,14 @@ export function Home() {
   const recent = recentFiles().filter(p => info?.files.includes(p));
   const createNew = async () => {
     if (info) {
-      const name = prompt('New file name (relative to the workspace folder):', 'untitled.pen');
+      const name = prompt('New file name (relative to the workspace folder):', 'untitled.spen');
       if (!name) return;
-      const path = name.endsWith('.pen') ? name : `${name}.pen`;
+      const path = withDesignExt(name);
       if (info.files.includes(path) && !confirm(`${path} already exists. Open it instead?`)) return;
       if (!info.files.includes(path)) await fetch(`/api/file?path=${encodeURIComponent(path)}`, { method: 'PUT', body: JSON.stringify(newDocument(), null, 2) });
       return open(path);
     }
-    useStore.getState().openDoc(newDocument(), { name: 'untitled.pen', path: null });
+    useStore.getState().openDoc(newDocument(), { name: 'untitled.spen', path: null });
   };
   return (
     <div className="home">
@@ -44,9 +44,9 @@ export function Home() {
           {recent.map(p => (
             <FileRow key={'r' + p} path={p} onOpen={open} />
           ))}
-          {info && info.files.length > 0 && <div className="h">.pen files in workspace</div>}
+          {info && info.files.length > 0 && <div className="h">Designs in workspace</div>}
           {info?.files.map(p => <FileRow key={p} path={p} onOpen={open} />)}
-          {info && !info.files.length && <p>No .pen files found in this folder. Drop a file here or use Open file…</p>}
+          {info && !info.files.length && <p>No .spen or .pen files found in this folder. Drop a file here or use Open file…</p>}
         </div>
       </div>
     </div>

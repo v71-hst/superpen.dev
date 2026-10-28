@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from './editor/store';
 import { installShortcuts } from './editor/keys';
-import { openDroppedFile, openFromWorkspace, watchFile } from './editor/fileio';
+import { openDroppedFile, isDesignFile, openFromWorkspace, watchFile } from './editor/fileio';
 import { zoomToFit } from './editor/ops';
 import { Canvas } from './ui/Canvas';
 import { LeftPanel } from './ui/LeftPanel';
@@ -84,7 +84,7 @@ export function App() {
 
   const onDrop = (e: React.DragEvent) => {
     setDragging(false);
-    const f = [...e.dataTransfer.files].find(x => x.name.endsWith('.pen'));
+    const f = [...e.dataTransfer.files].find(x => isDesignFile(x.name));
     if (!f) return;
     e.preventDefault();
     openDroppedFile(f).catch(err => useStore.getState().notify(String(err)));
@@ -135,7 +135,7 @@ export function App() {
       <Modals />
       <Presenter />
       <Toast />
-      {dragging && <div className="drop-hint">Drop a .pen file to open it</div>}
+      {dragging && <div className="drop-hint">Drop a .spen or .pen file to open it</div>}
     </div>
   );
 }

@@ -1,15 +1,18 @@
-// VS Code extension: opens *.pen files in the visual editor (a custom text editor backed by the JSON document).
+// VS Code extension: opens *.spen / *.pen files in the visual editor (a custom text editor backed by the JSON document).
+// .spen is Superpencil's own extension (the default for new files); .pen is pen.dev's. Both hold the same JSON.
 import * as vscode from 'vscode';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import { exec } from 'node:child_process';
-import { Bridge, PEN_HOME } from './bridge';
+import { Bridge, PEN_HOME, DESIGN_GLOB } from './bridge';
 import { registerSidebar } from './sidebar';
 
 const VIEW_TYPE = 'penEditorRemake.editor';
 const MCP_NAME = 'pen-editor';
 const MCP_SCRIPT = path.join(PEN_HOME, 'mcp.cjs');
+const DESIGN_FILTERS = { 'Superpencil design': ['spen'], 'pen.dev design': ['pen'] };
+const isDesign = (p: string) => /\.s?pen$/i.test(p);
 
 let bridge: Bridge;
 
@@ -33,6 +36,11 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('penEditorRemake.openAsJson', (uri?: vscode.Uri) => {
       const target = uri ?? activePenUri();
       if (target) vscode.commands.executeCommand('vscode.openWith', target, 'default');
+    }),
+    vscode.commands.registerCommand('penEditorRemake.saveCopyAs', (uri?: vscode.Uri) => {
+      const target = uri ?? activePenUri();
+      if (target && isDesign(target.fsPath)) return saveCopyAs(target);
+      vscode.window.showWarningMessage('Open a .spen or .pen design first.');
     }),
     vscode.commands.registerCommand('penEditorRemake.openInEditor', (uri?: vscode.Uri) => {
       const target = uri ?? vscode.window.activeTextEditor?.document.uri;
@@ -135,7 +143,7 @@ function removeTomlTable(text: string, name: string): string {
 
 async function maybePromptMcp(context: vscode.ExtensionContext) {
   if (context.globalState.get('mcpRegistered') || context.globalState.get('mcpRegisteredCodex') || context.globalState.get('mcpPromptDismissed')) return;
-  const pick = await vscode.window.showInformationMessage('Register the Superpencil MCP server so Claude Code or Codex can read and edit your .pen designs?', 'Claude Code', 'Codex', 'Not now', "Don't ask again");
+  const pick = await vscode.window.showInformationMessage('Register the Superpencil MCP server so Claude Code or Codex can read and edit your designs?', 'Claude Code', 'Codex', 'Not now', "Don't ask again");
   if (pick === 'Claude Code') await registerMcp(context, true);
   else if (pick === 'Codex') await registerMcpCodex(context);
   else if (pick === "Don't ask again") await context.globalState.update('mcpPromptDismissed', true);
@@ -147,29 +155,44 @@ function activePenUri(): vscode.Uri | undefined {
   return input?.uri;
 }
 
-/** Title-bar button: open the active .pen file visually, or pick a .pen file from the workspace. */
+/** Writes the design under the other extension (.spen <-> .pen); the formats are identical, so this is lossless. */
+async function saveCopyAs(uri: vscode.Uri, ext?: '.pen' | '.spen') {
+  const doc = await vscode.workspace.openTextDocument(uri);
+  const to = ext ?? (uri.fsPath.toLowerCase().endsWith('.spen') ? '.pen' : '.spen');
+  const target = await vscode.window.showSaveDialog({
+    defaultUri: vscode.Uri.file(uri.fsPath.replace(/\.s?pen$/i, '') + to),
+    filters: to === '.pen' ? { 'pen.dev design': ['pen'], 'Superpencil design': ['spen'] } : DESIGN_FILTERS,
+    title: `Save a copy as ${to}`,
+  });
+  if (!target) return;
+  await vscode.workspace.fs.writeFile(target, Buffer.from(doc.getText()));
+  const pick = await vscode.window.showInformationMessage(`Saved a copy as ${path.basename(target.fsPath)}`, 'Open');
+  if (pick === 'Open') await vscode.commands.executeCommand('vscode.openWith', target, VIEW_TYPE);
+}
+
+/** Title-bar button: open the active design visually, or pick a .spen/.pen file from the workspace. */
 async function openPenEditor() {
   const active = activePenUri();
-  if (active && active.fsPath.toLowerCase().endsWith('.pen')) {
+  if (active && isDesign(active.fsPath)) {
     await vscode.commands.executeCommand('vscode.openWith', active, VIEW_TYPE);
     return;
   }
-  const files = await vscode.workspace.findFiles('**/*.pen', '**/node_modules/**', 500);
+  const files = await vscode.workspace.findFiles(DESIGN_GLOB, '**/node_modules/**', 500);
   type Item = vscode.QuickPickItem & { uri?: vscode.Uri; action?: 'new' | 'browse' };
   const items: Item[] = [
-    { label: '$(new-file) New .pen file…', action: 'new' },
-    { label: '$(folder-opened) Open .pen file from disk…', action: 'browse' },
+    { label: '$(new-file) New design…', action: 'new' },
+    { label: '$(folder-opened) Open .spen / .pen file from disk…', action: 'browse' },
   ];
   if (files.length) items.push({ label: 'Workspace', kind: vscode.QuickPickItemKind.Separator });
   for (const uri of files.sort((a, b) => a.fsPath.localeCompare(b.fsPath))) {
     items.push({ label: path.basename(uri.fsPath), description: vscode.workspace.asRelativePath(path.dirname(uri.fsPath)), uri });
   }
-  const pick = await vscode.window.showQuickPick(items, { placeHolder: 'Open a .pen design in Superpencil' });
+  const pick = await vscode.window.showQuickPick(items, { placeHolder: 'Open a design in Superpencil' });
   if (!pick) return;
   if (pick.action === 'new') return newPenFile();
   let uri = pick.uri;
   if (pick.action === 'browse') {
-    const chosen = await vscode.window.showOpenDialog({ canSelectMany: false, filters: { 'pen.dev design': ['pen'] } });
+    const chosen = await vscode.window.showOpenDialog({ canSelectMany: false, filters: { 'Superpencil / pen.dev design': ['spen', 'pen'] } });
     uri = chosen?.[0];
   }
   if (uri) await vscode.commands.executeCommand('vscode.openWith', uri, VIEW_TYPE);
@@ -178,8 +201,8 @@ async function openPenEditor() {
 async function newPenFile() {
   const folder = vscode.workspace.workspaceFolders?.[0]?.uri;
   const uri = await vscode.window.showSaveDialog({
-    defaultUri: folder ? vscode.Uri.joinPath(folder, 'untitled.pen') : undefined,
-    filters: { 'pen.dev design': ['pen'] },
+    defaultUri: folder ? vscode.Uri.joinPath(folder, 'untitled.spen') : undefined,
+    filters: DESIGN_FILTERS,
   });
   if (!uri) return;
   await vscode.workspace.fs.writeFile(uri, Buffer.from(JSON.stringify({ version: '2.21', children: [] }, null, 2)));
@@ -267,6 +290,10 @@ class PenEditorProvider implements vscode.CustomTextEditorProvider {
             break;
           case 'saveAs':
             await vscode.commands.executeCommand('workbench.action.files.saveAs');
+            break;
+          case 'saveCopy':
+            // Let a just-sent edit land first, as for 'save'.
+            setTimeout(() => saveCopyAs(document.uri, m.ext === '.pen' || m.ext === '.spen' ? m.ext : undefined), 50);
             break;
           case 'download': {
             const target = await vscode.window.showSaveDialog({ defaultUri: vscode.Uri.joinPath(docDir, String(m.name ?? 'export')) });

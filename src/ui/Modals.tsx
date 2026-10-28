@@ -303,8 +303,8 @@ function Settings() {
 function About() {
   return (
     <div style={{ lineHeight: 1.6, color: 'var(--muted)' }}>
-      A local, standalone editor for <b style={{ color: 'var(--fg)' }}>.pen</b> design files with a pen.dev-style interface. Files are read and written as plain JSON in the same format pen.dev uses, so they stay
-      compatible with pen.dev and its MCP tools. When opened from the workspace, the editor reloads automatically if the file changes on disk.
+      Superpencil edits <b style={{ color: 'var(--fg)' }}>.spen</b> designs (the default for new files) and pen.dev <b style={{ color: 'var(--fg)' }}>.pen</b> files. Both are the same plain JSON, so a design can
+      be saved as either and opened in pen.dev too (File menu → Save a copy as .pen). When opened from the workspace, the editor reloads automatically if the file changes on disk.
     </div>
   );
 }

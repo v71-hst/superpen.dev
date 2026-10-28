@@ -35,7 +35,7 @@ import {
 import { useStore, isDirty, type Tool } from '../editor/store';
 import { useTree } from '../editor/tree';
 import { setZoom, zoomBy, zoomToFit, zoomToKeys, clientToWorld, insertSvg } from '../editor/ops';
-import { openLocalFile, reloadFromDisk, saveDoc, saveDocAs, newDocument } from '../editor/fileio';
+import { openLocalFile, reloadFromDisk, saveDoc, saveDocAs, saveCopyAs, newDocument } from '../editor/fileio';
 import { allIds, displayName, newId } from '../model/doc';
 import { useMenu, layerIconFor, type MenuItem } from './common';
 import type { RNode } from '../model/types';
@@ -263,12 +263,14 @@ export function FilePill() {
   // In VS Code the editor tab already shows the file name and dirty state.
   if (!file || inVsCode) return null;
   const items: MenuItem[] = [
-    { label: 'New file', kbd: 'Ctrl+Alt+N', onClick: () => confirmDiscard() && useStore.getState().openDoc(newDocument(), { name: 'untitled.pen', path: null }) },
+    { label: 'New file', kbd: 'Ctrl+Alt+N', onClick: () => confirmDiscard() && useStore.getState().openDoc(newDocument(), { name: 'untitled.spen', path: null }) },
     { label: 'Open…', kbd: 'Ctrl+O', onClick: () => confirmDiscard() && useStore.getState().closeDoc() },
     { label: 'Open from disk…', onClick: () => confirmDiscard() && openLocalFile().catch(e => useStore.getState().notify(String(e))) },
     { sep: true },
     { label: 'Save', kbd: 'Ctrl+S', onClick: () => saveDoc() },
     { label: 'Save as…', kbd: 'Ctrl+Shift+S', onClick: () => saveDocAs() },
+    { label: 'Save a copy as .pen (pen.dev)…', onClick: () => saveCopyAs('.pen') },
+    { label: 'Save a copy as .spen (Superpencil)…', onClick: () => saveCopyAs('.spen') },
     { label: 'Reload from disk', disabled: !file.path, onClick: () => reloadFromDisk() },
   ];
   return (

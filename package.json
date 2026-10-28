@@ -1,7 +1,7 @@
 {
   "name": "pen-editor-remake",
   "displayName": "Superpencil",
-  "description": "Visual editor for .pen design files with a pen.dev-style interface.",
+  "description": "Visual editor for Superpencil .spen and pen.dev .pen design files.",
   "version": "0.1.0",
   "publisher": "local-remake",
   "license": "UNLICENSED",
@@ -44,7 +44,7 @@
     "viewsWelcome": [
       {
         "view": "superpencil.designs",
-        "contents": "No .pen designs in this workspace yet.\n[New .pen Design File](command:penEditorRemake.newFile)\n[Open .pen File…](command:penEditorRemake.open)\nLet Claude Code or Codex read and edit your designs:\n[Register with Claude Code](command:penEditorRemake.registerMcp)\n[Register with Codex](command:penEditorRemake.registerMcpCodex)"
+        "contents": "No .spen or .pen designs in this workspace yet.\n[New Design File](command:penEditorRemake.newFile)\n[Open Design…](command:penEditorRemake.open)\nLet Claude Code or Codex read and edit your designs:\n[Register with Claude Code](command:penEditorRemake.registerMcp)\n[Register with Codex](command:penEditorRemake.registerMcpCodex)"
       }
     ],
     "customEditors": [
@@ -52,6 +52,9 @@
         "viewType": "penEditorRemake.editor",
         "displayName": "Superpencil",
         "selector": [
+          {
+            "filenamePattern": "*.spen"
+          },
           {
             "filenamePattern": "*.pen"
           }
@@ -82,13 +85,18 @@
       },
       {
         "command": "penEditorRemake.newFile",
-        "title": "New .pen Design File",
+        "title": "New Design File (.spen)",
         "category": "Superpencil",
         "icon": "$(add)"
       },
       {
         "command": "penEditorRemake.openAsJson",
-        "title": "Open .pen File as JSON",
+        "title": "Open Design as JSON",
+        "category": "Superpencil"
+      },
+      {
+        "command": "penEditorRemake.saveCopyAs",
+        "title": "Save a Copy as .pen / .spen…",
         "category": "Superpencil"
       },
       {
@@ -107,7 +115,12 @@
       "explorer/context": [
         {
           "command": "penEditorRemake.openAsJson",
-          "when": "resourceExtname == .pen",
+          "when": "resourceExtname =~ /^\\.s?pen$/",
+          "group": "navigation"
+        },
+        {
+          "command": "penEditorRemake.saveCopyAs",
+          "when": "resourceExtname =~ /^\\.s?pen$/",
           "group": "navigation"
         }
       ],
@@ -142,6 +155,11 @@
       "view/item/context": [
         {
           "command": "penEditorRemake.openAsJson",
+          "when": "view == superpencil.designs && viewItem == penFile",
+          "group": "navigation"
+        },
+        {
+          "command": "penEditorRemake.saveCopyAs",
           "when": "view == superpencil.designs && viewItem == penFile",
           "group": "navigation"
         }

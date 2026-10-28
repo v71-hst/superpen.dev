@@ -7,6 +7,8 @@ import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 
 export const PEN_HOME = path.join(os.homedir(), '.pen-editor');
+/** Superpencil designs (.spen) and pen.dev designs (.pen): same JSON format. */
+export const DESIGN_GLOB = '**/*.{spen,pen}';
 export const BRIDGE_DIR = path.join(PEN_HOME, 'bridges');
 
 /** How long a lock survives without heartbeats (the MCP process sends one every 15s). */
@@ -201,7 +203,7 @@ export class Bridge {
           lock: this.lockInfo(e.document.uri.toString(), session),
         }));
         if (!params.includeClosed) return open;
-        const found = await vscode.workspace.findFiles('**/*.pen', '**/node_modules/**', 500);
+        const found = await vscode.workspace.findFiles(DESIGN_GLOB, '**/node_modules/**', 500);
         const openSet = new Set(open.map(o => o.path.toLowerCase()));
         const closed = found
           .filter(u => !openSet.has(u.fsPath.toLowerCase()))

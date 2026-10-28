@@ -1,6 +1,7 @@
-// Activity bar view: the workspace's .pen designs, each opening in the visual editor.
+// Activity bar view: the workspace's .spen/.pen designs, each opening in the visual editor.
 import * as vscode from 'vscode';
 import * as path from 'node:path';
+import { DESIGN_GLOB } from './bridge';
 
 class DesignsProvider implements vscode.TreeDataProvider<vscode.Uri> {
   private changed = new vscode.EventEmitter<void>();
@@ -25,7 +26,7 @@ class DesignsProvider implements vscode.TreeDataProvider<vscode.Uri> {
 
   async getChildren(element?: vscode.Uri): Promise<vscode.Uri[]> {
     if (element) return [];
-    const files = await vscode.workspace.findFiles('**/*.pen', '**/node_modules/**', 500);
+    const files = await vscode.workspace.findFiles(DESIGN_GLOB, '**/node_modules/**', 500);
     return files.sort((a, b) => a.fsPath.localeCompare(b.fsPath));
   }
 }
@@ -38,7 +39,7 @@ export function registerSidebar(context: vscode.ExtensionContext, viewType: stri
     clearTimeout(timer);
     timer = setTimeout(() => provider.refresh(), 300);
   };
-  const watcher = vscode.workspace.createFileSystemWatcher('**/*.pen', false, true, false);
+  const watcher = vscode.workspace.createFileSystemWatcher(DESIGN_GLOB, false, true, false);
   context.subscriptions.push(
     vscode.window.registerTreeDataProvider('superpencil.designs', provider),
     vscode.commands.registerCommand('penEditorRemake.refreshDesigns', () => provider.refresh()),

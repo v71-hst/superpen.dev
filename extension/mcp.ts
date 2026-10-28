@@ -102,7 +102,7 @@ function norm(p: string) {
 
 async function resolveFile(file: string) {
   const files = await allFiles(true);
-  if (!files.length) throw new Error('No VS Code window with the Superpencil extension is running (or it has no .pen files). Open VS Code with the extension installed.');
+  if (!files.length) throw new Error('No VS Code window with the Superpencil extension is running (or it has no .spen/.pen files). Open VS Code with the extension installed.');
   const want = norm(file.trim());
   let hits = files.filter(f => norm(f.path) === want);
   if (!hits.length && path.isAbsolute(file)) {
@@ -112,10 +112,10 @@ async function resolveFile(file: string) {
     return { path: path.resolve(file), name: path.basename(file), open: false, dirty: false, window: b.window, lock: null, bridge: b };
   }
   if (!hits.length) hits = files.filter(f => norm(f.path).endsWith('/' + want.replace(/^\.?\//, '')));
-  if (!hits.length) hits = files.filter(f => norm(f.name) === want || norm(f.name) === want + '.pen');
+  if (!hits.length) hits = files.filter(f => norm(f.name) === want || norm(f.name) === want + '.spen' || norm(f.name) === want + '.pen');
   if (!hits.length) hits = files.filter(f => norm(f.name).includes(want));
   if (hits.length === 1) return hits[0];
-  if (!hits.length) throw new Error(`No .pen file matches "${file}". Use list_open_files (include_closed: true) to see available files.`);
+  if (!hits.length) throw new Error(`No .spen/.pen file matches "${file}". Use list_open_files (include_closed: true) to see available files.`);
   throw new Error(`"${file}" is ambiguous; use the full path. Matches:\n${hits.map(h => '- ' + h.path).join('\n')}`);
 }
 
@@ -152,13 +152,13 @@ const server = new McpServer(
   { name: 'pen-editor', version: '0.2.0' },
   {
     instructions:
-      'Edits .pen design files open in VS Code (Superpencil extension). Start with list_open_files, then select_file to choose the file this chat works on (this takes an edit lock so other chats cannot edit it at the same time). Call get_guide once for the .pen format. Edit with apply_operations, then screenshot to verify visually.',
+      'Edits Superpencil designs (.spen, and pen.dev .pen files; same JSON format) open in VS Code. Start with list_open_files, then select_file to choose the file this chat works on (this takes an edit lock so other chats cannot edit it at the same time). Call get_guide once for the .pen format. Edit with apply_operations, then screenshot to verify visually.',
   },
 );
 
-tool('list_open_files', 'List .pen files open in Superpencil across all VS Code windows, with unsaved state and which chat (if any) holds the edit lock. include_closed also lists .pen files in the workspaces that are not open.', { include_closed: z.boolean().optional() }, async ({ include_closed }) => {
+tool('list_open_files', 'List .spen/.pen designs open in Superpencil across all VS Code windows, with unsaved state and which chat (if any) holds the edit lock. include_closed also lists .spen/.pen files in the workspaces that are not open.', { include_closed: z.boolean().optional() }, async ({ include_closed }) => {
   const files = await allFiles(!!include_closed);
-  if (!files.length) return text('No .pen files are open. Use include_closed: true to list workspace files, or ask the user to open one.');
+  if (!files.length) return text('No .spen/.pen files are open. Use include_closed: true to list workspace files, or ask the user to open one.');
   const lines = files.map(f => {
     const lock = f.lock ? (f.lock.you ? 'locked by you' : `LOCKED by "${f.lock.label}" (idle ${f.lock.idleSeconds}s)`) : 'unlocked';
     const sel = selected && norm(selected.path) === norm(f.path) ? ' ← selected' : '';
@@ -169,7 +169,7 @@ tool('list_open_files', 'List .pen files open in Superpencil across all VS Code 
 
 tool(
   'select_file',
-  'Choose the .pen file this chat works on and take its edit lock (opens it in VS Code if needed). If another chat is actively editing it, the call is refused unless force is true; a holder idle for over 2 minutes is taken over with a warning. Optionally name this chat (label) so the user can see who holds the lock.',
+  'Choose the .spen/.pen file this chat works on and take its edit lock (opens it in VS Code if needed). If another chat is actively editing it, the call is refused unless force is true; a holder idle for over 2 minutes is taken over with a warning. Optionally name this chat (label) so the user can see who holds the lock.',
   { file: z.string().describe('Path, workspace-relative path, or file name'), label: z.string().optional(), force: z.boolean().optional() },
   async ({ file, label, force }) => {
     if (label) {

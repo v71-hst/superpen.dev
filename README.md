@@ -4,11 +4,12 @@
 
 # Superpencil
 
-**Superpencil** (from the superpen.dev repo) is a VS Code extension for designing UIs in `.pen` files (the pen.dev file format), with a pen.dev-style editor:
+**Superpencil** (from the superpen.dev repo) is a VS Code extension for designing UIs in `.spen` files (and pen.dev's `.pen` files), with a pen.dev-style editor:
 layers, components, auto layout, variables and themes, script-generated content, GPU shaders, SVG import, and an
 MCP server so Claude or Codex can design alongside you.
 
-Your `.pen` files stay plain pen.dev JSON, so they keep working in pen.dev too.
+`.spen` is Superpencil's own file type and the default for new designs. It holds exactly the same JSON as pen.dev's
+`.pen`, so you can open `.pen` files directly and save a copy as either type without losing anything.
 
 ---
 
@@ -17,11 +18,15 @@ Your `.pen` files stay plain pen.dev JSON, so they keep working in pen.dev too.
 - **Eyedropper** (I): click any layer to copy its colour, or apply it to the selected layers (Shift: as stroke).
   The colour picker has a pipette too (picks a layer's colour and keeps `$variable` links) and, where supported, a
   button to pick any pixel on screen.
+- **`.spen` files**: new designs save as `.spen` (Superpencil's file type). `.pen` files still open as before, and
+  **Save a Copy as .pen / .spen** (File menu, right-click a design, or the command palette) converts either way —
+  the JSON is identical, so nothing is lost.
+- **New showcase**: `examples/showcase.spen` is now a guided tour of Superpencil itself.
 - **Codex support**: **"Superpencil: Register MCP Server with Codex"** adds the MCP server to Codex's
   `~/.codex/config.toml`, so Codex chats (CLI or VS Code extension) can read and edit designs like Claude Code.
 - **New name and icon**: the extension is now called **Superpencil** (it was "Pen Editor (Remake)"). Updating
   from the old build replaces it in place; your MCP registration keeps working.
-- **Sidebar**: a Superpencil icon in the activity bar opens a **Designs** list of every `.pen` file in your
+- **Sidebar**: a Superpencil icon in the activity bar opens a **Designs** list of every `.spen` / `.pen` file in your
   workspace (click to open), with buttons for a new design and for registering the MCP server.
 - **Sharper, lighter zoomed-out view**: below 33% zoom, frames are drawn from images that are pixel-sharp at 33%
   and drop to half resolution each time you halve the zoom, so far-out views use far less memory. Small UI screens
@@ -42,15 +47,16 @@ You need **VS Code 1.90 or newer**.
    *Or* in a terminal: `code --install-extension path\to\superpen.vsix --force`
 3. **Ctrl+Shift+P → Reload Window**.
 
-It shows up in the Extensions list as **Superpencil**. Open any `.pen` file and it opens in the visual editor.
+It shows up in the Extensions list as **Superpencil**. Open any `.spen` or `.pen` file and it opens in the visual editor.
 The Superpencil icon in the activity bar (left) lists your workspace's designs, and there's also a pen button in the
-editor title bar (top right) that opens or creates `.pen` files.
+editor title bar (top right) that opens or creates designs.
 
 > If you also have the official pen.dev extension installed, VS Code may ask which editor to use. Right-click the
 > tab → **Reopen Editor With…** to switch.
 
-Try it on the demo: open [`examples/showcase.pen`](examples/showcase.pen) (keep the `scripts/` and `shaders/`
-folders next to it — the showcase uses them).
+Try it on the demo: open [`examples/showcase.spen`](examples/showcase.spen) (keep the `scripts/` and `shaders/`
+folders next to it — the showcase uses them). It walks you through the editor: things to try, live scripts,
+shaders, components, file formats and AI.
 
 ---
 
@@ -61,7 +67,7 @@ The extension includes an MCP server, so Claude Code chats can read and edit you
 1. Install [Claude Code](https://claude.com/claude-code) so the `claude` command works in a terminal.
 2. In VS Code: **Ctrl+Shift+P → "Superpencil: Register MCP Server with Claude Code"** (you're also asked once on
    first start).
-3. Start a new Claude chat and ask it to work on one of your open `.pen` files.
+3. Start a new Claude chat and ask it to work on one of your open designs.
 
 **Using Codex instead?** Run **Ctrl+Shift+P → "Superpencil: Register MCP Server with Codex"**. It adds a
 `[mcp_servers.pen-editor]` entry to `~/.codex/config.toml` (or `$CODEX_HOME/config.toml`), keeping a `.bak` copy
@@ -70,7 +76,7 @@ of the old file, then works the same way in a new Codex chat. The editor's lock 
 
 How it works:
 
-- `list_open_files` shows every `.pen` file open in any VS Code window.
+- `list_open_files` shows every `.spen` / `.pen` file open in any VS Code window.
 - `select_file` picks the file a chat works on and takes an **edit lock**, so several chats can each edit a
   different file at the same time without clobbering each other. Other chats can still read it.
 - The chat holding the lock is shown at the top right of the editor — click it to revoke the lock.
@@ -116,7 +122,7 @@ How it works:
   GUI objects (Frame / TextLabel / ImageLabel with UICorner, UIStroke and UIGradient). Vector art and images become
   placeholders you upload yourself. Claude only uses it (`export_roblox`) when you ask for it.
 
-Editing a `.js` / `.glsl` / image file next to your `.pen` file updates the canvas automatically.
+Editing a `.js` / `.glsl` / image file next to your design file updates the canvas automatically.
 
 ---
 
@@ -143,7 +149,7 @@ Needs Node.js 18+.
 ```
 npm install
 npm run package        # builds and writes release/superpen.vsix
-npm start [folder]     # optional: run the editor in a browser against a folder of .pen files (defaults to ./examples)
+npm start [folder]     # optional: run the editor in a browser against a folder of .spen/.pen files (defaults to ./examples)
 ```
 
 Set `PEN_PROD=1` before `npm start` to serve the production build instead of the dev server (useful for measuring

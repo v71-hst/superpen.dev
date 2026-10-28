@@ -1,4 +1,4 @@
-// Vite plugin exposing a tiny local file API so the browser editor can open/save .pen files on disk.
+// Vite plugin exposing a tiny local file API so the browser editor can open/save .spen/.pen files on disk.
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Plugin } from 'vite';
@@ -6,6 +6,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 
 const MIME: Record<string, string> = {
   '.pen': 'application/json',
+  '.spen': 'application/json',
   '.json': 'application/json',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -32,7 +33,7 @@ function listPenFiles(root: string, dir = root, depth = 0, out: string[] = []): 
     const full = path.join(dir, e.name);
     if (e.isDirectory()) {
       if (!SKIP_DIRS.has(e.name)) listPenFiles(root, full, depth + 1, out);
-    } else if (e.name.endsWith('.pen')) {
+    } else if (e.name.endsWith('.pen') || e.name.endsWith('.spen')) {
       out.push(path.relative(root, full).split(path.sep).join('/'));
     }
   }
