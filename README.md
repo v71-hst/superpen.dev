@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="media/banner.png" alt="superpen.dev: design .pen UIs inside VS Code" width="100%">
+</p>
+
 # superpen.dev
 
 A VS Code extension for designing UIs in `.pen` files (the pen.dev file format), with a pen.dev-style editor:
@@ -46,6 +50,12 @@ How it works:
 - The chat holding the lock is shown at the top right of the editor — click it to revoke the lock.
 - Claude can edit with batched operations (one undo step each), take screenshots to check its work,
   check layouts, draw vector artwork (`insert_svg`), trace images into vectors, and write scripts and shaders.
+- **Review mode** (checklist button in the tool column): Claude's edits show up straight away but wait in a
+  banner until you **Accept** or **Reject** them.
+- **Comments** (C): pin a comment anywhere on the canvas. Claude is told about open comments, reads them with
+  `get_comments`, does the work and answers in the thread (`reply_comment`).
+- **Design lint**: `lint_design` (or the shield button) finds hard-coded colours that should be variables, tiny or
+  low-contrast text, fractional positions, overflowing text, missing components and fonts, with one-click fixes.
 
 ---
 
@@ -55,6 +65,16 @@ How it works:
   selection. Very large files stay smooth: off-screen frames are skipped and zoomed-out frames are drawn as images.
 - **Editing**: select / deep-select (Ctrl+click), move, resize, draw shapes, text, frames, notes and pen paths,
   auto layout, components and instances, variables and themes, undo/redo through VS Code.
+- **Smart guides**: dragged layers snap to the edges and centres of their neighbours and parent, and to equal
+  spacing (pink distance labels). Hold Ctrl to move freely. Drag the pink handles between auto-layout children to
+  change the gap.
+- **Component states**: give a component states like *hover*, *pressed* or *disabled* in the Design panel, edit each
+  one on the canvas, and pick which state an instance shows.
+- **Prototypes**: link any layer to another frame (Design panel → Prototype) with a transition. In Present mode
+  links are clickable and hover/pressed states play automatically.
+- **Mixed selections**: select shapes and text together and edit fill, stroke and typography at once; each change
+  goes only to the layers it applies to.
+- **Find & replace** (Ctrl+F) across text, layer names and variable references.
 - **Script nodes**: JavaScript files that generate content (charts, rings, patterns). Inputs show up as controls in
   the Design panel. Shapes menu → **Script** creates a starter file.
 - **Shaders**: WebGL fills and effects (`.glsl`) with animation, mouse, shape-aware SDF, content and backdrop
@@ -62,6 +82,9 @@ How it works:
 - **SVG**: paste SVG code or import an `.svg` file and it becomes editable vector shapes. Image fills can be
   traced into vectors (logo / illustration / detailed).
 - **Export**: PNG / JPG / SVG / HTML per layer, slides presentation mode.
+- **Roblox export (experimental)**: Export → *Roblox Luau* turns a frame into a script that rebuilds it as Roblox
+  GUI objects (Frame / TextLabel / ImageLabel with UICorner, UIStroke and UIGradient). Vector art and images become
+  placeholders you upload yourself. Claude only uses it (`export_roblox`) when you ask for it.
 
 Editing a `.js` / `.glsl` / image file next to your `.pen` file updates the canvas automatically.
 

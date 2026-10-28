@@ -10,6 +10,20 @@ import { applyOperations, describe, nodeJson, outline, searchNodes, type Operati
 import { defaultTheme, isVarRef } from '../model/resolve';
 import { displayName } from '../model/doc';
 import type { RNode } from '../model/types';
+import { agentEdit, recordAgentChange, reviewStatus } from './review';
+import { commentsOf, openForAgent, postMessage, setResolved } from './comments';
+import { lintDesign } from './lint';
+import { exportRoblox } from './roblox';
+
+/** Things the agent should know after any call: review mode, and comments from the user waiting for an answer. */
+function agentNotes(): string[] {
+  const notes: string[] = [];
+  const r = reviewStatus();
+  if (r) notes.push(r);
+  const open = openForAgent(useStore.getState().doc);
+  if (open.length) notes.push(`The user left ${open.length} open comment${open.length > 1 ? 's' : ''} on the canvas waiting for a reply: call get_comments.`);
+  return notes;
+}
 
 const frames = (n = 2) => new Promise<void>(r => { const step = (k: number) => (k <= 0 ? r() : requestAnimationFrame(() => step(k - 1))); step(n); });
 
@@ -59,7 +73,7 @@ function cleanHtml(el: HTMLElement) {
 }
 
 /** Visual/layout problems an agent should know about. */
-async function checkLayout(rootKey?: string): Promise<string[]> {
+export async function checkLayout(rootKey?: string): Promise<string[]> {
   const s = useStore.getState();
   const tree = currentTree()!;
   const roots = rootKey ? [requireNode(rootKey)] : tree.roots;
@@ -147,6 +161,7 @@ export async function handleAgentRequest(method: string, params: any): Promise<a
         variables: Object.keys(doc.variables ?? {}).length,
         themes: doc.themes ?? {},
         selection: s.selection.map(k => (tree.byKey.get(k) ? describe(tree.byKey.get(k)!) : k)),
+        notes: agentNotes(),
       };
     }
     case 'tree': {
@@ -159,18 +174,46 @@ export async function handleAgentRequest(method: string, params: any): Promise<a
       return searchNodes(tree, params.query ?? '', params.type, params.limit ?? 50, params.root_id);
     case 'applyOps': {
       let out: ReturnType<typeof applyOperations> | null = null;
-      s.edit(d => {
-        out = applyOperations(d, params.operations as Operation[]);
-      });
+      agentEdit(
+        params.description ?? 'apply_operations',
+        () =>
+          s.edit(d => {
+            out = applyOperations(d, params.operations as Operation[]);
+          }),
+        () => (out as ReturnType<typeof applyOperations> | null)?.touched ?? [],
+      );
       flushEdits();
       const r = out as ReturnType<typeof applyOperations> | null;
       if (r) requestAnimationFrame(() => flash(r.touched));
-      return r?.results ?? [];
+      return { results: r?.results ?? [], notes: agentNotes() };
+    }
+    case 'comments': {
+      const all = commentsOf(doc);
+      return all
+        .filter(c => params.include_resolved || !c.resolved)
+        .map(c => {
+          const n = c.node ? tree.byKey.get(c.node) : undefined;
+          return { id: c.id, on: n ? describe(n) : c.node ? `#${c.node} (deleted)` : `canvas at ${c.x},${c.y}`, node_id: c.node, resolved: !!c.resolved, thread: c.messages.map(m => `${m.author === 'agent' ? (m.name ?? 'agent') : 'user'}: ${m.text}`) };
+        });
+    }
+    case 'replyComment': {
+      const c = commentsOf(doc).find(x => x.id === params.id);
+      if (!c) throw new Error(`comment "${params.id}" not found (use get_comments)`);
+      if (params.text) postMessage(c.id, { author: 'agent', name: params.name, text: String(params.text).slice(0, 4000), t: Date.now() });
+      if (params.resolve !== undefined) setResolved(c.id, !!params.resolve);
+      flushEdits();
+      return { ok: true };
+    }
+    case 'lint':
+      return lintDesign(params.id);
+    case 'exportRoblox': {
+      requireNode(params.id);
+      return exportRoblox(params.id, { units: params.units, center: params.center });
     }
     case 'getVariables':
       return { variables: doc.variables ?? {}, themes: doc.themes ?? {}, activeTheme: { ...defaultTheme(doc), ...(s.previewTheme ?? {}) } };
     case 'setVariables': {
-      s.edit(d => {
+      agentEdit('set_variables', () => s.edit(d => {
         if (params.replace) d.variables = {};
         d.variables ??= {};
         for (const [k, v] of Object.entries(params.variables ?? {})) {
@@ -178,7 +221,7 @@ export async function handleAgentRequest(method: string, params: any): Promise<a
           else d.variables[k] = v as any;
         }
         if (params.themes) d.themes = params.themes;
-      });
+      }), () => []);
       flushEdits();
       return { ok: true, count: Object.keys(useStore.getState().doc?.variables ?? {}).length };
     }
@@ -223,13 +266,15 @@ export async function handleAgentRequest(method: string, params: any): Promise<a
       return { name: `${name}.${format}`, dataUrl: shot.dataUrl };
     }
     case 'insertSvg': {
-      const r = insertSvg(String(params.svg ?? ''), { parent: params.parent ?? null, index: params.index, x: params.x, y: params.y, width: params.width, height: params.height, name: params.name });
+      const r = agentEdit('insert_svg', () => insertSvg(String(params.svg ?? ''), { parent: params.parent ?? null, index: params.index, x: params.x, y: params.y, width: params.width, height: params.height, name: params.name }), x => [x.id]);
       flushEdits();
       requestAnimationFrame(() => flash([r.id]));
       return r;
     }
     case 'vectorize': {
+      const before = useStore.getState().doc;
       const r = await vectorizeNode(String(params.id), { colors: params.colors, detail: params.detail });
+      recordAgentChange(before, 'vectorize_image', () => [r.id]);
       flushEdits();
       requestAnimationFrame(() => flash([r.id]));
       return r;

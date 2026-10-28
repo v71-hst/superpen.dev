@@ -13,6 +13,15 @@ import { LOD_ZOOM, getBitmap, hasFixedSize, lodEligible, lodInteraction, request
 import { deepResolve, isGeneratedKey } from '../model/resolve';
 import { fillList, primaryColor } from '../render/paint';
 import { ErrorBoundary, NodeErrorBox } from './ErrorBoundary';
+import { snapMove, type Guides } from '../editor/snapping';
+import { addComment } from '../editor/comments';
+import { CanvasExtras } from './CanvasExtras';
+
+function unionRect(rs: Rect[]): Rect {
+  const x0 = Math.min(...rs.map(r => r.x));
+  const y0 = Math.min(...rs.map(r => r.y));
+  return { x: x0, y: y0, w: Math.max(...rs.map(r => r.x + r.w)) - x0, h: Math.max(...rs.map(r => r.y + r.h)) - y0 };
+}
 
 type Rect = { x: number; y: number; w: number; h: number };
 
@@ -28,7 +37,10 @@ type Drag =
       fromLabel: boolean;
       /** Selected on mouse-up if the press turns out to be a click rather than a drag. */
       clickKey?: string;
+      /** Smart-guide targets (world rects of siblings and the parent) and the moving selection's starting bounds. */
+      snap?: { targets: Rect[]; parent: Rect | null; box: Rect };
     }
+  | { kind: 'gap'; key: string; sx: number; sy: number; start: number; horiz: boolean }
   | { kind: 'marquee'; sx: number; sy: number; scope: string | null; base: string[] }
   | { kind: 'resize'; key: string; handle: string; sx: number; sy: number; start: Rect; props: any; abs: boolean }
   | { kind: 'draw'; tool: string; sx: number; sy: number; parent: string | null };
@@ -107,7 +119,14 @@ export function Canvas() {
   const canvasRef = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
   const [space, setSpace] = useState(false);
-  const [draft, setDraft] = useState<{ marquee?: Rect; draw?: Rect; dropLine?: Rect; target?: string | null } | null>(null);
+  const [draft, setDraft] = useState<{
+    marquee?: Rect;
+    draw?: Rect;
+    dropLine?: Rect;
+    target?: string | null;
+    guides?: Guides;
+    gapLabel?: { key: string; value: number; x: number; y: number };
+  } | null>(null);
   const [penPoints, setPenPoints] = useState<{ x: number; y: number }[]>([]);
   const [penHover, setPenHover] = useState<{ x: number; y: number } | null>(null);
 
@@ -307,6 +326,14 @@ export function Canvas() {
       return;
     }
 
+    if (tool === 'comment') {
+      // Pin to the deepest real node under the pointer so the comment follows it.
+      const chain = chainFromElement(target).filter(k => keySource(k).kind === 'real');
+      const id = addComment(clientToWorld(e.clientX, e.clientY), chain[chain.length - 1] ?? null);
+      useStore.setState({ openComment: id, tool: 'select' });
+      return;
+    }
+
     if (tool !== 'select' && tool !== 'scale') {
       const parent = containerAt(e.clientX, e.clientY, new Set());
       drag.current = { kind: 'draw', tool, sx: e.clientX, sy: e.clientY, parent };
@@ -400,9 +427,47 @@ export function Canvas() {
       if (!n) continue;
       starts.set(k, { x: n.props.x ?? 0, y: n.props.y ?? 0, abs: isAbsolutelyPositioned(k), world: worldRectOf(k) });
     }
-    drag.current = { kind: 'move', sx: e.clientX, sy: e.clientY, keys: [...s.selection], starts, moved: false, fromLabel };
+    drag.current = { kind: 'move', sx: e.clientX, sy: e.clientY, keys: [...s.selection], starts, moved: false, fromLabel, snap: snapContext(s.selection, starts) };
     capture(e);
   }
+
+  /** Snap targets for freely positioned nodes that share one parent: the other children and the parent itself. */
+  function snapContext(keys: string[], starts: Map<string, { abs: boolean; world: Rect | null }>) {
+    const tr = currentTree();
+    if (!tr || !keys.length || !keys.every(k => starts.get(k)?.abs && starts.get(k)?.world)) return undefined;
+    const parents = new Set(keys.map(k => tr.parent.get(k)?.key ?? null));
+    if (parents.size !== 1) return undefined;
+    const parentKey = [...parents][0];
+    const siblings = parentKey ? (tr.byKey.get(parentKey)?.children ?? []) : tr.roots;
+    // Only nearby siblings matter; capping keeps the start of a drag fast in huge files.
+    const worlds = keys.map(k => starts.get(k)!.world!);
+    const box = unionRect(worlds);
+    const v = useStore.getState().view;
+    const c = canvasRect();
+    const viewW = { x: -v.x / v.zoom, y: -v.y / v.zoom, w: c.width / v.zoom, h: c.height / v.zoom };
+    const targets: Rect[] = [];
+    for (const n of siblings) {
+      if (keys.includes(n.key) || n.props.enabled === false) continue;
+      const p = n.props;
+      // Top-level frames: use document positions (no layout read); nested children are measured.
+      const r = !parentKey && typeof p.x === 'number' && typeof p.y === 'number' && typeof p.width === 'number' && typeof p.height === 'number' ? { x: p.x, y: p.y, w: p.width, h: p.height } : worldRectOf(n.key);
+      if (!r) continue;
+      if (r.x > viewW.x + viewW.w * 2 || r.x + r.w < viewW.x - viewW.w || r.y > viewW.y + viewW.h * 2 || r.y + r.h < viewW.y - viewW.h) continue;
+      targets.push(r);
+      if (targets.length > 400) break;
+    }
+    return { targets, parent: parentKey ? worldRectOf(parentKey) : null, box };
+  }
+
+  const onGapStart = (e: React.PointerEvent, key: string, horiz: boolean) => {
+    if (panning || e.button !== 0) return;
+    e.stopPropagation();
+    const n = currentTree()?.byKey.get(key);
+    if (!n) return;
+    const g = deepResolve(useStore.getState().doc as any, n.props.gap, n.theme);
+    drag.current = { kind: 'gap', key, sx: e.clientX, sy: e.clientY, start: typeof g === 'number' ? g : 0, horiz };
+    canvasRef.current!.setPointerCapture(e.pointerId);
+  };
 
   const onPointerMove = (e: React.PointerEvent) => {
     lodInteraction();
@@ -517,6 +582,13 @@ export function Canvas() {
       s.edit(dd => applyProps(dd, d.key, changes), 'resize-' + d.key);
       return;
     }
+    if (d.kind === 'gap') {
+      const delta = (d.horiz ? e.clientX - d.sx : e.clientY - d.sy) / z;
+      const gap = Math.max(0, Math.round(d.start + delta));
+      s.edit(dd => applyProps(dd, d.key, { gap }), 'gap-' + d.key);
+      setDraft({ gapLabel: { key: d.key, value: gap, x: e.clientX, y: e.clientY } });
+      return;
+    }
     if (d.kind === 'move') {
       const dxs = e.clientX - d.sx;
       const dys = e.clientY - d.sy;
@@ -528,7 +600,18 @@ export function Canvas() {
         if (Math.abs(dx) > Math.abs(dy)) dy = 0;
         else dx = 0;
       }
+      // Smart guides (hold Ctrl to move freely).
+      let guides: Guides | null = null;
+      if (d.snap && !e.ctrlKey && !e.metaKey) {
+        const b = d.snap.box;
+        const r = snapMove({ x: b.x + dx, y: b.y + dy, w: b.w, h: b.h }, d.snap.targets, d.snap.parent, 5 / z);
+        // Rounded positions must still line up with the guide.
+        if (!(e.shiftKey && dx === 0)) dx = Math.round(b.x + dx + r.dx) - b.x;
+        if (!(e.shiftKey && dy === 0)) dy = Math.round(b.y + dy + r.dy) - b.y;
+        guides = r.guides;
+      }
       const absKeys = d.keys.filter(k => d.starts.get(k)?.abs);
+      setDraft(guides && (guides.lines.length || guides.gaps.length) ? { guides } : null);
       if (absKeys.length) {
         s.edit(dd => {
           for (const k of absKeys) {
@@ -543,7 +626,7 @@ export function Canvas() {
       if (realKeys.length && !(isTop && absKeys.length === realKeys.length)) {
         const target = containerAt(e.clientX, e.clientY, new Set(realKeys));
         const line = flexDropLine(target, e.clientX, e.clientY, realKeys);
-        setDraft({ target, dropLine: line?.rect });
+        setDraft({ target, dropLine: line?.rect, guides: guides ?? undefined });
       }
       return;
     }
@@ -726,6 +809,7 @@ export function Canvas() {
         <RenderCtx.Provider value={renderCtx}>{tree && <Roots tree={tree} />}</RenderCtx.Provider>
       </div>
       {tree && <Overlay tree={tree} onResizeStart={onResizeStart} draft={draft} />}
+      {tree && <CanvasExtras tree={tree} draft={draft} onGapStart={onGapStart} dragging={!!drag.current} />}
       {tool === 'pen' && penPoints.length > 0 && <PenPreview points={penPoints} hover={penHover} />}
     </div>
   );
@@ -901,6 +985,8 @@ function Overlay({ tree, onResizeStart, draft }: { tree: Tree; onResizeStart: (e
  * Top-level frames. When zoomed out, big frames are drawn from background-rendered bitmaps (GPU textures) instead
  * of live DOM; a frame switches back to live as soon as it is selected/edited, pinned by an agent, or zoomed into.
  */
+const LIVE_MOUNTS_PER_FRAME = 3;
+
 function Roots({ tree }: { tree: Tree }) {
   const zoom = useStore(s => s.view.zoom);
   const selection = useStore(s => s.selection);
@@ -932,25 +1018,51 @@ function Roots({ tree }: { tree: Tree }) {
   const dpr = devicePixelRatio || 1;
   const want: string[] = [];
   const nextMounted = new Set<string>();
-  const out = tree.roots.map(n => {
-    if (n.props.enabled === false) return null;
-    if (!lodOn || active.has(n.key) || !lodEligible(n)) {
-      nextMounted.add(n.key);
-      return <SafeRoot key={n.key} n={n} />;
+  // Switching many frames from bitmap to live at once stalls a frame, so only a few go live per frame (on-screen
+  // first); the others keep showing their (stretched) bitmap until their turn. Selected frames always go live.
+  const { x: vx, y: vy } = useStore.getState().view;
+  const onScreen = (p: RNode['props']) =>
+    (p.x ?? 0) * zoom + vx < innerWidth && ((p.x ?? 0) + (p.width ?? 0)) * zoom + vx > 0 && (p.y ?? 0) * zoom + vy < innerHeight && ((p.y ?? 0) + (p.height ?? 0)) * zoom + vy > 0;
+  let budget = LIVE_MOUNTS_PER_FRAME;
+  let deferred = false;
+  const live = (n: RNode, bm: Bitmap | undefined) => {
+    if (bm && !mounted.current.has(n.key) && !active.has(n.key)) {
+      if (budget <= 0 || (budget < LIVE_MOUNTS_PER_FRAME && !onScreen(n.props))) {
+        deferred = true;
+        return <BitmapRoot key={n.key} n={n} bm={bm} />;
+      }
+      budget--;
     }
-    const bm = getBitmap(n.key);
+    nextMounted.add(n.key);
+    return <SafeRoot key={n.key} n={n} />;
+  };
+  const order = [...tree.roots].sort((a, b) => +onScreen(b.props) - +onScreen(a.props));
+  const byKey = new Map<string, React.ReactNode>();
+  for (const n of order) {
+    if (n.props.enabled === false) continue;
+    const eligible = lodEligible(n);
+    const bm = eligible ? getBitmap(n.key) : undefined;
+    if (!lodOn || active.has(n.key) || !eligible) {
+      byKey.set(n.key, live(n, bm));
+      continue;
+    }
     if (bm && bm.node !== n) want.push(n.key);
-    if (bm && zoom * dpr <= bm.ratio * 1.15) return <BitmapRoot key={n.key} n={n} bm={bm} />;
-    if (!bm) want.push(n.key);
-    if (mounted.current.has(n.key) || (bm && zoom * dpr > bm.ratio * 1.15) || !hasFixedSize(n)) {
-      nextMounted.add(n.key);
-      return <SafeRoot key={n.key} n={n} />;
+    if (bm && zoom * dpr <= bm.ratio * 1.15) {
+      byKey.set(n.key, <BitmapRoot key={n.key} n={n} bm={bm} />);
+      continue;
     }
-    return <PlaceholderRoot key={n.key} n={n} />;
-  });
+    if (!bm) want.push(n.key);
+    if (mounted.current.has(n.key) || bm || !hasFixedSize(n)) byKey.set(n.key, live(n, bm));
+    else byKey.set(n.key, <PlaceholderRoot key={n.key} n={n} />);
+  }
+  // Document order is kept so stacking doesn't change while frames switch.
+  const out = tree.roots.map(n => byKey.get(n.key) ?? null);
   mounted.current = nextMounted;
   useEffect(() => {
     for (const k of want) requestBitmap(k);
+    if (!deferred) return;
+    const id = requestAnimationFrame(() => setTick(x => x + 1));
+    return () => cancelAnimationFrame(id);
   });
   return <>{out}</>;
 }

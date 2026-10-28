@@ -217,9 +217,51 @@ tool(
   'apply_operations',
   'Edit the selected file with an atomic batch of operations (insert, update, delete, move, duplicate, replace, instantiate). All succeed or none apply; the batch is one undo step for the user. Requires the edit lock. See get_guide for the syntax.',
   { operations: z.array(z.record(z.any())).min(1), description: z.string().optional() },
-  async ({ operations }) => {
-    const r = await callEditor('applyOps', { operations }, true);
-    return json({ applied: r.length, results: r });
+  async ({ operations, description }) => {
+    const r = await callEditor('applyOps', { operations, description }, true);
+    return json({ applied: r.results.length, results: r.results, ...(r.notes?.length ? { notes: r.notes } : {}) });
+  },
+);
+
+tool(
+  'get_comments',
+  'Comments the user pinned on the canvas (threads with the node they are attached to). Treat open comments as requests from the user; answer with reply_comment.',
+  { include_resolved: z.boolean().optional() },
+  async a => {
+    const r: any[] = await callEditor('comments', a);
+    return r.length ? json(r) : text('No open comments.');
+  },
+);
+
+tool(
+  'reply_comment',
+  'Reply to a canvas comment thread (shown to the user in the editor) and/or mark it resolved. Reply after doing what the comment asked, briefly saying what you changed. Requires the edit lock.',
+  { id: z.string(), text: z.string().optional(), resolve: z.boolean().optional() },
+  async a => json(await callEditor('replyComment', { ...a, name: session.label }, true)),
+);
+
+tool(
+  'lint_design',
+  'Design lint for the whole file or one node (id): literal colors that duplicate a variable, tiny or low-contrast text, fractional positions, empty/hidden layers, too many fonts, plus rendering problems (overflowing text, missing components/variables/icons/fonts). Run after larger edits.',
+  { id: z.string().optional() },
+  async a => {
+    const r: any[] = await callEditor('lint', a);
+    if (!r.length) return text('No problems found.');
+    return text(r.map(i => `${i.severity}: ${i.message}${i.key ? ` [#${i.key}]` : ''}${i.fix ? ` (fix: ${JSON.stringify(i.fix.changes)})` : ''}`).join('\n'));
+  },
+);
+
+tool(
+  'export_roblox',
+  'EXPERIMENTAL. Converts a frame into Luau that rebuilds it as Roblox GUI objects (Frame/TextLabel/ImageLabel with UICorner/UIStroke/UIGradient), using measured layout. Only use this when the user explicitly asks for this Roblox export; it is NOT the default way to bring designs into Roblox (keep using whatever workflow the user normally uses). Vector shapes and images become ImageLabel placeholders that need uploaded asset ids. Returns the code; save_path writes it to a .lua/.luau file.',
+  { id: z.string(), units: z.enum(['offset', 'scale']).optional(), center: z.boolean().optional(), save_path: z.string().optional() },
+  async ({ id, units, center, save_path }) => {
+    const r = await callEditor('exportRoblox', { id, units, center });
+    if (save_path) {
+      fs.mkdirSync(path.dirname(path.resolve(save_path)), { recursive: true });
+      fs.writeFileSync(path.resolve(save_path), r.code, 'utf8');
+    }
+    return text(`${save_path ? `Saved to ${path.resolve(save_path)}\n` : ''}${r.warnings.length ? `Warnings:\n- ${r.warnings.join('\n- ')}\n\n` : ''}${r.code}`);
   },
 );
 

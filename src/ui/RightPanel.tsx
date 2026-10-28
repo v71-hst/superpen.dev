@@ -58,6 +58,8 @@ import { PaintPopover, paintSwatch } from './ColorPicker';
 import { ICON_NAMES } from './icons';
 import { blobToDataUrl, downloadDataUrl } from '../editor/host';
 import { ScriptControls, ShaderControls } from './AssetControls';
+import { InstanceStateSection, PrototypeSection, StatesSection } from './RightPanelExtras';
+import { exportRoblox } from '../editor/roblox';
 
 type Ctx = {
   n: RNode;
@@ -82,18 +84,37 @@ export function RightPanel() {
   const n = tree.byKey.get(selection[0]);
   if (!n) return null;
   const p = n.props;
-  const r = Object.fromEntries(Object.entries(p).map(([k, v]) => [k, k === 'children' ? v : deepResolve(doc, v, n.theme)]));
-  const set = (changes: Record<string, any>, merge?: string) =>
-    useStore.getState().edit(d => {
-      for (const k of useStore.getState().selection) applyProps(d, k, changes);
-    }, merge);
-  const ctx: Ctx = { n, p, r, set, theme: n.theme };
-  const isText = n.type === 'text';
+  const nodes = selection.map(k => tree.byKey.get(k)).filter((x): x is RNode => !!x);
+  // With a mixed selection each section edits only the layers it applies to (font size goes to texts only, ...)
+  // and shows the values of the first such layer.
+  const ctxOf = (m: RNode, keep: (x: RNode) => boolean = () => true): Ctx => {
+    const keys = nodes.filter(keep).map(x => x.key);
+    return {
+      n: m,
+      p: m.props,
+      r: Object.fromEntries(Object.entries(m.props).map(([k, v]) => [k, k === 'children' ? v : deepResolve(doc, v, m.theme)])),
+      set: (changes, merge) =>
+        useStore.getState().edit(d => {
+          for (const k of keys) applyProps(d, k, changes);
+        }, merge),
+      theme: m.theme,
+    };
+  };
+  const ctx = ctxOf(n);
+  const set = ctx.set;
+  const hasGraphicsT = (x: RNode) => !['group', 'icon', 'icon_font', 'note', 'prompt', 'context', 'script', 'missing_ref', 'line'].includes(x.type);
+  const strokeT = (x: RNode) => (hasGraphicsT(x) && x.type !== 'text') || x.type === 'line';
+  const iconT = (x: RNode) => x.type === 'icon' || x.type === 'icon_font';
+  const textT = (x: RNode) => x.type === 'text';
+  const first = (pred: (x: RNode) => boolean) => nodes.find(pred);
+  const fillN = first(hasGraphicsT);
+  const strokeN = first(strokeT);
+  const textN = first(textT);
+  const iconN = first(iconT);
   const isFrame = n.type === 'frame';
-  const hasGraphics = !['group', 'icon', 'icon_font', 'note', 'prompt', 'context', 'script', 'missing_ref'].includes(n.type);
-  const hasStroke = hasGraphics && n.type !== 'text';
   const { Icon, cls } = layerIconFor(n);
   const multi = selection.length > 1;
+  const mixed = multi && new Set(nodes.map(x => x.type)).size > 1;
   return (
     <div className="island right-panel">
       <div className="rp-head">
@@ -102,7 +123,7 @@ export function RightPanel() {
         </span>
         <input
           key={n.key}
-          defaultValue={multi ? `${selection.length} layers` : displayName(p)}
+          defaultValue={multi ? `${selection.length} layers${mixed ? ' (mixed)' : ''}` : displayName(p)}
           disabled={multi}
           onKeyDown={e => {
             e.stopPropagation();
@@ -129,6 +150,8 @@ export function RightPanel() {
       </div>
       <div className="right-scroll">
         <ComponentButtons n={n} />
+        {!multi && <StatesSection n={n} />}
+        <InstanceStateSection n={n} set={set} />
         <ContextSection {...ctx} />
         <AlignmentSection />
         <PositionSection {...ctx} />
@@ -139,12 +162,13 @@ export function RightPanel() {
             <ScriptControls props={p} theme={n.theme} set={set} />
           </Section>
         )}
-        {hasGraphics && n.type !== 'line' && <PaintSection {...ctx} prop="fill" title="Fill" />}
-        {(hasStroke || n.type === 'line') && <PaintSection {...ctx} prop="stroke" title="Stroke" />}
-        {isText && <TypographySection {...ctx} />}
-        {(n.type === 'icon' || n.type === 'icon_font') && <IconSection {...ctx} />}
-        {(n.type === 'icon' || n.type === 'icon_font') && <PaintSection {...ctx} prop="fill" title="Color" />}
+        {fillN && <PaintSection {...ctxOf(fillN, hasGraphicsT)} prop="fill" title={mixed ? 'Fill (shapes & text)' : 'Fill'} />}
+        {strokeN && <PaintSection {...ctxOf(strokeN, strokeT)} prop="stroke" title="Stroke" />}
+        {textN && <TypographySection {...ctxOf(textN, textT)} />}
+        {iconN && <IconSection {...ctxOf(iconN, iconT)} />}
+        {iconN && <PaintSection {...ctxOf(iconN, iconT)} prop="fill" title={mixed ? 'Icon color' : 'Color'} />}
         <EffectsSection {...ctx} />
+        <PrototypeSection n={n} set={set} />
         <CodeSection n={n} />
         <ExportSection n={n} />
       </div>
@@ -162,7 +186,7 @@ function ancestorRoot(tree: ReturnType<typeof useTree>, key: string): string | n
   return last;
 }
 
-function Section({ title, children, onAdd, extra, collapsible, empty }: { title: string; children?: React.ReactNode; onAdd?: () => void; extra?: React.ReactNode; collapsible?: boolean; empty?: boolean }) {
+export function Section({ title, children, onAdd, extra, collapsible, empty }: { title: string; children?: React.ReactNode; onAdd?: () => void; extra?: React.ReactNode; collapsible?: boolean; empty?: boolean }) {
   const [open, setOpen] = useState(!collapsible);
   return (
     <div className={'section' + (empty || (collapsible && !open) ? ' empty' : '')}>
@@ -1076,6 +1100,21 @@ function ExportSection({ n }: { n: RNode }) {
       </div>
       <button className="rp-btn" onClick={run}>
         Export layer
+      </button>
+      <button
+        className="rp-btn"
+        title="Experimental: Luau that rebuilds this layer as Roblox GUI objects (vectors and images become placeholders)"
+        onClick={async () => {
+          try {
+            const r = await exportRoblox(n.key);
+            download(`${r.name}.luau`, 'data:text/plain;charset=utf-8,' + encodeURIComponent(r.code));
+            if (r.warnings.length) notify(`Exported with ${r.warnings.length} note${r.warnings.length > 1 ? 's' : ''} (see the top of the file)`);
+          } catch (e) {
+            notify(`Roblox export failed: ${e instanceof Error ? e.message : e}`);
+          }
+        }}
+      >
+        Roblox Luau (experimental)
       </button>
     </Section>
   );

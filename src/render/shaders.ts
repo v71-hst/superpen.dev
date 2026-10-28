@@ -3,6 +3,7 @@
 import { loadText } from './scripts';
 import { parseColor } from './paint';
 import { log } from '../editor/diagnostics';
+import { useStore } from '../editor/store';
 
 // ---------- parsing ----------
 
@@ -439,13 +440,31 @@ function shapeMask(shape: ShapeSpec | null, w: number, h: number, tw: number, th
 const animated = new Set<ShaderRunner>();
 let rafId = 0;
 const t0 = performance.now();
-function loop() {
+/** Animation runs at most this often; the canvas keeps the last frame in between. */
+const FRAME_MS = 1000 / 30;
+const MAX_ANIM_PIXELS = 420_000;
+/** Pan/zoom gestures get the whole frame budget: animation pauses until the view has been still this long. */
+const SETTLE_MS = 140;
+let lastFrame = 0;
+let viewMovedAt = 0;
+let watchingView = false;
+function loop(now: number) {
   rafId = 0;
+  // Subscribed lazily: the store module is still initializing when this module loads (import cycle).
+  if (!watchingView) {
+    watchingView = true;
+    useStore.subscribe((s, p) => {
+      if (s.view !== p.view) viewMovedAt = performance.now();
+    });
+  }
   if (document.hidden) {
     setTimeout(() => !rafId && animated.size && (rafId = requestAnimationFrame(loop)), 500);
     return;
   }
-  for (const r of animated) r.frame();
+  if (now - lastFrame >= FRAME_MS - 2 && now - viewMovedAt >= SETTLE_MS) {
+    lastFrame = now;
+    for (const r of animated) r.frame();
+  }
   if (animated.size) rafId = requestAnimationFrame(loop);
 }
 
@@ -592,7 +611,11 @@ export class ShaderRunner {
     if (!cfg || !eng || this.error || !this.srcs.length) return;
     const fullW = cfg.width + cfg.margin * 2;
     const fullH = cfg.height + cfg.margin * 2;
-    const scale = Math.max(0.05, Math.min(cfg.scale, 2048 / Math.max(fullW, fullH)));
+    let scale = Math.max(0.05, Math.min(cfg.scale, 2048 / Math.max(fullW, fullH)));
+    // Animated output is redrawn and copied every frame, so cap its pixel count (it is upscaled smoothly).
+    if (this.needsAnim) scale = Math.min(scale, Math.sqrt(MAX_ANIM_PIXELS / (fullW * fullH)));
+    // Too small on screen to see: keep the last image instead of re-rendering.
+    if (this.needsAnim && this.canvas.width > 1 && Math.max(fullW, fullH) * useStore.getState().view.zoom < 16) return;
     const pxW = Math.max(1, Math.round(fullW * scale));
     const pxH = Math.max(1, Math.round(fullH * scale));
     const time = (performance.now() - t0) / 1000;

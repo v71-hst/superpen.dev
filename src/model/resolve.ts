@@ -72,9 +72,45 @@ export function deepResolve(doc: PenDoc, v: any, theme: Theme): any {
 
 // ---------- ref expansion ----------
 
-const REF_OWN_SKIP = new Set(['type', 'ref', 'id', 'descendants']);
+const REF_OWN_SKIP = new Set(['type', 'ref', 'id', 'descendants', 'state']);
+const STATE_SKIP = new Set(['id', 'type', 'children', 'reusable', 'states']);
 
 type Overrides = Record<string, any>;
+
+/**
+ * A component state (hover, pressed, disabled, ...): property overrides for the component root and for its
+ * descendants (keyed by id path, like ref descendants). Stored on the component as `states: { name: ComponentState }`;
+ * an instance picks one with `state: "name"`.
+ */
+export type ComponentState = { root?: Record<string, any>; descendants?: Overrides };
+
+export function stateNames(comp: PenNode | undefined): string[] {
+  return comp?.states && typeof comp.states === 'object' ? Object.keys(comp.states) : [];
+}
+
+/** Merges state overrides under instance overrides (the instance wins; a whole-node replacement wins outright). */
+function mergeDescendants(state: Overrides | undefined, own: Overrides | undefined): Overrides {
+  if (!state) return own ?? {};
+  const out: Overrides = { ...state };
+  for (const [k, v] of Object.entries(own ?? {})) out[k] = v && typeof v === 'object' && !v.type && out[k] && !out[k].type ? { ...out[k], ...v } : v;
+  return out;
+}
+
+const stateCache = new WeakMap<PenNode, Map<string, PenNode>>();
+/** A component node as it looks in one of its states (used to preview and edit that state on the canvas). */
+export function withState(node: PenNode, state: string): PenNode {
+  const st: ComponentState | undefined = node.states?.[state];
+  if (!st) return node;
+  let m = stateCache.get(node);
+  const hit = m?.get(state);
+  if (hit) return hit;
+  const out: PenNode = { ...node };
+  for (const [k, v] of Object.entries(st.root ?? {})) if (!STATE_SKIP.has(k)) out[k] = v;
+  if (node.children && st.descendants) out.children = applyOverrides(node.children, st.descendants, '');
+  if (!m) stateCache.set(node, (m = new Map()));
+  m.set(state, out);
+  return out;
+}
 
 /** Builds the plain template tree an instance renders: component content with overrides applied. */
 export function materializeRef(ref: PenNode, idx: NodeIndex, visited: Set<string> = new Set()): PenNode | null {
@@ -83,13 +119,16 @@ export function materializeRef(ref: PenNode, idx: NodeIndex, visited: Set<string
   const nextVisited = new Set(visited).add(comp.id);
   const template = comp.type === 'ref' ? materializeRef(comp, idx, nextVisited) : comp;
   if (!template) return null;
+  const st: ComponentState | undefined = typeof ref.state === 'string' && ref.state ? (comp.states ?? template.states)?.[ref.state] : undefined;
   const root: PenNode = { ...template };
   delete root.reusable;
+  delete root.states;
+  for (const [k, v] of Object.entries(st?.root ?? {})) if (!STATE_SKIP.has(k)) root[k] = v;
   for (const k of Object.keys(ref)) if (!REF_OWN_SKIP.has(k)) root[k] = ref[k];
   root.type = template.type;
   root.id = ref.id;
   if (!('reusable' in ref)) delete root.reusable;
-  if (!ref.children && template.children) root.children = applyOverrides(template.children, ref.descendants ?? {}, '');
+  if (!ref.children && template.children) root.children = applyOverrides(template.children, mergeDescendants(st?.descendants, ref.descendants), '');
   return root;
 }
 
@@ -138,6 +177,9 @@ export class TreeBuilder {
   /** Bumped when script output arrives; only subtrees containing scripts are rebuilt. */
   scriptEpoch = 0;
   scriptProvider: ScriptProvider | null = null;
+  /** A component shown (and edited) in one of its states on the canvas. */
+  stateView: { comp: string; state: string } | null = null;
+  private stateSig = '';
   idx!: NodeIndex;
 
   private containsScript(n: PenNode, depth = 0): boolean {
@@ -180,15 +222,19 @@ export class TreeBuilder {
     this.idx = indexDoc(doc);
     const comps = this.idx.components;
     // Instances depend on component content, so any component change invalidates cached subtrees.
-    if (comps.length !== this.compSig.length || comps.some((c, i) => c !== this.compSig[i]) || doc.variables !== this.varsRef) {
+    // A state preview changes how its component's ancestors render too, so it invalidates cached subtrees.
+    const sv = this.stateView ? `${this.stateView.comp}\u0000${this.stateView.state}` : '';
+    if (comps.length !== this.compSig.length || comps.some((c, i) => c !== this.compSig[i]) || doc.variables !== this.varsRef || sv !== this.stateSig) {
       this.cache = new WeakMap();
       this.compSig = comps;
       this.varsRef = doc.variables;
+      this.stateSig = sv;
     }
     return doc.children.filter(n => n && typeof n === 'object').map(n => this.real(n, theme));
   }
 
   private real(n: PenNode, parentTheme: Theme): RNode {
+    if (this.stateView && n.id === this.stateView.comp) n = withState(n, this.stateView.state);
     const theme = themed(parentTheme, n);
     const tk = themeKey(theme) + (this.containsScript(n) ? `|s${this.scriptEpoch}` : '');
     const hit = this.cache.get(n)?.get(tk);

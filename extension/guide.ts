@@ -47,6 +47,16 @@ Themed values: "value": [ { "value": "#FFF" }, { "value": "#111", "theme": { "Mo
 ## Components
 Mark any node reusable: true to make it a component. Instantiate with the "instantiate" op.
 Nodes inside an instance have ids like "<instanceId>/<childId>"; "update" on such an id stores an override.
+States (variants): on the component, states: { "hover": { "root": { props }, "descendants": { "<child id path>": { props } } }, "pressed": {...}, "disabled": {...} }.
+An instance shows one with state: "hover". In Present mode "hover" and "pressed" play automatically under the mouse.
+
+## Prototype links
+Any node can have link: { "to": "<top-level frame id>" | "__back", "transition": "instant" | "dissolve" | "slide-left" | "slide-right" | "slide-up" | "slide-down" }.
+Clicking it in Present mode navigates. Use this to wire up flows (buttons -> screens, back buttons -> "__back").
+
+## Comments
+The user can pin comments on the canvas. Tool results include a note when comments are waiting: read them with get_comments,
+do what they ask, then reply_comment (optionally resolve: true).
 
 ## apply_operations
 [

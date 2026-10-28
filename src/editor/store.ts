@@ -7,9 +7,12 @@ import { log, takeViewSource } from './diagnostics';
 
 setAutoFreeze(false);
 
-export type Tool = 'select' | 'scale' | 'rect' | 'ellipse' | 'polygon' | 'icon' | 'text' | 'frame' | 'note' | 'hand' | 'pen';
+export type Tool = 'select' | 'scale' | 'rect' | 'ellipse' | 'polygon' | 'icon' | 'text' | 'frame' | 'note' | 'hand' | 'pen' | 'comment';
 export type LeftTab = 'layers' | 'slides' | 'components' | 'libraries';
-export type Modal = null | 'shortcuts' | 'variables' | 'settings' | 'about' | 'iconPicker';
+export type Modal = null | 'shortcuts' | 'variables' | 'settings' | 'about' | 'iconPicker' | 'find' | 'lint';
+
+/** Agent edits waiting for the user to accept or reject them (review mode). */
+export type PendingReview = { base: PenDoc; touched: string[]; batches: number; label: string; since: number; /** The user (or VS Code) also changed the document since. */ mixed: boolean };
 
 export type FileRef = {
   name: string;
@@ -55,6 +58,13 @@ type State = {
   pinnedRoots: Record<string, number>;
   /** Bumped when script output or script/shader files change. */
   assetVersion: number;
+  /** A component shown in one of its states; edits inside it are stored in that state. */
+  stateView: { comp: string; state: string } | null;
+  /** When on, agent edits are held as a pending change set until the user accepts or rejects them. */
+  reviewMode: boolean;
+  pending: PendingReview | null;
+  /** Comment pin being opened/edited on the canvas. */
+  openComment: string | null;
 };
 
 type Actions = {
@@ -100,9 +110,13 @@ export const useStore = create<State & Actions>((set, get) => ({
   lodVersion: 0,
   pinnedRoots: {},
   assetVersion: 0,
+  stateView: null,
+  reviewMode: localStorage.getItem('pen.reviewMode') === '1',
+  pending: null,
+  openComment: null,
 
   openDoc: (doc, file) =>
-    set({ doc, savedDoc: doc, file, past: [], future: [], selection: [], hover: null, editingKey: null, previewTheme: null, expanded: {}, lastMerge: null, view: fitViewForDoc(doc) }),
+    set({ doc, savedDoc: doc, file, past: [], future: [], selection: [], hover: null, editingKey: null, previewTheme: null, expanded: {}, lastMerge: null, view: fitViewForDoc(doc), stateView: null, pending: null, openComment: null }),
   closeDoc: () => set({ doc: null, savedDoc: null, file: null, past: [], future: [], selection: [] }),
 
   edit: (recipe, mergeKey) => {
@@ -187,6 +201,8 @@ export function keySource(key: string): { kind: 'real'; id: string } | { kind: '
 /** Applies property changes to a node; nodes inside instances get written as overrides on the instance. */
 export function applyProps(d: PenDoc, key: string, changes: Record<string, any>) {
   const src = keySource(key);
+  const sv = useStore.getState().stateView;
+  if (src.kind === 'real' && sv && writeToState(d, sv.comp, sv.state, src.id, changes)) return;
   if (src.kind === 'real') {
     const loc = locate(d, src.id);
     if (!loc) return;
@@ -205,6 +221,40 @@ export function applyProps(d: PenDoc, key: string, changes: Record<string, any>)
     else entry[k] = v;
   }
   if (!Object.keys(entry).length) delete desc[src.path];
+}
+
+/** Id path from a component down to one of its (non-instance) descendants: '' for the component itself, null if outside. */
+export function statePath(comp: PenNode, id: string): string | null {
+  if (comp.id === id) return '';
+  const walk = (nodes: PenNode[] | undefined, prefix: string): string | null => {
+    for (const c of nodes ?? []) {
+      if (!c || typeof c !== 'object') continue;
+      const p = prefix ? `${prefix}/${c.id}` : c.id;
+      if (c.id === id) return p;
+      if (c.type !== 'ref') {
+        const r = walk(c.children, p);
+        if (r !== null) return r;
+      }
+    }
+    return null;
+  };
+  return walk(comp.children, '');
+}
+
+/** While a state is being edited, property changes inside its component are stored as that state's overrides. */
+function writeToState(d: PenDoc, compId: string, state: string, id: string, changes: Record<string, any>): boolean {
+  const comp = locate(d, compId)?.node;
+  if (!comp) return false;
+  const path = statePath(comp, id);
+  if (path === null) return false;
+  const st = ((comp.states ??= {})[state] ??= {});
+  const target = path === '' ? (st.root ??= {}) : ((st.descendants ??= {})[path] ??= {});
+  for (const [k, v] of Object.entries(changes)) {
+    if (v === undefined) delete target[k];
+    else target[k] = v;
+  }
+  if (path !== '' && !Object.keys(target).length) delete st.descendants[path];
+  return true;
 }
 
 export function updateProps(key: string, changes: Record<string, any>, mergeKey?: string) {

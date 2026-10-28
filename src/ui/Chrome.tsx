@@ -11,7 +11,11 @@ import {
   Hand,
   ImagePlus,
   Keyboard,
+  ListChecks,
   Lock,
+  MessageSquare,
+  Search,
+  ShieldCheck,
   Maximize2,
   Minus,
   MousePointer2,
@@ -36,6 +40,7 @@ import { useMenu, layerIconFor, type MenuItem } from './common';
 import type { RNode } from '../model/types';
 import { blobToDataUrl, inVsCode, post, request } from '../editor/host';
 import { createAssetFile } from './AssetControls';
+import { setReviewMode } from '../editor/review';
 
 export function SideToggle() {
   const leftOpen = useStore(s => s.leftOpen);
@@ -58,6 +63,7 @@ export function Toolbar() {
   const shapeTool = useStore(s => s.shapeTool);
   const selectTool = useStore(s => s.selectTool);
   const leftOpen = useStore(s => s.leftOpen);
+  const reviewMode = useStore(s => s.reviewMode);
   const menu = useMenu();
   const setTool = (t: Tool) => useStore.setState({ tool: t });
   const ShapeIcon = SHAPES.find(s => s.tool === shapeTool)?.Icon ?? Square;
@@ -108,11 +114,25 @@ export function Toolbar() {
       {btn('frame', Frame, 'Frame (F)')}
       {btn('note', StickyNote, 'Note (N)')}
       {btn('hand', Hand, 'Hand (H)')}
+      {btn('comment', MessageSquare, 'Comment (C)')}
       <button className="tool" title="Components" onClick={() => useStore.setState({ leftOpen: true, leftTab: 'components' })}>
         <Component strokeWidth={1.75} />
       </button>
       <button className="tool" title="Variables & themes" onClick={() => useStore.setState({ modal: 'variables' })}>
         <Palette strokeWidth={1.75} />
+      </button>
+      <button className="tool" title="Find & replace (Ctrl+F)" onClick={() => useStore.setState({ modal: 'find' })}>
+        <Search strokeWidth={1.75} />
+      </button>
+      <button className="tool" title="Design lint" onClick={() => useStore.setState({ modal: 'lint' })}>
+        <ShieldCheck strokeWidth={1.75} />
+      </button>
+      <button
+        className={'tool' + (reviewMode ? ' active' : '')}
+        title={reviewMode ? 'Review mode ON: AI edits wait for you to accept them' : 'Review mode OFF: AI edits apply immediately'}
+        onClick={() => setReviewMode(!reviewMode)}
+      >
+        <ListChecks strokeWidth={1.75} />
       </button>
       <button className="tool" title="Keyboard shortcuts (Ctrl+/)" onClick={() => useStore.setState({ modal: 'shortcuts' })}>
         <Keyboard strokeWidth={1.75} />

@@ -1545,3 +1545,81 @@ html.light .modal {
   top: 0;
   transform-origin: 0 0;
 }
+
+/* ---------- component states ---------- */
+.state-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.state-chip { height: 22px; padding: 0 8px; border-radius: 6px; background: var(--control); color: var(--fg-2); font-size: 11px; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+.state-chip:hover { background: var(--control-hover); }
+.state-chip.on { background: var(--component); color: #fff; }
+.state-chip-x { display: inline-flex; opacity: 0.6; padding: 0; background: none; color: inherit; }
+.state-chip-x:hover { opacity: 1; }
+.state-chip-x svg { width: 10px; height: 10px; }
+.state-add { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-width: 0; }
+.state-add .text-input { flex: 1 1 100%; min-width: 0; }
+.state-add .rp-btn { padding: 0 6px; white-space: nowrap; }
+.text-input { height: 24px; border-radius: 6px; border: 1px solid var(--input-border); background: transparent; color: var(--fg); font: inherit; font-size: 11px; padding: 0 7px; outline: none; }
+.text-input:focus { border-color: var(--sel); }
+.hint { font-size: 10px; color: var(--muted); line-height: 1.4; white-space: normal; overflow-wrap: anywhere; min-width: 0; }
+.canvas-banner { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); z-index: 30; display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 12px; border-radius: 10px; background: var(--island); box-shadow: var(--shadow); font-size: 11px; color: var(--fg); white-space: nowrap; }
+.canvas-banner b { color: var(--fg-strong); font-weight: 600; }
+.canvas-banner .rp-btn { padding: 0 10px; }
+.canvas-banner .rp-btn.primary { background: var(--primary); color: var(--primary-fg); }
+.canvas-banner.state { border: 1px solid var(--component); }
+.canvas-banner.review { border: 1px solid var(--sel); }
+
+/* ---------- prototype ---------- */
+.proto-arrows { position: absolute; inset: 0; pointer-events: none; overflow: visible; z-index: 4; }
+.proto-arrows path { fill: none; stroke: var(--sel); stroke-width: 1.5; }
+.proto-arrows circle { fill: var(--sel); }
+.present-hit { cursor: pointer; }
+
+/* ---------- comments ---------- */
+.comment-pin { position: absolute; width: 24px; height: 24px; margin: -24px 0 0 0; border-radius: 12px 12px 12px 2px; background: #f5a524; color: #18181b; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0,0,0,.35); cursor: pointer; pointer-events: auto; z-index: 6; }
+.comment-pin.resolved { background: var(--control-hover); color: var(--muted); }
+.comment-pin.agent { background: #a78bfa; }
+.comment-pop { position: absolute; width: 260px; z-index: 40; background: var(--popover); border-radius: 12px; box-shadow: var(--shadow); padding: 10px; display: grid; gap: 8px; font-size: 12px; color: var(--fg); pointer-events: auto; }
+.comment-pop textarea { width: 100%; min-height: 54px; resize: vertical; border-radius: 8px; border: 1px solid var(--input-border); background: transparent; color: var(--fg); font: inherit; padding: 6px 8px; outline: none; box-sizing: border-box; }
+.comment-msg { display: grid; gap: 2px; }
+.comment-msg .who { font-size: 10px; color: var(--muted); }
+.comment-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.comment-actions .rp-btn { padding: 0 10px; }
+
+/* ---------- find & replace / lint ---------- */
+.find-modal, .lint-modal { width: 520px; max-height: 70vh; display: grid; grid-template-rows: auto auto 1fr; gap: 10px; }
+.find-row { display: flex; gap: 6px; align-items: center; }
+.find-row .text-input { flex: 1; height: 28px; font-size: 12px; }
+.find-results, .lint-results { overflow: auto; display: grid; gap: 2px; align-content: start; min-height: 80px; }
+.find-hit, .lint-hit { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; padding: 5px 8px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+.find-hit:hover, .lint-hit:hover { background: var(--row-hover); }
+.find-hit mark { background: rgba(245, 165, 36, 0.35); color: inherit; border-radius: 2px; }
+.find-hit .where, .lint-hit .where { color: var(--muted); font-size: 10px; }
+.lint-hit .sev { font-size: 9px; font-weight: 700; text-transform: uppercase; padding: 1px 5px; border-radius: 4px; }
+.lint-hit .sev.error { background: rgba(229, 72, 77, 0.2); color: #ff6b70; }
+.lint-hit .sev.warning { background: rgba(245, 165, 36, 0.2); color: #f5a524; }
+.lint-hit .sev.info { background: var(--control); color: var(--muted); }
+
+/* ---------- gap handles & spacing guides ---------- */
+.gap-handle { position: absolute; pointer-events: auto; z-index: 7; display: flex; align-items: center; justify-content: center; }
+.gap-handle::after { content: ''; background: #f472b6; border-radius: 2px; }
+.gap-handle.h { cursor: ew-resize; }
+.gap-handle.h::after { width: 2px; height: 12px; }
+.gap-handle.v { cursor: ns-resize; }
+.gap-handle.v::after { width: 12px; height: 2px; }
+.gap-handle:hover { background: rgba(244, 114, 182, 0.18); }
+.gap-label { position: absolute; z-index: 8; background: #f472b6; color: #fff; font-size: 10px; padding: 1px 4px; border-radius: 3px; pointer-events: none; transform: translate(-50%, -50%); }
+.space-guide { position: absolute; z-index: 7; pointer-events: none; background: #f472b6; }
+.space-guide-label { position: absolute; z-index: 8; pointer-events: none; background: #f472b6; color: #fff; font-size: 10px; padding: 0 4px; border-radius: 3px; transform: translate(-50%, -50%); }
+
+/* ---------- prototype transitions ---------- */
+.present-anim { display: contents; }
+.present-anim > .present-stage { animation-duration: 260ms; animation-timing-function: cubic-bezier(.2,.7,.2,1); animation-fill-mode: both; }
+.t-dissolve > .present-stage { animation-name: pen-fade; }
+.t-slide-left > .present-stage { animation-name: pen-from-right; }
+.t-slide-right > .present-stage { animation-name: pen-from-left; }
+.t-slide-up > .present-stage { animation-name: pen-from-bottom; }
+.t-slide-down > .present-stage { animation-name: pen-from-top; }
+@keyframes pen-fade { from { opacity: 0 } }
+@keyframes pen-from-right { from { transform: translateX(40%); opacity: 0 } }
+@keyframes pen-from-left { from { transform: translateX(-40%); opacity: 0 } }
+@keyframes pen-from-bottom { from { transform: translateY(40%); opacity: 0 } }
+@keyframes pen-from-top { from { transform: translateY(-40%); opacity: 0 } }

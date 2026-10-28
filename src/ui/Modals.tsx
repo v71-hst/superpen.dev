@@ -6,15 +6,16 @@ import { defaultTheme, resolveVariable, isVarRef } from '../model/resolve';
 import { colorCss } from '../render/paint';
 import { PaintPopover } from './ColorPicker';
 import { CheckRow, Select } from './common';
+import { FindReplace, LintPanel } from './FindLint';
 
 export function Modals() {
   const modal = useStore(s => s.modal);
   if (!modal) return null;
   const close = () => useStore.setState({ modal: null });
-  const titles: Record<string, string> = { shortcuts: 'Keyboard Shortcuts', variables: 'Variables & Themes', settings: 'Settings', about: 'About' };
+  const titles: Record<string, string> = { shortcuts: 'Keyboard Shortcuts', variables: 'Variables & Themes', settings: 'Settings', about: 'About', find: 'Find & Replace', lint: 'Design Lint' };
   return (
     <div className="modal-backdrop" onPointerDown={e => e.target === e.currentTarget && close()} onKeyDown={e => e.key === 'Escape' && close()}>
-      <div className="modal" style={modal === 'settings' || modal === 'about' ? { width: 520 } : undefined}>
+      <div className="modal" style={modal === 'settings' || modal === 'about' || modal === 'find' || modal === 'lint' ? { width: 560 } : undefined}>
         <div className="modal-head">
           {titles[modal]}
           <button className="icon-btn" onClick={close}>
@@ -26,6 +27,8 @@ export function Modals() {
           {modal === 'variables' && <Variables />}
           {modal === 'settings' && <Settings />}
           {modal === 'about' && <About />}
+          {modal === 'find' && <FindReplace />}
+          {modal === 'lint' && <LintPanel />}
         </div>
       </div>
     </div>

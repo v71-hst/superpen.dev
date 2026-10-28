@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="400" viewBox="0 0 1280 400" font-family="Segoe UI, -apple-system, Helvetica, Arial, sans-serif">
+  <defs>
+    <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="1" fill="#2e2e33"/>
+    </pattern>
+    <linearGradient id="glow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3d99ff"/>
+      <stop offset="1" stop-color="#d946ef"/>
+    </linearGradient>
+    <linearGradient id="fade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#18181b" stop-opacity="1"/>
+      <stop offset="0.55" stop-color="#18181b" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#18181b" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <!-- canvas -->
+  <rect width="1280" height="400" rx="18" fill="#18181b"/>
+  <rect width="1280" height="400" rx="18" fill="url(#dots)"/>
+
+  <!-- design on the canvas (right side) -->
+  <g transform="translate(700 58)">
+    <text x="0" y="-10" font-size="12" fill="#979797">Shop / Item card</text>
+    <rect width="250" height="290" rx="16" fill="#ffffff" filter="url(#shadow)"/>
+    <rect x="16" y="16" width="218" height="130" rx="10" fill="url(#glow)" opacity="0.9"/>
+    <circle cx="125" cy="81" r="34" fill="#ffffff" opacity="0.25"/>
+    <path d="M125 58 l9 18 20 3 -14 14 3 20 -18 -9 -18 9 3 -20 -14 -14 20 -3z" fill="#ffffff"/>
+    <text x="16" y="176" font-size="17" font-weight="700" fill="#18181b">Star Blade</text>
+    <text x="16" y="198" font-size="12" fill="#71717a">Legendary · +40 power</text>
+    <!-- button in its hover state -->
+    <rect x="16" y="226" width="218" height="44" rx="10" fill="#d946ef"/>
+    <text x="125" y="253" font-size="14" font-weight="600" fill="#ffffff" text-anchor="middle">Buy · 250</text>
+    <!-- selection on the button -->
+    <rect x="16" y="226" width="218" height="44" rx="10" fill="none" stroke="#d946ef" stroke-width="2"/>
+    <g fill="#ffffff" stroke="#d946ef" stroke-width="1.5">
+      <rect x="12" y="222" width="8" height="8"/><rect x="230" y="222" width="8" height="8"/>
+      <rect x="12" y="266" width="8" height="8"/><rect x="230" y="266" width="8" height="8"/>
+    </g>
+    <rect x="96" y="280" width="58" height="18" rx="4" fill="#d946ef"/>
+    <text x="125" y="293" font-size="11" fill="#fff" text-anchor="middle">hover</text>
+  </g>
+
+  <!-- second screen + prototype link -->
+  <g transform="translate(1030 92)">
+    <text x="0" y="-10" font-size="12" fill="#979797">Checkout</text>
+    <rect width="190" height="222" rx="14" fill="#f4f4f5" filter="url(#shadow)"/>
+    <rect x="16" y="18" width="110" height="12" rx="6" fill="#d4d4d8"/>
+    <rect x="16" y="40" width="158" height="8" rx="4" fill="#e4e4e7"/>
+    <rect x="16" y="56" width="130" height="8" rx="4" fill="#e4e4e7"/>
+    <rect x="16" y="166" width="158" height="38" rx="10" fill="#3d99ff"/>
+  </g>
+  <path d="M950 307 C 995 307, 985 175, 1028 175" fill="none" stroke="#3d99ff" stroke-width="2"/>
+  <circle cx="950" cy="307" r="4" fill="#3d99ff"/>
+  <path d="M1020 169 L1028 175 L1020 181" fill="none" stroke="#3d99ff" stroke-width="2"/>
+
+  <!-- smart guide + spacing label -->
+  <line x1="716" y1="74" x2="716" y2="328" stroke="#f472b6" stroke-width="1"/>
+  <g stroke="#f472b6" stroke-width="1"><line x1="712" y1="74" x2="720" y2="74"/><line x1="712" y1="328" x2="720" y2="328"/></g>
+  <line x1="950" y1="210" x2="1030" y2="210" stroke="#f472b6" stroke-width="1"/>
+  <rect x="975" y="201" width="30" height="17" rx="3" fill="#f472b6"/>
+  <text x="990" y="213.5" font-size="10.5" fill="#fff" text-anchor="middle">80</text>
+
+  <!-- comment pin -->
+  <g transform="translate(902 52)">
+    <path d="M0 14 A14 14 0 1 1 14 28 H0 Z" fill="#f5a524"/>
+    <text x="14" y="19" font-size="12" font-weight="700" fill="#18181b" text-anchor="middle">1</text>
+  </g>
+  <g transform="translate(938 40)" filter="url(#shadow)">
+    <rect width="168" height="46" rx="10" fill="#27272a"/>
+    <text x="12" y="19" font-size="10" fill="#a1a1aa">You → Claude</text>
+    <text x="12" y="35" font-size="12" fill="#f4f4f5">Make the price pop more</text>
+  </g>
+
+  <!-- fade so the title reads cleanly -->
+  <rect width="760" height="400" fill="url(#fade)"/>
+
+  <!-- tool column -->
+  <g transform="translate(36 72)">
+    <rect width="44" height="256" rx="14" fill="#27272a" stroke="#3a3a40"/>
+    <g fill="none" stroke="#c8c8c8" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="6" y="8" width="32" height="32" rx="8" fill="#3f3f46" stroke="none"/>
+      <path d="M17 17 l12 5 -5 2 -2 5z"/>
+      <rect x="15" y="60" width="14" height="14" rx="2"/>
+      <path d="M15 112 l7 -10 7 10 -7 5z"/>
+      <path d="M16 142 h12 M22 142 v14"/>
+      <path d="M15 176 v16 M29 176 v16 M11 180 h22 M11 188 h22"/>
+      <path d="M14 214 h16 v11 h-9 l-5 4 v-4 h-2 z"/>
+    </g>
+  </g>
+
+  <!-- title -->
+  <g transform="translate(118 0)">
+    <text x="0" y="168" font-size="64" font-weight="800" fill="#f4f4f5" letter-spacing="-1.5">super<tspan fill="url(#glow)">pen</tspan>.dev</text>
+    <text x="2" y="210" font-size="21" fill="#c8c8c8">Design .pen UIs right inside VS Code</text>
+    <text x="2" y="238" font-size="21" fill="#c8c8c8">and let Claude design alongside you.</text>
+    <g font-size="13" fill="#e4e4e7">
+      <rect x="2" y="268" width="128" height="28" rx="14" fill="#27272a" stroke="#3a3a40"/>
+      <text x="66" y="286.5" text-anchor="middle">VS Code extension</text>
+      <rect x="140" y="268" width="112" height="28" rx="14" fill="#27272a" stroke="#3a3a40"/>
+      <text x="196" y="286.5" text-anchor="middle">MCP for Claude</text>
+      <rect x="262" y="268" width="100" height="28" rx="14" fill="#27272a" stroke="#3a3a40"/>
+      <text x="312" y="286.5" text-anchor="middle">GPU shaders</text>
+      <rect x="372" y="268" width="138" height="28" rx="14" fill="#27272a" stroke="#3a3a40"/>
+      <text x="441" y="286.5" text-anchor="middle">States + prototypes</text>
+    </g>
+  </g>
+</svg>

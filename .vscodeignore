@@ -13,3 +13,4 @@ examples/**
 release/**
 .gitignore
 README.md
+media/banner.*
