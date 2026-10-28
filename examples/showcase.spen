@@ -3,6 +3,1685 @@
   "children": [
     {
       "type": "frame",
+      "id": "showcase",
+      "name": "Superpencil Showcase",
+      "x": 0,
+      "y": 0,
+      "width": 1440,
+      "height": "fit_content",
+      "layout": "vertical",
+      "gap": 56,
+      "padding": 64,
+      "clip": true,
+      "fill": [
+        {
+          "type": "color",
+          "color": "$bg"
+        },
+        {
+          "type": "gradient",
+          "gradientType": "radial",
+          "center": {
+            "x": 0.15,
+            "y": 0
+          },
+          "size": {
+            "width": 1.2,
+            "height": 0.6
+          },
+          "colors": [
+            {
+              "color": "#7C3AED33",
+              "position": 0
+            },
+            {
+              "color": "#7C3AED00",
+              "position": 1
+            }
+          ]
+        }
+      ],
+      "children": [
+        {
+          "type": "frame",
+          "id": "nav",
+          "name": "Nav",
+          "width": "fill_container",
+          "layout": "horizontal",
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "brand",
+              "name": "Brand",
+              "layout": "horizontal",
+              "gap": 10,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "brandMark",
+                  "width": 34,
+                  "height": 34,
+                  "cornerRadius": 10,
+                  "layout": "horizontal",
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "fill": {
+                    "type": "gradient",
+                    "gradientType": "linear",
+                    "rotation": 225,
+                    "colors": [
+                      {
+                        "color": "$accent-2",
+                        "position": 0
+                      },
+                      {
+                        "color": "$accent",
+                        "position": 1
+                      }
+                    ]
+                  },
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "brandIcon",
+                      "library": "lucide",
+                      "icon": "pencil",
+                      "width": 18,
+                      "height": 18,
+                      "fill": "$text"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "brandName",
+                  "content": "Superpencil",
+                  "fontFamily": "$font",
+                  "fontSize": 19,
+                  "fill": "$text",
+                  "fontWeight": "800",
+                  "letterSpacing": -0.5
+                },
+                {
+                  "type": "text",
+                  "id": "brandDomain",
+                  "content": "superpen.dev",
+                  "fontFamily": "JetBrains Mono",
+                  "fontSize": 13,
+                  "fill": "$text-dim",
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "navLinks",
+              "name": "Links",
+              "layout": "horizontal",
+              "gap": 28,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "nl1",
+                  "content": "Try it",
+                  "fontFamily": "$font",
+                  "fontSize": 14,
+                  "fill": "$text-dim",
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "nl2",
+                  "content": "Features",
+                  "fontFamily": "$font",
+                  "fontSize": 14,
+                  "fill": "$text-dim",
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "nl3",
+                  "content": "Formats",
+                  "fontFamily": "$font",
+                  "fontSize": 14,
+                  "fill": "$text-dim",
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "nl4",
+                  "content": "AI",
+                  "fontFamily": "$font",
+                  "fontSize": 14,
+                  "fill": "$text-dim",
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "nl5",
+                  "content": "Roblox",
+                  "fontFamily": "$font",
+                  "fontSize": 14,
+                  "fill": "$text-dim",
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "navTag",
+              "name": "Tag",
+              "layout": "horizontal",
+              "gap": 8,
+              "alignItems": "center",
+              "padding": [
+                8,
+                14
+              ],
+              "cornerRadius": 999,
+              "fill": "#34D3991A",
+              "stroke": "#34D39940",
+              "strokeWidth": 1,
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "navTagI",
+                  "library": "lucide",
+                  "icon": "puzzle",
+                  "width": 14,
+                  "height": 14,
+                  "fill": "$success"
+                },
+                {
+                  "type": "text",
+                  "id": "navTagT",
+                  "content": "Free VS Code extension",
+                  "fontFamily": "$font",
+                  "fontSize": 13,
+                  "fill": "$text",
+                  "fontWeight": "600"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "hero",
+          "name": "Hero",
+          "width": "fill_container",
+          "height": 500,
+          "layout": "vertical",
+          "gap": 22,
+          "padding": 56,
+          "justifyContent": "center",
+          "cornerRadius": 28,
+          "clip": true,
+          "fill": {
+            "type": "shader",
+            "url": "./shaders/showcase-waves.glsl",
+            "uniforms": {
+              "u_speed": 0.35
+            }
+          },
+          "stroke": "#FFFFFF1F",
+          "strokeWidth": 1,
+          "children": [
+            {
+              "type": "frame",
+              "id": "heroBadge",
+              "name": "Badge",
+              "layout": "horizontal",
+              "gap": 8,
+              "padding": [
+                6,
+                12
+              ],
+              "cornerRadius": 999,
+              "alignItems": "center",
+              "fill": "#FFFFFF14",
+              "stroke": "#FFFFFF26",
+              "strokeWidth": 1,
+              "children": [
+                {
+                  "type": "ellipse",
+                  "id": "heroDot",
+                  "width": 8,
+                  "height": 8,
+                  "fill": "$success",
+                  "effect": {
+                    "type": "shadow",
+                    "shadowType": "outer",
+                    "color": "#34D399",
+                    "offset": {
+                      "x": 0,
+                      "y": 0
+                    },
+                    "blur": 8
+                  }
+                },
+                {
+                  "type": "text",
+                  "id": "heroBadgeText",
+                  "content": "NEW · Eyedropper, Codex support and .spen files",
+                  "fontFamily": "$font",
+                  "fontSize": 13,
+                  "fill": "$text",
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "heroTitle",
+              "content": "Design game & app UI\nright inside VS Code.",
+              "fontFamily": "$font",
+              "fontSize": 62,
+              "fill": "$text",
+              "fontWeight": "800",
+              "textGrowth": "fixed-width",
+              "width": 780,
+              "lineHeight": 1.05,
+              "letterSpacing": -2
+            },
+            {
+              "type": "text",
+              "id": "heroSub",
+              "content": "Superpencil is a visual editor for .spen and pen.dev .pen files. Build screens with components, live scripts and GPU shaders, and let Claude Code or Codex design alongside you.",
+              "fontFamily": "$font",
+              "fontSize": 18,
+              "fill": "#CBD5E1",
+              "textGrowth": "fixed-width",
+              "width": 640,
+              "lineHeight": 1.55
+            },
+            {
+              "type": "frame",
+              "id": "heroCtas",
+              "name": "Actions",
+              "layout": "horizontal",
+              "gap": 12,
+              "children": [
+                {
+                  "type": "ref",
+                  "id": "ctaInstall",
+                  "ref": "btnPrimary",
+                  "width": null,
+                  "height": "fill_container",
+                  "descendants": {
+                    "bpIcon": {
+                      "icon": "download"
+                    },
+                    "bpLabel": {
+                      "content": "Install the VSIX"
+                    }
+                  }
+                },
+                {
+                  "type": "ref",
+                  "id": "ctaGuide",
+                  "ref": "btnGhost",
+                  "width": null,
+                  "height": "fill_container",
+                  "descendants": {
+                    "bgIcon": {
+                      "icon": "arrow-down"
+                    },
+                    "bgLabel": {
+                      "content": "Try it on this page"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "heroHint",
+              "name": "Hint",
+              "layout": "horizontal",
+              "gap": 8,
+              "alignItems": "center",
+              "padding": [
+                6,
+                12
+              ],
+              "cornerRadius": 999,
+              "fill": "#22D3EE14",
+              "stroke": "#22D3EE33",
+              "strokeWidth": 1,
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "heroHintI",
+                  "library": "lucide",
+                  "icon": "info",
+                  "width": 14,
+                  "height": 14,
+                  "fill": "$accent-2"
+                },
+                {
+                  "type": "text",
+                  "id": "heroHintT",
+                  "content": "This background is a live GLSL shader: shaders/showcase-waves.glsl",
+                  "fontFamily": "$font",
+                  "fontSize": 13,
+                  "fill": "#A5F3FC",
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "ellipse",
+              "id": "orb",
+              "name": "Orb (shader)",
+              "layoutPosition": "absolute",
+              "x": 900,
+              "y": 90,
+              "width": 300,
+              "height": 300,
+              "fill": {
+                "type": "shader",
+                "url": "./shaders/showcase-orb.glsl"
+              },
+              "effect": {
+                "type": "shadow",
+                "shadowType": "outer",
+                "color": "#F472B655",
+                "offset": {
+                  "x": 0,
+                  "y": 0
+                },
+                "blur": 80
+              }
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "facts",
+          "name": "Facts",
+          "width": "fill_container",
+          "layout": "horizontal",
+          "gap": 20,
+          "children": [
+            {
+              "type": "ref",
+              "id": "fFormats",
+              "ref": "statCard",
+              "width": "fill_container",
+              "height": "fill_container",
+              "descendants": {
+                "statTop/statLabel": {
+                  "content": "File formats"
+                },
+                "statValue": {
+                  "content": ".spen + .pen",
+                  "fontSize": 32
+                },
+                "statTop/statBadge": {
+                  "fill": "#34D3991F"
+                },
+                "statTop/statBadge/statArrow": {
+                  "icon": "arrow-left-right",
+                  "fill": "$success"
+                },
+                "statTop/statBadge/statDelta": {
+                  "content": "lossless",
+                  "fill": "$success"
+                },
+                "statFoot": {
+                  "content": "Same JSON: save a copy as either"
+                }
+              }
+            },
+            {
+              "type": "ref",
+              "id": "fTools",
+              "ref": "statCard",
+              "width": "fill_container",
+              "height": "fill_container",
+              "descendants": {
+                "statTop/statLabel": {
+                  "content": "MCP tools"
+                },
+                "statValue": {
+                  "content": "27",
+                  "fontSize": 32
+                },
+                "statTop/statBadge": {
+                  "fill": "#22D3EE1F"
+                },
+                "statTop/statBadge/statArrow": {
+                  "icon": "bot",
+                  "fill": "#67E8F9"
+                },
+                "statTop/statBadge/statDelta": {
+                  "content": "AI",
+                  "fill": "#67E8F9"
+                },
+                "statFoot": {
+                  "content": "Read, edit, screenshot and lint"
+                }
+              }
+            },
+            {
+              "type": "ref",
+              "id": "fLock",
+              "ref": "statCard",
+              "width": "fill_container",
+              "height": "fill_container",
+              "descendants": {
+                "statTop/statLabel": {
+                  "content": "Edit locks"
+                },
+                "statValue": {
+                  "content": "1 per file",
+                  "fontSize": 32
+                },
+                "statTop/statBadge": {
+                  "fill": "#FBBF241F"
+                },
+                "statTop/statBadge/statArrow": {
+                  "icon": "lock",
+                  "fill": "$warning"
+                },
+                "statTop/statBadge/statDelta": {
+                  "content": "safe",
+                  "fill": "$warning"
+                },
+                "statFoot": {
+                  "content": "Chats never overwrite each other"
+                }
+              }
+            },
+            {
+              "type": "ref",
+              "id": "fZoom",
+              "ref": "statCard",
+              "width": "fill_container",
+              "height": "fill_container",
+              "descendants": {
+                "statTop/statLabel": {
+                  "content": "Huge files"
+                },
+                "statValue": {
+                  "content": "33% zoom",
+                  "fontSize": 32
+                },
+                "statTop/statBadge": {
+                  "fill": "#34D3991F"
+                },
+                "statTop/statBadge/statArrow": {
+                  "icon": "gauge",
+                  "fill": "$success"
+                },
+                "statTop/statBadge/statDelta": {
+                  "content": "fast",
+                  "fill": "$success"
+                },
+                "statFoot": {
+                  "content": "Below it, frames draw as images"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "tryIt",
+          "name": "Try it on this page",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 24,
+          "children": [
+            {
+              "type": "frame",
+              "id": "tryItHead",
+              "name": "Heading",
+              "layout": "vertical",
+              "gap": 10,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "tryItEye",
+                  "content": "START HERE",
+                  "fontFamily": "$font",
+                  "fontSize": 12,
+                  "fill": "$accent-2",
+                  "fontWeight": "700",
+                  "letterSpacing": 2
+                },
+                {
+                  "type": "text",
+                  "id": "tryItTitle",
+                  "content": "Try it on this page",
+                  "fontFamily": "$font",
+                  "fontSize": 34,
+                  "fill": "$text",
+                  "fontWeight": "800",
+                  "letterSpacing": -1
+                },
+                {
+                  "type": "text",
+                  "id": "tryItSub",
+                  "content": "Everything on this canvas is editable. Four quick things to try, each one shows a different part of Superpencil.",
+                  "fontFamily": "$font",
+                  "fontSize": 16,
+                  "fill": "$text-dim",
+                  "textGrowth": "fixed-width",
+                  "width": 760,
+                  "lineHeight": 1.55
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "steps",
+              "name": "Steps",
+              "width": "fill_container",
+              "layout": "horizontal",
+              "gap": 20,
+              "children": [
+                {
+                  "type": "ref",
+                  "id": "st1",
+                  "ref": "stepCard",
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "descendants": {
+                    "stepHead/stepNum/stepNumT": {
+                      "content": "1"
+                    },
+                    "stepHead/stepKey/stepKeyT": {
+                      "content": "I"
+                    },
+                    "stepTitle": {
+                      "content": "Pick a colour"
+                    },
+                    "stepBody": {
+                      "content": "Press I and click any layer to copy its colour. Select a layer first to paint it instead (hold Shift for its stroke)."
+                    }
+                  }
+                },
+                {
+                  "type": "ref",
+                  "id": "st2",
+                  "ref": "stepCard",
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "descendants": {
+                    "stepHead/stepNum/stepNumT": {
+                      "content": "2"
+                    },
+                    "stepHead/stepKey/stepKeyT": {
+                      "content": "Ctrl Alt K"
+                    },
+                    "stepTitle": {
+                      "content": "Edit a component"
+                    },
+                    "stepBody": {
+                      "content": "These cards are instances of Card/Step in the Components frame on the right. Change it there and every copy updates."
+                    }
+                  }
+                },
+                {
+                  "type": "ref",
+                  "id": "st3",
+                  "ref": "stepCard",
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "descendants": {
+                    "stepHead/stepNum/stepNumT": {
+                      "content": "3"
+                    },
+                    "stepHead/stepKey/stepKeyT": {
+                      "content": "Design panel"
+                    },
+                    "stepTitle": {
+                      "content": "Tweak a script"
+                    },
+                    "stepBody": {
+                      "content": "Select the bar chart below. Its values, colours and highlight are inputs of scripts/showcase-bars.js."
+                    }
+                  }
+                },
+                {
+                  "type": "ref",
+                  "id": "st4",
+                  "ref": "stepCard",
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "descendants": {
+                    "stepHead/stepNum/stepNumT": {
+                      "content": "4"
+                    },
+                    "stepHead/stepKey/stepKeyT": {
+                      "content": "MCP"
+                    },
+                    "stepTitle": {
+                      "content": "Ask an AI"
+                    },
+                    "stepBody": {
+                      "content": "Register the MCP server, then ask Claude Code or Codex: \"select showcase.spen and add a pricing section\"."
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "live",
+          "name": "Scripts draw content for you",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 24,
+          "children": [
+            {
+              "type": "frame",
+              "id": "liveHead",
+              "name": "Heading",
+              "layout": "vertical",
+              "gap": 10,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "liveEye",
+                  "content": "LIVE CONTENT",
+                  "fontFamily": "$font",
+                  "fontSize": 12,
+                  "fill": "$accent-2",
+                  "fontWeight": "700",
+                  "letterSpacing": 2
+                },
+                {
+                  "type": "text",
+                  "id": "liveTitle",
+                  "content": "Scripts draw content for you",
+                  "fontFamily": "$font",
+                  "fontSize": 34,
+                  "fill": "$text",
+                  "fontWeight": "800",
+                  "letterSpacing": -1
+                },
+                {
+                  "type": "text",
+                  "id": "liveSub",
+                  "content": "A script node runs a JavaScript file and draws whatever it returns. Its @input lines become controls in the Design panel, and editing the .js file next to your design updates the canvas straight away.",
+                  "fontFamily": "$font",
+                  "fontSize": 16,
+                  "fill": "$text-dim",
+                  "textGrowth": "fixed-width",
+                  "width": 760,
+                  "lineHeight": 1.55
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "chartsRow",
+              "name": "Charts",
+              "width": "fill_container",
+              "layout": "horizontal",
+              "gap": 20,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "revCard",
+                  "name": "Revenue card",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 18,
+                  "padding": 28,
+                  "cornerRadius": "$radius",
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "revHead",
+                      "width": "fill_container",
+                      "layout": "horizontal",
+                      "justifyContent": "space_between",
+                      "alignItems": "end",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "revTitles",
+                          "layout": "vertical",
+                          "gap": 4,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "revLabel",
+                              "content": "Script node: bar chart",
+                              "fontFamily": "$font",
+                              "fontSize": 14,
+                              "fontWeight": "500",
+                              "fill": "$text-dim"
+                            },
+                            {
+                              "type": "text",
+                              "id": "revValue",
+                              "content": "Monthly visits",
+                              "fontFamily": "$font",
+                              "fontSize": 32,
+                              "fontWeight": "800",
+                              "letterSpacing": -1,
+                              "fill": "$text"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "revNote",
+                          "content": "scripts/showcase-bars.js",
+                          "fontFamily": "JetBrains Mono",
+                          "fontSize": 12,
+                          "fill": "$text-dim"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "script",
+                      "id": "barsScript",
+                      "name": "Bar chart (script)",
+                      "width": 856,
+                      "height": 260,
+                      "scriptUri": "./scripts/showcase-bars.js",
+                      "inputs": {
+                        "highlight": 11
+                      }
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "ringCard",
+                  "name": "Uptime card",
+                  "width": 380,
+                  "layout": "vertical",
+                  "gap": 12,
+                  "padding": 28,
+                  "alignItems": "center",
+                  "cornerRadius": "$radius",
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "ringTitle",
+                      "content": "Script node: progress ring",
+                      "width": "fill_container",
+                      "textGrowth": "fixed-width",
+                      "fontFamily": "$font",
+                      "fontSize": 14,
+                      "fontWeight": "500",
+                      "fill": "$text-dim"
+                    },
+                    {
+                      "type": "script",
+                      "id": "ringScript",
+                      "name": "Progress ring (script)",
+                      "width": 260,
+                      "height": 260,
+                      "scriptUri": "./scripts/showcase-ring.js",
+                      "inputs": {
+                        "value": 99.2,
+                        "label": "Uptime"
+                      }
+                    },
+                    {
+                      "type": "text",
+                      "id": "ringFoot",
+                      "content": "scripts/showcase-ring.js",
+                      "fontFamily": "JetBrains Mono",
+                      "fontSize": 12,
+                      "fill": "$text-dim"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "features",
+          "name": "Everything in Superpencil",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 20,
+          "children": [
+            {
+              "type": "frame",
+              "id": "featuresHead",
+              "name": "Heading",
+              "layout": "vertical",
+              "gap": 10,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "featuresEye",
+                  "content": "FEATURES",
+                  "fontFamily": "$font",
+                  "fontSize": 12,
+                  "fill": "$accent-2",
+                  "fontWeight": "700",
+                  "letterSpacing": 2
+                },
+                {
+                  "type": "text",
+                  "id": "featuresTitle",
+                  "content": "Everything in Superpencil",
+                  "fontFamily": "$font",
+                  "fontSize": 34,
+                  "fill": "$text",
+                  "fontWeight": "800",
+                  "letterSpacing": -1
+                },
+                {
+                  "type": "text",
+                  "id": "featuresSub",
+                  "content": "A pen.dev-style canvas with the extras game and app designers need.",
+                  "fontFamily": "$font",
+                  "fontSize": 16,
+                  "fill": "$text-dim",
+                  "textGrowth": "fixed-width",
+                  "width": 760,
+                  "lineHeight": 1.55
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "featRow1",
+              "name": "Features 1",
+              "width": "fill_container",
+              "layout": "horizontal",
+              "gap": 20,
+              "children": [
+                {
+                  "type": "ref",
+                  "id": "fe1",
+                  "ref": "featCard",
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "descendants": {
+                    "featIconWrap/featIcon": {
+                      "icon": "component"
+                    },
+                    "featTitle": {
+                      "content": "Components & states"
+                    },
+                    "featBody": {
+                      "content": "Reusable components with hover, pressed and disabled states, per-instance overrides and theme variables."
+                    }
+                  }
+                },
+                {
+                  "type": "ref",
+                  "id": "fe2",
+                  "ref": "featCard",
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "descendants": {
+                    "featIconWrap/featIcon": {
+                      "icon": "code-xml",
+                      "fill": "#67E8F9"
+                    },
+                    "featTitle": {
+                      "content": "Script nodes"
+                    },
+                    "featBody": {
+                      "content": "JavaScript files generate charts, rings and patterns. Inputs show up as controls in the Design panel."
+                    },
+                    "featIconWrap": {
+                      "fill": "#22D3EE24"
+                    }
+                  }
+                },
+                {
+                  "type": "ref",
+                  "id": "fe3",
+                  "ref": "featCard",
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "descendants": {
+                    "featIconWrap/featIcon": {
+                      "icon": "sparkles",
+                      "fill": "#F9A8D4"
+                    },
+                    "featTitle": {
+                      "content": "GPU shaders"
+                    },
+                    "featBody": {
+                      "content": "WebGL fills and effects with time, mouse and shape inputs. The hero, orb and terminal here are shaders."
+                    },
+                    "featIconWrap": {
+                      "fill": "#F472B624"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "featRow2",
+              "name": "Features 2",
+              "width": "fill_container",
+              "layout": "horizontal",
+              "gap": 20,
+              "children": [
+                {
+                  "type": "ref",
+                  "id": "fe4",
+                  "ref": "featCard",
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "descendants": {
+                    "featIconWrap/featIcon": {
+                      "icon": "bot",
+                      "fill": "#6EE7B7"
+                    },
+                    "featTitle": {
+                      "content": "AI co-design"
+                    },
+                    "featBody": {
+                      "content": "An MCP server lets Claude Code and Codex read, edit, screenshot and lint your designs, one edit lock per file."
+                    },
+                    "featIconWrap": {
+                      "fill": "#34D39924"
+                    }
+                  }
+                },
+                {
+                  "type": "ref",
+                  "id": "fe5",
+                  "ref": "featCard",
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "descendants": {
+                    "featIconWrap/featIcon": {
+                      "icon": "message-square",
+                      "fill": "#FCD34D"
+                    },
+                    "featTitle": {
+                      "content": "Comments & review mode"
+                    },
+                    "featBody": {
+                      "content": "Pin comments for the AI to act on. Review mode holds its edits until you Accept or Reject them."
+                    },
+                    "featIconWrap": {
+                      "fill": "#FBBF2424"
+                    }
+                  }
+                },
+                {
+                  "type": "ref",
+                  "id": "fe6",
+                  "ref": "featCard",
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "descendants": {
+                    "featIconWrap/featIcon": {
+                      "icon": "gamepad-2"
+                    },
+                    "featTitle": {
+                      "content": "Built for game UI"
+                    },
+                    "featBody": {
+                      "content": "Mobile-first frames, smart guides, Present mode and an experimental Roblox export. See the rune dial on the right."
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "formats",
+          "name": "One design, two file types",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 24,
+          "children": [
+            {
+              "type": "frame",
+              "id": "formatsHead",
+              "name": "Heading",
+              "layout": "vertical",
+              "gap": 10,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "formatsEye",
+                  "content": "FILE FORMATS",
+                  "fontFamily": "$font",
+                  "fontSize": 12,
+                  "fill": "$accent-2",
+                  "fontWeight": "700",
+                  "letterSpacing": 2
+                },
+                {
+                  "type": "text",
+                  "id": "formatsTitle",
+                  "content": "One design, two file types",
+                  "fontFamily": "$font",
+                  "fontSize": 34,
+                  "fill": "$text",
+                  "fontWeight": "800",
+                  "letterSpacing": -1
+                },
+                {
+                  "type": "text",
+                  "id": "formatsSub",
+                  "content": ".spen and .pen hold exactly the same JSON, so nothing is lost when you switch. Pick the one that fits where the file is going.",
+                  "fontFamily": "$font",
+                  "fontSize": 16,
+                  "fill": "$text-dim",
+                  "textGrowth": "fixed-width",
+                  "width": 760,
+                  "lineHeight": 1.55
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "fmtRow",
+              "name": "Formats",
+              "width": "fill_container",
+              "layout": "horizontal",
+              "gap": 20,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "fmtSpen",
+                  "name": ".spen card",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 14,
+                  "padding": 28,
+                  "cornerRadius": "$radius",
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "fmtSpenTop",
+                      "width": "fill_container",
+                      "layout": "horizontal",
+                      "justifyContent": "space_between",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "fmtSpenExt",
+                          "content": ".spen",
+                          "fontFamily": "JetBrains Mono",
+                          "fontSize": 40,
+                          "fill": "$accent-2",
+                          "fontWeight": "800",
+                          "letterSpacing": -1
+                        },
+                        {
+                          "type": "frame",
+                          "id": "fmtSpenWho",
+                          "layout": "horizontal",
+                          "padding": [
+                            4,
+                            10
+                          ],
+                          "cornerRadius": 8,
+                          "fill": "#FFFFFF0F",
+                          "stroke": "$border",
+                          "strokeWidth": 1,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "fmtSpenWhoT",
+                              "content": "Superpencil",
+                              "fontFamily": "$font",
+                              "fontSize": 12,
+                              "fill": "$text",
+                              "fontWeight": "600"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "fmtSpenL0",
+                      "width": "fill_container",
+                      "layout": "horizontal",
+                      "gap": 10,
+                      "alignItems": "start",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "fmtSpenL0I",
+                          "library": "lucide",
+                          "icon": "check",
+                          "width": 16,
+                          "height": 16,
+                          "fill": "$accent-2"
+                        },
+                        {
+                          "type": "text",
+                          "id": "fmtSpenL0T",
+                          "content": "The default for new designs",
+                          "fontFamily": "$font",
+                          "fontSize": 14,
+                          "fill": "$text",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "lineHeight": 1.55
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "fmtSpenL1",
+                      "width": "fill_container",
+                      "layout": "horizontal",
+                      "gap": 10,
+                      "alignItems": "start",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "fmtSpenL1I",
+                          "library": "lucide",
+                          "icon": "check",
+                          "width": 16,
+                          "height": 16,
+                          "fill": "$accent-2"
+                        },
+                        {
+                          "type": "text",
+                          "id": "fmtSpenL1T",
+                          "content": "Shows up in the Superpencil sidebar",
+                          "fontFamily": "$font",
+                          "fontSize": 14,
+                          "fill": "$text",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "lineHeight": 1.55
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "fmtSpenL2",
+                      "width": "fill_container",
+                      "layout": "horizontal",
+                      "gap": 10,
+                      "alignItems": "start",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "fmtSpenL2I",
+                          "library": "lucide",
+                          "icon": "check",
+                          "width": 16,
+                          "height": 16,
+                          "fill": "$accent-2"
+                        },
+                        {
+                          "type": "text",
+                          "id": "fmtSpenL2T",
+                          "content": "Opens straight into the visual editor",
+                          "fontFamily": "$font",
+                          "fontSize": 14,
+                          "fill": "$text",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "lineHeight": 1.55
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "fmtSwap",
+                  "name": "Swap",
+                  "width": 52,
+                  "height": 52,
+                  "cornerRadius": 999,
+                  "layout": "horizontal",
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "fill": "$surface-2",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "fmtSwapI",
+                      "library": "lucide",
+                      "icon": "arrow-left-right",
+                      "width": 22,
+                      "height": 22,
+                      "fill": "$text"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "fmtPen",
+                  "name": ".pen card",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 14,
+                  "padding": 28,
+                  "cornerRadius": "$radius",
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "fmtPenTop",
+                      "width": "fill_container",
+                      "layout": "horizontal",
+                      "justifyContent": "space_between",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "fmtPenExt",
+                          "content": ".pen",
+                          "fontFamily": "JetBrains Mono",
+                          "fontSize": 40,
+                          "fill": "#C4B5FD",
+                          "fontWeight": "800",
+                          "letterSpacing": -1
+                        },
+                        {
+                          "type": "frame",
+                          "id": "fmtPenWho",
+                          "layout": "horizontal",
+                          "padding": [
+                            4,
+                            10
+                          ],
+                          "cornerRadius": 8,
+                          "fill": "#FFFFFF0F",
+                          "stroke": "$border",
+                          "strokeWidth": 1,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "fmtPenWhoT",
+                              "content": "pen.dev",
+                              "fontFamily": "$font",
+                              "fontSize": 12,
+                              "fill": "$text",
+                              "fontWeight": "600"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "fmtPenL0",
+                      "width": "fill_container",
+                      "layout": "horizontal",
+                      "gap": 10,
+                      "alignItems": "start",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "fmtPenL0I",
+                          "library": "lucide",
+                          "icon": "check",
+                          "width": 16,
+                          "height": 16,
+                          "fill": "#C4B5FD"
+                        },
+                        {
+                          "type": "text",
+                          "id": "fmtPenL0T",
+                          "content": "Opens in Superpencil too",
+                          "fontFamily": "$font",
+                          "fontSize": 14,
+                          "fill": "$text",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "lineHeight": 1.55
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "fmtPenL1",
+                      "width": "fill_container",
+                      "layout": "horizontal",
+                      "gap": 10,
+                      "alignItems": "start",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "fmtPenL1I",
+                          "library": "lucide",
+                          "icon": "check",
+                          "width": 16,
+                          "height": 16,
+                          "fill": "#C4B5FD"
+                        },
+                        {
+                          "type": "text",
+                          "id": "fmtPenL1T",
+                          "content": "File menu: Save a copy as .pen",
+                          "fontFamily": "$font",
+                          "fontSize": 14,
+                          "fill": "$text",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "lineHeight": 1.55
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "fmtPenL2",
+                      "width": "fill_container",
+                      "layout": "horizontal",
+                      "gap": 10,
+                      "alignItems": "start",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "fmtPenL2I",
+                          "library": "lucide",
+                          "icon": "check",
+                          "width": 16,
+                          "height": 16,
+                          "fill": "#C4B5FD"
+                        },
+                        {
+                          "type": "text",
+                          "id": "fmtPenL2T",
+                          "content": "Keeps working in pen.dev and its tools",
+                          "fontFamily": "$font",
+                          "fontSize": 14,
+                          "fill": "$text",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "lineHeight": 1.55
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "ai",
+          "name": "Design with Claude Code or Codex",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 24,
+          "children": [
+            {
+              "type": "frame",
+              "id": "aiHead",
+              "name": "Heading",
+              "layout": "vertical",
+              "gap": 10,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "aiEye",
+                  "content": "AI",
+                  "fontFamily": "$font",
+                  "fontSize": 12,
+                  "fill": "$accent-2",
+                  "fontWeight": "700",
+                  "letterSpacing": 2
+                },
+                {
+                  "type": "text",
+                  "id": "aiTitle",
+                  "content": "Design with Claude Code or Codex",
+                  "fontFamily": "$font",
+                  "fontSize": 34,
+                  "fill": "$text",
+                  "fontWeight": "800",
+                  "letterSpacing": -1
+                },
+                {
+                  "type": "text",
+                  "id": "aiSub",
+                  "content": "Run \"Superpencil: Register MCP Server\" once. Then any chat can list your open designs, take an edit lock and change them while you watch. Every change is one undo step.",
+                  "fontFamily": "$font",
+                  "fontSize": 16,
+                  "fill": "$text-dim",
+                  "textGrowth": "fixed-width",
+                  "width": 760,
+                  "lineHeight": 1.55
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "terminal",
+              "name": "Terminal (shader effect)",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 8,
+              "padding": [
+                28,
+                32
+              ],
+              "cornerRadius": "$radius",
+              "fill": "#05080F",
+              "stroke": "#22D3EE33",
+              "strokeWidth": 1,
+              "effect": {
+                "type": "shader",
+                "url": "./shaders/showcase-scanlines.glsl",
+                "uniforms": {
+                  "u_spacing": 3,
+                  "u_shift": 1.5
+                }
+              },
+              "children": [
+                {
+                  "type": "text",
+                  "id": "t1",
+                  "content": "❯ codex › select_file showcase.spen --label \"Showcase builder\"",
+                  "fontFamily": "JetBrains Mono",
+                  "fontSize": 15,
+                  "fill": "$accent-2"
+                },
+                {
+                  "type": "text",
+                  "id": "t2",
+                  "content": "✓ edit lock acquired · shown in the editor as \"Showcase builder\"",
+                  "fontFamily": "JetBrains Mono",
+                  "fontSize": 15,
+                  "fill": "$success"
+                },
+                {
+                  "type": "text",
+                  "id": "t3",
+                  "content": "❯ apply_operations  [insert Try-it section, 4× Card/Step, recolour with $accent]",
+                  "fontFamily": "JetBrains Mono",
+                  "fontSize": 15,
+                  "fill": "#CBD5E1"
+                },
+                {
+                  "type": "text",
+                  "id": "t4",
+                  "content": "✓ 1 undo step · screenshot verified · lint_design: no problems",
+                  "fontFamily": "JetBrains Mono",
+                  "fontSize": 15,
+                  "fill": "$success"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "aiHints",
+              "layout": "horizontal",
+              "gap": 12,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "aiHint1",
+                  "name": "Hint",
+                  "layout": "horizontal",
+                  "gap": 8,
+                  "alignItems": "center",
+                  "padding": [
+                    6,
+                    12
+                  ],
+                  "cornerRadius": 999,
+                  "fill": "#22D3EE14",
+                  "stroke": "#22D3EE33",
+                  "strokeWidth": 1,
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "aiHint1I",
+                      "library": "lucide",
+                      "icon": "info",
+                      "width": 14,
+                      "height": 14,
+                      "fill": "$accent-2"
+                    },
+                    {
+                      "type": "text",
+                      "id": "aiHint1T",
+                      "content": "Turn on review mode to approve AI edits first",
+                      "fontFamily": "$font",
+                      "fontSize": 13,
+                      "fill": "#A5F3FC",
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "aiHint2",
+                  "name": "Hint",
+                  "layout": "horizontal",
+                  "gap": 8,
+                  "alignItems": "center",
+                  "padding": [
+                    6,
+                    12
+                  ],
+                  "cornerRadius": 999,
+                  "fill": "#22D3EE14",
+                  "stroke": "#22D3EE33",
+                  "strokeWidth": 1,
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "aiHint2I",
+                      "library": "lucide",
+                      "icon": "info",
+                      "width": 14,
+                      "height": 14,
+                      "fill": "$accent-2"
+                    },
+                    {
+                      "type": "text",
+                      "id": "aiHint2T",
+                      "content": "Press C to leave a comment for the AI",
+                      "fontFamily": "$font",
+                      "fontSize": 13,
+                      "fill": "#A5F3FC",
+                      "fontWeight": "500"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "footer",
+          "name": "Footer",
+          "width": "fill_container",
+          "layout": "horizontal",
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "padding": [
+            20,
+            0,
+            0,
+            0
+          ],
+          "stroke": "$border",
+          "strokeWidth": {
+            "top": 1,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "children": [
+            {
+              "type": "frame",
+              "id": "footBrand",
+              "layout": "horizontal",
+              "gap": 10,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "footName",
+                  "content": "Superpencil",
+                  "fontFamily": "$font",
+                  "fontSize": 15,
+                  "fill": "$text",
+                  "fontWeight": "700"
+                },
+                {
+                  "type": "text",
+                  "id": "footDomain",
+                  "content": "superpen.dev",
+                  "fontFamily": "JetBrains Mono",
+                  "fontSize": 13,
+                  "fill": "$text-dim",
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "footLinks",
+              "content": "github.com/v71-hst/superpen.dev  ·  Ctrl + / for all shortcuts",
+              "fontFamily": "$font",
+              "fontSize": 13,
+              "fill": "$text-dim",
+              "fontWeight": "500"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
       "id": "libFrame",
       "name": "Components",
       "x": 1560,
@@ -25,6 +1704,17 @@
           "fontSize": 20,
           "fontWeight": "700",
           "fill": "$text"
+        },
+        {
+          "type": "text",
+          "id": "libSub",
+          "content": "Main components live here. Every button and card on the Superpencil page is an instance: edit one of these and all copies update. Select one and open the Design panel to see its states.",
+          "fontFamily": "$font",
+          "fontSize": 14,
+          "fill": "$text-dim",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "lineHeight": 1.55
         },
         {
           "type": "frame",
@@ -268,73 +1958,37 @@
               "fill": "$text-dim"
             }
           ]
-        }
-      ]
-    },
-    {
-      "type": "frame",
-      "id": "showcase",
-      "name": "Pen Editor Showcase",
-      "x": 0,
-      "y": 0,
-      "width": 1440,
-      "height": "fit_content",
-      "layout": "vertical",
-      "gap": 28,
-      "padding": 64,
-      "clip": true,
-      "fill": [
-        {
-          "type": "color",
-          "color": "$bg"
         },
         {
-          "type": "gradient",
-          "gradientType": "radial",
-          "center": {
-            "x": 0.15,
-            "y": 0
-          },
-          "size": {
-            "width": 1.2,
-            "height": 0.6
-          },
-          "colors": [
-            {
-              "color": "#7C3AED33",
-              "position": 0
-            },
-            {
-              "color": "#7C3AED00",
-              "position": 1
-            }
-          ]
-        }
-      ],
-      "children": [
-        {
           "type": "frame",
-          "id": "nav",
-          "name": "Nav",
-          "width": "fill_container",
-          "layout": "horizontal",
-          "justifyContent": "space_between",
-          "alignItems": "center",
+          "id": "stepCard",
+          "name": "Card/Step",
+          "reusable": true,
+          "width": 300,
+          "layout": "vertical",
+          "gap": 14,
+          "padding": 24,
+          "cornerRadius": "$radius",
+          "fill": "$surface-2",
+          "stroke": "$border",
+          "strokeWidth": 1,
           "children": [
             {
               "type": "frame",
-              "id": "brand",
-              "name": "Brand",
+              "id": "stepHead",
+              "name": "Header",
+              "width": "fill_container",
               "layout": "horizontal",
-              "gap": 10,
+              "justifyContent": "space_between",
               "alignItems": "center",
               "children": [
                 {
                   "type": "frame",
-                  "id": "brandMark",
+                  "id": "stepNum",
+                  "name": "Number",
                   "width": 32,
                   "height": 32,
-                  "cornerRadius": 9,
+                  "cornerRadius": 999,
                   "layout": "horizontal",
                   "justifyContent": "center",
                   "alignItems": "center",
@@ -355,563 +2009,61 @@
                   },
                   "children": [
                     {
-                      "type": "icon",
-                      "id": "brandIcon",
-                      "library": "lucide",
-                      "icon": "pen-tool",
-                      "width": 18,
-                      "height": 18,
-                      "fill": "$text"
+                      "type": "text",
+                      "id": "stepNumT",
+                      "content": "1",
+                      "fontFamily": "$font",
+                      "fontSize": 15,
+                      "fill": "$text",
+                      "fontWeight": "800"
                     }
                   ]
                 },
-                {
-                  "type": "text",
-                  "id": "brandName",
-                  "content": "pen editor",
-                  "fontFamily": "$font",
-                  "fontSize": 18,
-                  "fontWeight": "700",
-                  "fill": "$text"
-                }
-              ]
-            },
-            {
-              "type": "frame",
-              "id": "navLinks",
-              "name": "Links",
-              "layout": "horizontal",
-              "gap": 28,
-              "alignItems": "center",
-              "children": [
-                {
-                  "type": "text",
-                  "id": "nl1",
-                  "content": "Canvas",
-                  "fontFamily": "$font",
-                  "fontSize": 14,
-                  "fontWeight": "500",
-                  "fill": "$text-dim"
-                },
-                {
-                  "type": "text",
-                  "id": "nl2",
-                  "content": "Components",
-                  "fontFamily": "$font",
-                  "fontSize": 14,
-                  "fontWeight": "500",
-                  "fill": "$text-dim"
-                },
-                {
-                  "type": "text",
-                  "id": "nl3",
-                  "content": "Scripts",
-                  "fontFamily": "$font",
-                  "fontSize": 14,
-                  "fontWeight": "500",
-                  "fill": "$text-dim"
-                },
-                {
-                  "type": "text",
-                  "id": "nl4",
-                  "content": "Shaders",
-                  "fontFamily": "$font",
-                  "fontSize": 14,
-                  "fontWeight": "500",
-                  "fill": "$text-dim"
-                },
-                {
-                  "type": "text",
-                  "id": "nl5",
-                  "content": "MCP",
-                  "fontFamily": "$font",
-                  "fontSize": 14,
-                  "fontWeight": "500",
-                  "fill": "$text-dim"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "type": "frame",
-          "id": "hero",
-          "name": "Hero",
-          "width": "fill_container",
-          "height": 440,
-          "layout": "vertical",
-          "gap": 22,
-          "padding": 56,
-          "justifyContent": "center",
-          "cornerRadius": 28,
-          "clip": true,
-          "fill": {
-            "type": "shader",
-            "url": "./shaders/showcase-waves.glsl",
-            "uniforms": {
-              "u_speed": 0.35
-            }
-          },
-          "stroke": "#FFFFFF1F",
-          "strokeWidth": 1,
-          "children": [
-            {
-              "type": "frame",
-              "id": "heroBadge",
-              "name": "Badge",
-              "layout": "horizontal",
-              "gap": 8,
-              "padding": [
-                6,
-                12
-              ],
-              "cornerRadius": 999,
-              "alignItems": "center",
-              "fill": "#FFFFFF14",
-              "stroke": "#FFFFFF26",
-              "strokeWidth": 1,
-              "children": [
-                {
-                  "type": "ellipse",
-                  "id": "heroDot",
-                  "width": 8,
-                  "height": 8,
-                  "fill": "$success",
-                  "effect": {
-                    "type": "shadow",
-                    "shadowType": "outer",
-                    "color": "#34D399",
-                    "offset": {
-                      "x": 0,
-                      "y": 0
-                    },
-                    "blur": 8
-                  }
-                },
-                {
-                  "type": "text",
-                  "id": "heroBadgeText",
-                  "content": "NEW · Scripts, shaders & multi-chat MCP",
-                  "fontFamily": "$font",
-                  "fontSize": 13,
-                  "fontWeight": "600",
-                  "fill": "$text"
-                }
-              ]
-            },
-            {
-              "type": "text",
-              "id": "heroTitle",
-              "content": "Design, script and shade —\nright inside VS Code.",
-              "textGrowth": "fixed-width",
-              "width": 760,
-              "lineHeight": 1.05,
-              "letterSpacing": -2,
-              "fontFamily": "$font",
-              "fontSize": 60,
-              "fontWeight": "800",
-              "fill": "$text"
-            },
-            {
-              "type": "text",
-              "id": "heroSub",
-              "content": "A pen.dev-compatible canvas with live components, generated charts and GPU shaders — editable by you and by Claude at the same time.",
-              "textGrowth": "fixed-width",
-              "width": 620,
-              "lineHeight": 1.5,
-              "fontFamily": "$font",
-              "fontSize": 18,
-              "fill": "#CBD5E1"
-            },
-            {
-              "type": "frame",
-              "id": "heroCtas",
-              "name": "Actions",
-              "layout": "horizontal",
-              "gap": 12,
-              "children": [
-                {
-                  "type": "ref",
-                  "id": "hvdEo",
-                  "ref": "btnPrimary"
-                },
-                {
-                  "type": "ref",
-                  "id": "ddFls",
-                  "ref": "btnGhost"
-                }
-              ]
-            },
-            {
-              "type": "ellipse",
-              "id": "orb",
-              "name": "Orb (shader)",
-              "layoutPosition": "absolute",
-              "x": 900,
-              "y": 70,
-              "width": 300,
-              "height": 300,
-              "fill": {
-                "type": "shader",
-                "url": "./shaders/showcase-orb.glsl"
-              },
-              "effect": {
-                "type": "shadow",
-                "shadowType": "outer",
-                "color": "#F472B655",
-                "offset": {
-                  "x": 0,
-                  "y": 0
-                },
-                "blur": 80
-              }
-            }
-          ]
-        },
-        {
-          "type": "frame",
-          "id": "statsRow",
-          "name": "Stats",
-          "width": "fill_container",
-          "layout": "horizontal",
-          "gap": 20,
-          "children": [
-            {
-              "type": "ref",
-              "id": "SdJK5",
-              "ref": "statCard",
-              "width": "fill_container",
-              "descendants": {
-                "statTop/statLabel": {
-                  "content": "Active designers"
-                },
-                "statValue": {
-                  "content": "48,210"
-                },
-                "statTop/statBadge/statDelta": {
-                  "content": "+12.4%"
-                }
-              }
-            },
-            {
-              "type": "ref",
-              "id": "ga4Iz",
-              "ref": "statCard",
-              "width": "fill_container",
-              "descendants": {
-                "statTop/statLabel": {
-                  "content": "Frames rendered"
-                },
-                "statValue": {
-                  "content": "3.2M"
-                },
-                "statTop/statBadge/statDelta": {
-                  "content": "+31.0%"
-                }
-              }
-            },
-            {
-              "type": "ref",
-              "id": "AOBiV",
-              "ref": "statCard",
-              "width": "fill_container",
-              "descendants": {
-                "statTop/statLabel": {
-                  "content": "Avg. frame time"
-                },
-                "statValue": {
-                  "content": "5.8 ms"
-                },
-                "statTop/statBadge/statDelta": {
-                  "content": "−95%"
-                },
-                "statFoot": {
-                  "content": "pan & hover, 38k-node file"
-                }
-              }
-            },
-            {
-              "type": "ref",
-              "id": "XVr15",
-              "ref": "statCard",
-              "width": "fill_container",
-              "descendants": {
-                "statTop/statLabel": {
-                  "content": "Claude chats"
-                },
-                "statValue": {
-                  "content": "3 live"
-                },
-                "statTop/statBadge": {
-                  "fill": "#FBBF241F"
-                },
-                "statTop/statBadge/statArrow": {
-                  "icon": "lock",
-                  "fill": "$warning"
-                },
-                "statTop/statBadge/statDelta": {
-                  "content": "locked",
-                  "fill": "$warning"
-                },
-                "statFoot": {
-                  "content": "one edit lock per file"
-                }
-              }
-            }
-          ]
-        },
-        {
-          "type": "frame",
-          "id": "chartsRow",
-          "name": "Charts",
-          "width": "fill_container",
-          "layout": "horizontal",
-          "gap": 20,
-          "children": [
-            {
-              "type": "frame",
-              "id": "revCard",
-              "name": "Revenue card",
-              "width": "fill_container",
-              "layout": "vertical",
-              "gap": 18,
-              "padding": 28,
-              "cornerRadius": "$radius",
-              "fill": "$surface",
-              "stroke": "$border",
-              "strokeWidth": 1,
-              "children": [
                 {
                   "type": "frame",
-                  "id": "revHead",
-                  "width": "fill_container",
+                  "id": "stepKey",
                   "layout": "horizontal",
-                  "justifyContent": "space_between",
-                  "alignItems": "end",
+                  "padding": [
+                    4,
+                    10
+                  ],
+                  "cornerRadius": 8,
+                  "fill": "#FFFFFF0F",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
                   "children": [
                     {
-                      "type": "frame",
-                      "id": "revTitles",
-                      "layout": "vertical",
-                      "gap": 4,
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "revLabel",
-                          "content": "Monthly revenue",
-                          "fontFamily": "$font",
-                          "fontSize": 14,
-                          "fontWeight": "500",
-                          "fill": "$text-dim"
-                        },
-                        {
-                          "type": "text",
-                          "id": "revValue",
-                          "content": "1.18M USD",
-                          "fontFamily": "$font",
-                          "fontSize": 32,
-                          "fontWeight": "800",
-                          "letterSpacing": -1,
-                          "fill": "$text"
-                        }
-                      ]
-                    },
-                    {
                       "type": "text",
-                      "id": "revNote",
-                      "content": "Generated by scripts/showcase-bars.js",
-                      "fontFamily": "$font",
+                      "id": "stepKeyT",
+                      "content": "I",
+                      "fontFamily": "JetBrains Mono",
                       "fontSize": 12,
-                      "fill": "$text-dim"
+                      "fill": "$text",
+                      "fontWeight": "600"
                     }
                   ]
-                },
-                {
-                  "type": "script",
-                  "id": "barsScript",
-                  "name": "Bar chart (script)",
-                  "width": 856,
-                  "height": 260,
-                  "scriptUri": "./scripts/showcase-bars.js",
-                  "inputs": {
-                    "highlight": 11
-                  }
                 }
               ]
             },
             {
-              "type": "frame",
-              "id": "ringCard",
-              "name": "Uptime card",
-              "width": 380,
-              "layout": "vertical",
-              "gap": 12,
-              "padding": 28,
-              "alignItems": "center",
-              "cornerRadius": "$radius",
-              "fill": "$surface",
-              "stroke": "$border",
-              "strokeWidth": 1,
-              "children": [
-                {
-                  "type": "text",
-                  "id": "ringTitle",
-                  "content": "Service health",
-                  "width": "fill_container",
-                  "textGrowth": "fixed-width",
-                  "fontFamily": "$font",
-                  "fontSize": 14,
-                  "fontWeight": "500",
-                  "fill": "$text-dim"
-                },
-                {
-                  "type": "script",
-                  "id": "ringScript",
-                  "name": "Progress ring (script)",
-                  "width": 260,
-                  "height": 260,
-                  "scriptUri": "./scripts/showcase-ring.js",
-                  "inputs": {
-                    "value": 99.2,
-                    "label": "Uptime"
-                  }
-                },
-                {
-                  "type": "text",
-                  "id": "ringFoot",
-                  "content": "Generated by scripts/showcase-ring.js",
-                  "fontFamily": "$font",
-                  "fontSize": 12,
-                  "fill": "$text-dim"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "type": "frame",
-          "id": "featRow",
-          "name": "Features",
-          "width": "fill_container",
-          "layout": "horizontal",
-          "gap": 20,
-          "children": [
+              "type": "text",
+              "id": "stepTitle",
+              "content": "Step title",
+              "fontFamily": "$font",
+              "fontSize": 18,
+              "fill": "$text",
+              "fontWeight": "700"
+            },
             {
-              "type": "ref",
-              "id": "JrSux",
-              "ref": "featCard",
+              "type": "text",
+              "id": "stepBody",
+              "content": "What to do and what happens.",
+              "fontFamily": "$font",
+              "fontSize": 14,
+              "fill": "$text-dim",
+              "textGrowth": "fixed-width",
               "width": "fill_container",
-              "descendants": {
-                "featIconWrap/featIcon": {
-                  "icon": "component"
-                },
-                "featTitle": {
-                  "content": "Components & tokens"
-                },
-                "featBody": {
-                  "content": "Reusable components with per-instance overrides, themed variables and auto layout — saved as plain .pen JSON."
-                }
-              }
-            },
-            {
-              "type": "ref",
-              "id": "X0RC2",
-              "ref": "featCard",
-              "width": "fill_container",
-              "descendants": {
-                "featIconWrap": {
-                  "fill": "#22D3EE24"
-                },
-                "featIconWrap/featIcon": {
-                  "icon": "code-xml",
-                  "fill": "#67E8F9"
-                },
-                "featTitle": {
-                  "content": "Script nodes"
-                },
-                "featBody": {
-                  "content": "JavaScript files generate live content — the charts above are scripts with editable inputs in the Design panel."
-                }
-              }
-            },
-            {
-              "type": "ref",
-              "id": "wZMGZ",
-              "ref": "featCard",
-              "width": "fill_container",
-              "descendants": {
-                "featIconWrap": {
-                  "fill": "#F472B624"
-                },
-                "featIconWrap/featIcon": {
-                  "icon": "sparkles",
-                  "fill": "#F9A8D4"
-                },
-                "featTitle": {
-                  "content": "GPU shaders"
-                },
-                "featBody": {
-                  "content": "WebGL fills and effects with @time, @mouse, @sdf, @content and @backdrop — the hero, orb and terminal are shaders."
-                }
-              }
-            }
-          ]
-        },
-        {
-          "type": "frame",
-          "id": "terminal",
-          "name": "Terminal (shader effect)",
-          "width": "fill_container",
-          "layout": "vertical",
-          "gap": 8,
-          "padding": [
-            28,
-            32
-          ],
-          "cornerRadius": "$radius",
-          "fill": "#05080F",
-          "stroke": "#22D3EE33",
-          "strokeWidth": 1,
-          "effect": {
-            "type": "shader",
-            "url": "./shaders/showcase-scanlines.glsl",
-            "uniforms": {
-              "u_spacing": 3,
-              "u_shift": 1.5
-            }
-          },
-          "children": [
-            {
-              "type": "text",
-              "id": "t1",
-              "content": "❯ claude › select_file TestingUI.pen --label \"Showcase builder\"",
-              "fontFamily": "JetBrains Mono",
-              "fontSize": 15,
-              "fill": "$accent-2"
-            },
-            {
-              "type": "text",
-              "id": "t2",
-              "content": "✓ lock acquired · 0 other chats waiting",
-              "fontFamily": "JetBrains Mono",
-              "fontSize": 15,
-              "fill": "$success"
-            },
-            {
-              "type": "text",
-              "id": "t3",
-              "content": "❯ apply_operations  [insert hero, instantiate 4× Card/Stat, script charts, shaders]",
-              "fontFamily": "JetBrains Mono",
-              "fontSize": 15,
-              "fill": "#CBD5E1"
-            },
-            {
-              "type": "text",
-              "id": "t4",
-              "content": "✓ 1 undo step · screenshot verified · check_layout: no problems",
-              "fontFamily": "JetBrains Mono",
-              "fontSize": 15,
-              "fill": "$success"
+              "lineHeight": 1.55
             }
           ]
         }
@@ -920,7 +2072,7 @@
     {
       "type": "frame",
       "id": "runeHud",
-      "name": "Rune Dial HUD",
+      "name": "Roblox HUD: Rune dial",
       "x": 2200,
       "y": 0,
       "width": 680,
@@ -1934,6 +3086,43 @@
           "u_vignette": 0.4
         }
       }
+    },
+    {
+      "type": "frame",
+      "id": "hudCaption",
+      "name": "About the rune dial",
+      "x": 2200,
+      "y": 692,
+      "width": 680,
+      "layout": "vertical",
+      "gap": 8,
+      "padding": 24,
+      "cornerRadius": "$radius",
+      "fill": "$surface",
+      "stroke": "$border",
+      "strokeWidth": 1,
+      "children": [
+        {
+          "type": "text",
+          "id": "hudCapTitle",
+          "content": "Game UI example",
+          "fontFamily": "$font",
+          "fontSize": 18,
+          "fill": "$text",
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "hudCapBody",
+          "content": "A Roblox-style ability dial built from vector paths, a spike-ring script (scripts/spike-ring.js) and glow effects. Export → Roblox Luau turns frames like this into GUI objects (experimental).",
+          "fontFamily": "$font",
+          "fontSize": 14,
+          "fill": "$text-dim",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "lineHeight": 1.55
+        }
+      ]
     }
   ],
   "variables": {
