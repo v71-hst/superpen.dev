@@ -1,0 +1,1989 @@
+{
+  "version": "2.21",
+  "children": [
+    {
+      "type": "frame",
+      "id": "libFrame",
+      "name": "Components",
+      "x": 1560,
+      "y": 0,
+      "width": 520,
+      "height": "fit_content",
+      "layout": "vertical",
+      "gap": 32,
+      "padding": 40,
+      "cornerRadius": 24,
+      "fill": "$surface",
+      "stroke": "$border",
+      "strokeWidth": 1,
+      "children": [
+        {
+          "type": "text",
+          "id": "libTitle",
+          "content": "Component library",
+          "fontFamily": "$font",
+          "fontSize": 20,
+          "fontWeight": "700",
+          "fill": "$text"
+        },
+        {
+          "type": "frame",
+          "id": "btnPrimary",
+          "name": "Button/Primary",
+          "reusable": true,
+          "layout": "horizontal",
+          "gap": 8,
+          "padding": [
+            12,
+            20
+          ],
+          "cornerRadius": 12,
+          "alignItems": "center",
+          "fill": {
+            "type": "gradient",
+            "gradientType": "linear",
+            "rotation": 270,
+            "colors": [
+              {
+                "color": "$accent",
+                "position": 0
+              },
+              {
+                "color": "#4F46E5",
+                "position": 1
+              }
+            ]
+          },
+          "effect": {
+            "type": "shadow",
+            "shadowType": "outer",
+            "color": "#7C3AED66",
+            "offset": {
+              "x": 0,
+              "y": 8
+            },
+            "blur": 24
+          },
+          "children": [
+            {
+              "type": "icon",
+              "id": "bpIcon",
+              "library": "lucide",
+              "icon": "sparkles",
+              "width": 16,
+              "height": 16,
+              "fill": "$text"
+            },
+            {
+              "type": "text",
+              "id": "bpLabel",
+              "content": "Get started",
+              "fontFamily": "$font",
+              "fontSize": 15,
+              "fontWeight": "600",
+              "fill": "$text"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "btnGhost",
+          "name": "Button/Ghost",
+          "reusable": true,
+          "layout": "horizontal",
+          "gap": 8,
+          "padding": [
+            12,
+            20
+          ],
+          "cornerRadius": 12,
+          "alignItems": "center",
+          "fill": "#FFFFFF0D",
+          "stroke": "#FFFFFF26",
+          "strokeWidth": 1,
+          "children": [
+            {
+              "type": "icon",
+              "id": "bgIcon",
+              "library": "lucide",
+              "icon": "circle-play",
+              "width": 16,
+              "height": 16,
+              "fill": "$text"
+            },
+            {
+              "type": "text",
+              "id": "bgLabel",
+              "content": "Watch demo",
+              "fontFamily": "$font",
+              "fontSize": 15,
+              "fontWeight": "600",
+              "fill": "$text"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "statCard",
+          "name": "Card/Stat",
+          "reusable": true,
+          "width": 300,
+          "layout": "vertical",
+          "gap": 10,
+          "padding": 24,
+          "cornerRadius": "$radius",
+          "fill": "$surface-2",
+          "stroke": "$border",
+          "strokeWidth": 1,
+          "children": [
+            {
+              "type": "frame",
+              "id": "statTop",
+              "name": "Header",
+              "width": "fill_container",
+              "layout": "horizontal",
+              "justifyContent": "space_between",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "statLabel",
+                  "content": "Active users",
+                  "fontFamily": "$font",
+                  "fontSize": 14,
+                  "fontWeight": "500",
+                  "fill": "$text-dim"
+                },
+                {
+                  "type": "frame",
+                  "id": "statBadge",
+                  "name": "Badge",
+                  "layout": "horizontal",
+                  "gap": 4,
+                  "padding": [
+                    4,
+                    8
+                  ],
+                  "cornerRadius": 999,
+                  "alignItems": "center",
+                  "fill": "#34D3991F",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "statArrow",
+                      "library": "lucide",
+                      "icon": "trending-up",
+                      "width": 12,
+                      "height": 12,
+                      "fill": "$success"
+                    },
+                    {
+                      "type": "text",
+                      "id": "statDelta",
+                      "content": "+12.4%",
+                      "fontFamily": "$font",
+                      "fontSize": 12,
+                      "fontWeight": "700",
+                      "fill": "$success"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "statValue",
+              "content": "48,210",
+              "fontFamily": "$font",
+              "fontSize": 36,
+              "fontWeight": "800",
+              "letterSpacing": -1,
+              "fill": "$text"
+            },
+            {
+              "type": "text",
+              "id": "statFoot",
+              "content": "vs. last 30 days",
+              "fontFamily": "$font",
+              "fontSize": 12,
+              "fill": "$text-dim"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "featCard",
+          "name": "Card/Feature",
+          "reusable": true,
+          "width": 300,
+          "layout": "vertical",
+          "gap": 14,
+          "padding": 28,
+          "cornerRadius": "$radius",
+          "fill": "$surface-2",
+          "stroke": "$border",
+          "strokeWidth": 1,
+          "children": [
+            {
+              "type": "frame",
+              "id": "featIconWrap",
+              "name": "Icon tile",
+              "width": 44,
+              "height": 44,
+              "layout": "horizontal",
+              "justifyContent": "center",
+              "alignItems": "center",
+              "cornerRadius": 12,
+              "fill": "#7C3AED2E",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "featIcon",
+                  "library": "lucide",
+                  "icon": "layers",
+                  "width": 22,
+                  "height": 22,
+                  "fill": "#C4B5FD"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "featTitle",
+              "content": "Feature title",
+              "fontFamily": "$font",
+              "fontSize": 18,
+              "fontWeight": "700",
+              "fill": "$text"
+            },
+            {
+              "type": "text",
+              "id": "featBody",
+              "content": "Short description of the feature goes here.",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "lineHeight": 1.5,
+              "fontFamily": "$font",
+              "fontSize": 14,
+              "fill": "$text-dim"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "showcase",
+      "name": "Pen Editor Showcase",
+      "x": 0,
+      "y": 0,
+      "width": 1440,
+      "height": "fit_content",
+      "layout": "vertical",
+      "gap": 28,
+      "padding": 64,
+      "clip": true,
+      "fill": [
+        {
+          "type": "color",
+          "color": "$bg"
+        },
+        {
+          "type": "gradient",
+          "gradientType": "radial",
+          "center": {
+            "x": 0.15,
+            "y": 0
+          },
+          "size": {
+            "width": 1.2,
+            "height": 0.6
+          },
+          "colors": [
+            {
+              "color": "#7C3AED33",
+              "position": 0
+            },
+            {
+              "color": "#7C3AED00",
+              "position": 1
+            }
+          ]
+        }
+      ],
+      "children": [
+        {
+          "type": "frame",
+          "id": "nav",
+          "name": "Nav",
+          "width": "fill_container",
+          "layout": "horizontal",
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "brand",
+              "name": "Brand",
+              "layout": "horizontal",
+              "gap": 10,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "brandMark",
+                  "width": 32,
+                  "height": 32,
+                  "cornerRadius": 9,
+                  "layout": "horizontal",
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "fill": {
+                    "type": "gradient",
+                    "gradientType": "linear",
+                    "rotation": 225,
+                    "colors": [
+                      {
+                        "color": "$accent-2",
+                        "position": 0
+                      },
+                      {
+                        "color": "$accent",
+                        "position": 1
+                      }
+                    ]
+                  },
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "brandIcon",
+                      "library": "lucide",
+                      "icon": "pen-tool",
+                      "width": 18,
+                      "height": 18,
+                      "fill": "$text"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "brandName",
+                  "content": "pen editor",
+                  "fontFamily": "$font",
+                  "fontSize": 18,
+                  "fontWeight": "700",
+                  "fill": "$text"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "navLinks",
+              "name": "Links",
+              "layout": "horizontal",
+              "gap": 28,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "nl1",
+                  "content": "Canvas",
+                  "fontFamily": "$font",
+                  "fontSize": 14,
+                  "fontWeight": "500",
+                  "fill": "$text-dim"
+                },
+                {
+                  "type": "text",
+                  "id": "nl2",
+                  "content": "Components",
+                  "fontFamily": "$font",
+                  "fontSize": 14,
+                  "fontWeight": "500",
+                  "fill": "$text-dim"
+                },
+                {
+                  "type": "text",
+                  "id": "nl3",
+                  "content": "Scripts",
+                  "fontFamily": "$font",
+                  "fontSize": 14,
+                  "fontWeight": "500",
+                  "fill": "$text-dim"
+                },
+                {
+                  "type": "text",
+                  "id": "nl4",
+                  "content": "Shaders",
+                  "fontFamily": "$font",
+                  "fontSize": 14,
+                  "fontWeight": "500",
+                  "fill": "$text-dim"
+                },
+                {
+                  "type": "text",
+                  "id": "nl5",
+                  "content": "MCP",
+                  "fontFamily": "$font",
+                  "fontSize": 14,
+                  "fontWeight": "500",
+                  "fill": "$text-dim"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "hero",
+          "name": "Hero",
+          "width": "fill_container",
+          "height": 440,
+          "layout": "vertical",
+          "gap": 22,
+          "padding": 56,
+          "justifyContent": "center",
+          "cornerRadius": 28,
+          "clip": true,
+          "fill": {
+            "type": "shader",
+            "url": "./shaders/showcase-waves.glsl",
+            "uniforms": {
+              "u_speed": 0.35
+            }
+          },
+          "stroke": "#FFFFFF1F",
+          "strokeWidth": 1,
+          "children": [
+            {
+              "type": "frame",
+              "id": "heroBadge",
+              "name": "Badge",
+              "layout": "horizontal",
+              "gap": 8,
+              "padding": [
+                6,
+                12
+              ],
+              "cornerRadius": 999,
+              "alignItems": "center",
+              "fill": "#FFFFFF14",
+              "stroke": "#FFFFFF26",
+              "strokeWidth": 1,
+              "children": [
+                {
+                  "type": "ellipse",
+                  "id": "heroDot",
+                  "width": 8,
+                  "height": 8,
+                  "fill": "$success",
+                  "effect": {
+                    "type": "shadow",
+                    "shadowType": "outer",
+                    "color": "#34D399",
+                    "offset": {
+                      "x": 0,
+                      "y": 0
+                    },
+                    "blur": 8
+                  }
+                },
+                {
+                  "type": "text",
+                  "id": "heroBadgeText",
+                  "content": "NEW · Scripts, shaders & multi-chat MCP",
+                  "fontFamily": "$font",
+                  "fontSize": 13,
+                  "fontWeight": "600",
+                  "fill": "$text"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "heroTitle",
+              "content": "Design, script and shade —\nright inside VS Code.",
+              "textGrowth": "fixed-width",
+              "width": 760,
+              "lineHeight": 1.05,
+              "letterSpacing": -2,
+              "fontFamily": "$font",
+              "fontSize": 60,
+              "fontWeight": "800",
+              "fill": "$text"
+            },
+            {
+              "type": "text",
+              "id": "heroSub",
+              "content": "A pen.dev-compatible canvas with live components, generated charts and GPU shaders — editable by you and by Claude at the same time.",
+              "textGrowth": "fixed-width",
+              "width": 620,
+              "lineHeight": 1.5,
+              "fontFamily": "$font",
+              "fontSize": 18,
+              "fill": "#CBD5E1"
+            },
+            {
+              "type": "frame",
+              "id": "heroCtas",
+              "name": "Actions",
+              "layout": "horizontal",
+              "gap": 12,
+              "children": [
+                {
+                  "type": "ref",
+                  "id": "hvdEo",
+                  "ref": "btnPrimary"
+                },
+                {
+                  "type": "ref",
+                  "id": "ddFls",
+                  "ref": "btnGhost"
+                }
+              ]
+            },
+            {
+              "type": "ellipse",
+              "id": "orb",
+              "name": "Orb (shader)",
+              "layoutPosition": "absolute",
+              "x": 900,
+              "y": 70,
+              "width": 300,
+              "height": 300,
+              "fill": {
+                "type": "shader",
+                "url": "./shaders/showcase-orb.glsl"
+              },
+              "effect": {
+                "type": "shadow",
+                "shadowType": "outer",
+                "color": "#F472B655",
+                "offset": {
+                  "x": 0,
+                  "y": 0
+                },
+                "blur": 80
+              }
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "statsRow",
+          "name": "Stats",
+          "width": "fill_container",
+          "layout": "horizontal",
+          "gap": 20,
+          "children": [
+            {
+              "type": "ref",
+              "id": "SdJK5",
+              "ref": "statCard",
+              "width": "fill_container",
+              "descendants": {
+                "statTop/statLabel": {
+                  "content": "Active designers"
+                },
+                "statValue": {
+                  "content": "48,210"
+                },
+                "statTop/statBadge/statDelta": {
+                  "content": "+12.4%"
+                }
+              }
+            },
+            {
+              "type": "ref",
+              "id": "ga4Iz",
+              "ref": "statCard",
+              "width": "fill_container",
+              "descendants": {
+                "statTop/statLabel": {
+                  "content": "Frames rendered"
+                },
+                "statValue": {
+                  "content": "3.2M"
+                },
+                "statTop/statBadge/statDelta": {
+                  "content": "+31.0%"
+                }
+              }
+            },
+            {
+              "type": "ref",
+              "id": "AOBiV",
+              "ref": "statCard",
+              "width": "fill_container",
+              "descendants": {
+                "statTop/statLabel": {
+                  "content": "Avg. frame time"
+                },
+                "statValue": {
+                  "content": "5.8 ms"
+                },
+                "statTop/statBadge/statDelta": {
+                  "content": "−95%"
+                },
+                "statFoot": {
+                  "content": "pan & hover, 38k-node file"
+                }
+              }
+            },
+            {
+              "type": "ref",
+              "id": "XVr15",
+              "ref": "statCard",
+              "width": "fill_container",
+              "descendants": {
+                "statTop/statLabel": {
+                  "content": "Claude chats"
+                },
+                "statValue": {
+                  "content": "3 live"
+                },
+                "statTop/statBadge": {
+                  "fill": "#FBBF241F"
+                },
+                "statTop/statBadge/statArrow": {
+                  "icon": "lock",
+                  "fill": "$warning"
+                },
+                "statTop/statBadge/statDelta": {
+                  "content": "locked",
+                  "fill": "$warning"
+                },
+                "statFoot": {
+                  "content": "one edit lock per file"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "chartsRow",
+          "name": "Charts",
+          "width": "fill_container",
+          "layout": "horizontal",
+          "gap": 20,
+          "children": [
+            {
+              "type": "frame",
+              "id": "revCard",
+              "name": "Revenue card",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 18,
+              "padding": 28,
+              "cornerRadius": "$radius",
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "revHead",
+                  "width": "fill_container",
+                  "layout": "horizontal",
+                  "justifyContent": "space_between",
+                  "alignItems": "end",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "revTitles",
+                      "layout": "vertical",
+                      "gap": 4,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "revLabel",
+                          "content": "Monthly revenue",
+                          "fontFamily": "$font",
+                          "fontSize": 14,
+                          "fontWeight": "500",
+                          "fill": "$text-dim"
+                        },
+                        {
+                          "type": "text",
+                          "id": "revValue",
+                          "content": "1.18M USD",
+                          "fontFamily": "$font",
+                          "fontSize": 32,
+                          "fontWeight": "800",
+                          "letterSpacing": -1,
+                          "fill": "$text"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "revNote",
+                      "content": "Generated by scripts/showcase-bars.js",
+                      "fontFamily": "$font",
+                      "fontSize": 12,
+                      "fill": "$text-dim"
+                    }
+                  ]
+                },
+                {
+                  "type": "script",
+                  "id": "barsScript",
+                  "name": "Bar chart (script)",
+                  "width": 856,
+                  "height": 260,
+                  "scriptUri": "./scripts/showcase-bars.js",
+                  "inputs": {
+                    "highlight": 11
+                  }
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "ringCard",
+              "name": "Uptime card",
+              "width": 380,
+              "layout": "vertical",
+              "gap": 12,
+              "padding": 28,
+              "alignItems": "center",
+              "cornerRadius": "$radius",
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "ringTitle",
+                  "content": "Service health",
+                  "width": "fill_container",
+                  "textGrowth": "fixed-width",
+                  "fontFamily": "$font",
+                  "fontSize": 14,
+                  "fontWeight": "500",
+                  "fill": "$text-dim"
+                },
+                {
+                  "type": "script",
+                  "id": "ringScript",
+                  "name": "Progress ring (script)",
+                  "width": 260,
+                  "height": 260,
+                  "scriptUri": "./scripts/showcase-ring.js",
+                  "inputs": {
+                    "value": 99.2,
+                    "label": "Uptime"
+                  }
+                },
+                {
+                  "type": "text",
+                  "id": "ringFoot",
+                  "content": "Generated by scripts/showcase-ring.js",
+                  "fontFamily": "$font",
+                  "fontSize": 12,
+                  "fill": "$text-dim"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "featRow",
+          "name": "Features",
+          "width": "fill_container",
+          "layout": "horizontal",
+          "gap": 20,
+          "children": [
+            {
+              "type": "ref",
+              "id": "JrSux",
+              "ref": "featCard",
+              "width": "fill_container",
+              "descendants": {
+                "featIconWrap/featIcon": {
+                  "icon": "component"
+                },
+                "featTitle": {
+                  "content": "Components & tokens"
+                },
+                "featBody": {
+                  "content": "Reusable components with per-instance overrides, themed variables and auto layout — saved as plain .pen JSON."
+                }
+              }
+            },
+            {
+              "type": "ref",
+              "id": "X0RC2",
+              "ref": "featCard",
+              "width": "fill_container",
+              "descendants": {
+                "featIconWrap": {
+                  "fill": "#22D3EE24"
+                },
+                "featIconWrap/featIcon": {
+                  "icon": "code-xml",
+                  "fill": "#67E8F9"
+                },
+                "featTitle": {
+                  "content": "Script nodes"
+                },
+                "featBody": {
+                  "content": "JavaScript files generate live content — the charts above are scripts with editable inputs in the Design panel."
+                }
+              }
+            },
+            {
+              "type": "ref",
+              "id": "wZMGZ",
+              "ref": "featCard",
+              "width": "fill_container",
+              "descendants": {
+                "featIconWrap": {
+                  "fill": "#F472B624"
+                },
+                "featIconWrap/featIcon": {
+                  "icon": "sparkles",
+                  "fill": "#F9A8D4"
+                },
+                "featTitle": {
+                  "content": "GPU shaders"
+                },
+                "featBody": {
+                  "content": "WebGL fills and effects with @time, @mouse, @sdf, @content and @backdrop — the hero, orb and terminal are shaders."
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "terminal",
+          "name": "Terminal (shader effect)",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "padding": [
+            28,
+            32
+          ],
+          "cornerRadius": "$radius",
+          "fill": "#05080F",
+          "stroke": "#22D3EE33",
+          "strokeWidth": 1,
+          "effect": {
+            "type": "shader",
+            "url": "./shaders/showcase-scanlines.glsl",
+            "uniforms": {
+              "u_spacing": 3,
+              "u_shift": 1.5
+            }
+          },
+          "children": [
+            {
+              "type": "text",
+              "id": "t1",
+              "content": "❯ claude › select_file TestingUI.pen --label \"Showcase builder\"",
+              "fontFamily": "JetBrains Mono",
+              "fontSize": 15,
+              "fill": "$accent-2"
+            },
+            {
+              "type": "text",
+              "id": "t2",
+              "content": "✓ lock acquired · 0 other chats waiting",
+              "fontFamily": "JetBrains Mono",
+              "fontSize": 15,
+              "fill": "$success"
+            },
+            {
+              "type": "text",
+              "id": "t3",
+              "content": "❯ apply_operations  [insert hero, instantiate 4× Card/Stat, script charts, shaders]",
+              "fontFamily": "JetBrains Mono",
+              "fontSize": 15,
+              "fill": "#CBD5E1"
+            },
+            {
+              "type": "text",
+              "id": "t4",
+              "content": "✓ 1 undo step · screenshot verified · check_layout: no problems",
+              "fontFamily": "JetBrains Mono",
+              "fontSize": 15,
+              "fill": "$success"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "runeHud",
+      "name": "Rune Dial HUD",
+      "x": 2200,
+      "y": 0,
+      "width": 680,
+      "height": 660,
+      "layout": "none",
+      "clip": true,
+      "fill": [
+        {
+          "type": "gradient",
+          "gradientType": "linear",
+          "rotation": 200,
+          "colors": [
+            {
+              "color": "#232D29",
+              "position": 0
+            },
+            {
+              "color": "#141B18",
+              "position": 1
+            }
+          ]
+        },
+        {
+          "type": "gradient",
+          "gradientType": "radial",
+          "center": {
+            "x": 0.12,
+            "y": 0.47
+          },
+          "size": {
+            "width": 0.75,
+            "height": 0.32
+          },
+          "colors": [
+            {
+              "color": "#3C8A5E59",
+              "position": 0
+            },
+            {
+              "color": "#3C8A5E00",
+              "position": 1
+            }
+          ]
+        },
+        {
+          "type": "gradient",
+          "gradientType": "radial",
+          "center": {
+            "x": 0.62,
+            "y": 0.63
+          },
+          "size": {
+            "width": 0.7,
+            "height": 0.7
+          },
+          "colors": [
+            {
+              "color": "#1B262200",
+              "position": 0.5
+            },
+            {
+              "color": "#0A0F0D80",
+              "position": 1
+            }
+          ]
+        }
+      ],
+      "children": [
+        {
+          "type": "ellipse",
+          "id": "dialShadow",
+          "name": "Dial shadow",
+          "x": 263,
+          "y": 263,
+          "width": 310,
+          "height": 310,
+          "fill": {
+            "type": "gradient",
+            "gradientType": "radial",
+            "colors": [
+              {
+                "color": "#00000066",
+                "position": 0.75
+              },
+              {
+                "color": "#00000000",
+                "position": 1
+              }
+            ]
+          }
+        },
+        {
+          "type": "script",
+          "id": "spikes",
+          "name": "Spike ring (script)",
+          "x": 208,
+          "y": 208,
+          "width": 420,
+          "height": 420,
+          "scriptUri": "./scripts/spike-ring.js",
+          "inputs": {
+            "count": 180,
+            "innerRadius": 131,
+            "minLength": 8,
+            "maxLength": 60,
+            "baseWidth": 5.5,
+            "denseSide": 225,
+            "color": "#E6FFF1",
+            "tint": "#6BEBA6"
+          }
+        },
+        {
+          "type": "ellipse",
+          "id": "dialDisk",
+          "name": "Dial disk",
+          "x": 284,
+          "y": 284,
+          "width": 268,
+          "height": 268,
+          "fill": {
+            "type": "gradient",
+            "gradientType": "radial",
+            "center": {
+              "x": 0.5,
+              "y": 0.45
+            },
+            "colors": [
+              {
+                "color": "#1F2925",
+                "position": 0
+              },
+              {
+                "color": "#121916",
+                "position": 0.85
+              },
+              {
+                "color": "#0B100E",
+                "position": 1
+              }
+            ]
+          },
+          "stroke": "#0A0E0C",
+          "strokeWidth": 3
+        },
+        {
+          "type": "ellipse",
+          "id": "dialRing",
+          "name": "Ring",
+          "x": 306,
+          "y": 306,
+          "width": 224,
+          "height": 224,
+          "stroke": "#4BE592",
+          "strokeWidth": 1.8,
+          "strokeAlignment": "center",
+          "effect": [
+            {
+              "type": "shadow",
+              "shadowType": "outer",
+              "color": "#3BE38ACC",
+              "offset": {
+                "x": 0,
+                "y": 0
+              },
+              "blur": 10
+            }
+          ]
+        },
+        {
+          "type": "ellipse",
+          "id": "centerGlow",
+          "name": "Center glow",
+          "x": 388,
+          "y": 388,
+          "width": 60,
+          "height": 60,
+          "fill": {
+            "type": "gradient",
+            "gradientType": "radial",
+            "colors": [
+              {
+                "color": "#C8FFE04D",
+                "position": 0
+              },
+              {
+                "color": "#C8FFE000",
+                "position": 1
+              }
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "id": "S2p6Y",
+          "name": "Rune tiles",
+          "width": 680,
+          "height": 660,
+          "layout": "none",
+          "children": [
+            {
+              "type": "path",
+              "id": "j0wxJ",
+              "name": "Path 1",
+              "x": 332.7,
+              "y": 57.6,
+              "width": 64.6,
+              "height": 84.8,
+              "geometry": "M26.9 3.6Q32.3-3.6 37.7 3.6L61.9 35.2Q67.3 42.4 61.9 49.6L37.7 81.2Q32.3 88.4 26.9 81.2L2.7 49.6Q-2.7 42.4 2.7 35.2Z",
+              "viewBox": [
+                0,
+                0,
+                64.60000000000099,
+                84.80000000000004
+              ],
+              "fill": "#123B27D9",
+              "stroke": "#8CF7BE",
+              "strokeWidth": 2.2,
+              "strokeAlignment": "center"
+            },
+            {
+              "type": "path",
+              "id": "zXpgq",
+              "name": "Path 2",
+              "x": 335,
+              "y": 61.8,
+              "width": 59,
+              "height": 77.4,
+              "geometry": "M29.5 0L47 21M28 1.4L59 38.6M27 3.4L58 40.6M25.5 4.8L56.5 42M24.5 6.8L55.5 44M23 8.2L54 45.4M22 10.2L53 47.4M20.5 11.6L51.5 48.8M19.5 13.6L50.5 50.8M18 15L49 52.2M16.5 16.4L47.5 53.6M15.5 18.4L46.5 55.6M14 19.8L45 57M13 21.8L44 59M11.5 23.2L42.5 60.4M10.5 25.2L41.5 62.4M9 26.6L40 63.8M8 28.6L39 65.8M6.5 30L37.5 67.2M5.5 32L36.5 69.2M4 33.4L35 70.6M2.5 34.8L33.5 72M1.5 36.8L32.5 74M0 38.2L31 75.4M27 73.8L30 77.4",
+              "viewBox": [
+                0,
+                0,
+                59,
+                77.39999999999999
+              ],
+              "stroke": "#6BE89F73",
+              "strokeWidth": 1,
+              "strokeAlignment": "center"
+            },
+            {
+              "type": "path",
+              "id": "zIu1d",
+              "name": "Path 3",
+              "x": 337.1,
+              "y": 63.3,
+              "width": 55.8,
+              "height": 73.4,
+              "geometry": "M23.7 2.8Q27.9-2.8 32.1 2.8L53.7 31.1Q57.9 36.7 53.7 42.3L32.1 70.6Q27.9 76.2 23.7 70.6L2.1 42.3Q-2.1 36.7 2.1 31.1Z",
+              "viewBox": [
+                0,
+                0,
+                55.79999999999859,
+                73.39999999999992
+              ],
+              "stroke": "#B9FFD6B3",
+              "strokeWidth": 1,
+              "strokeAlignment": "center"
+            },
+            {
+              "type": "path",
+              "id": "dTEWW",
+              "name": "Path 4",
+              "x": 237.7,
+              "y": 95.6,
+              "width": 64.6,
+              "height": 84.8,
+              "geometry": "M26.9 3.6Q32.3-3.6 37.7 3.6L61.9 35.2Q67.3 42.4 61.9 49.6L37.7 81.2Q32.3 88.4 26.9 81.2L2.7 49.6Q-2.7 42.4 2.7 35.2Z",
+              "viewBox": [
+                0,
+                0,
+                64.59999999999954,
+                84.79999999999987
+              ],
+              "fill": "#0C171286",
+              "stroke": "#3FB97ABF",
+              "strokeWidth": 1.6,
+              "strokeAlignment": "center"
+            },
+            {
+              "type": "path",
+              "id": "h1c1M",
+              "name": "Path 5",
+              "x": 242.1,
+              "y": 101.3,
+              "width": 55.8,
+              "height": 73.4,
+              "geometry": "M23.7 2.8Q27.9-2.8 32.1 2.8L53.7 31.1Q57.9 36.7 53.7 42.3L32.1 70.6Q27.9 76.2 23.7 70.6L2.1 42.3Q-2.1 36.7 2.1 31.1Z",
+              "viewBox": [
+                0,
+                0,
+                55.799999999999415,
+                73.40000000000008
+              ],
+              "stroke": "#3FB97A57",
+              "strokeWidth": 0.8,
+              "strokeAlignment": "center"
+            },
+            {
+              "type": "path",
+              "id": "fAS71",
+              "name": "Path 6",
+              "x": 157.7,
+              "y": 152.6,
+              "width": 64.6,
+              "height": 84.8,
+              "geometry": "M26.9 3.6Q32.3-3.6 37.7 3.6L61.9 35.2Q67.3 42.4 61.9 49.6L37.7 81.2Q32.3 88.4 26.9 81.2L2.7 49.6Q-2.7 42.4 2.7 35.2Z",
+              "viewBox": [
+                0,
+                0,
+                64.59999999999997,
+                84.8000000000003
+              ],
+              "fill": "#0C171286",
+              "stroke": "#3FB97ABF",
+              "strokeWidth": 1.6,
+              "strokeAlignment": "center"
+            },
+            {
+              "type": "path",
+              "id": "bpOhz",
+              "name": "Path 7",
+              "x": 162.1,
+              "y": 158.3,
+              "width": 55.8,
+              "height": 73.4,
+              "geometry": "M23.7 2.8Q27.9-2.8 32.1 2.8L53.7 31.1Q57.9 36.7 53.7 42.3L32.1 70.6Q27.9 76.2 23.7 70.6L2.1 42.3Q-2.1 36.7 2.1 31.1Z",
+              "viewBox": [
+                0,
+                0,
+                55.79999999999987,
+                73.4000000000002
+              ],
+              "stroke": "#3FB97A57",
+              "strokeWidth": 0.8,
+              "strokeAlignment": "center"
+            },
+            {
+              "type": "path",
+              "id": "4BIiV",
+              "name": "Path 8",
+              "x": 99.7,
+              "y": 235.6,
+              "width": 64.6,
+              "height": 84.8,
+              "geometry": "M26.9 3.6Q32.3-3.6 37.7 3.6L61.9 35.2Q67.3 42.4 61.9 49.6L37.7 81.2Q32.3 88.4 26.9 81.2L2.7 49.6Q-2.7 42.4 2.7 35.2Z",
+              "viewBox": [
+                0,
+                0,
+                64.59999999999995,
+                84.80000000000032
+              ],
+              "fill": "#0C1712A1",
+              "stroke": "#3FB97AE6",
+              "strokeWidth": 1.6,
+              "strokeAlignment": "center"
+            },
+            {
+              "type": "path",
+              "id": "tU6Er",
+              "name": "Path 9",
+              "x": 104.1,
+              "y": 241.3,
+              "width": 55.8,
+              "height": 73.4,
+              "geometry": "M23.7 2.8Q27.9-2.8 32.1 2.8L53.7 31.1Q57.9 36.7 53.7 42.3L32.1 70.6Q27.9 76.2 23.7 70.6L2.1 42.3Q-2.1 36.7 2.1 31.1Z",
+              "viewBox": [
+                0,
+                0,
+                55.79999999999998,
+                73.39999999999995
+              ],
+              "stroke": "#3FB97A66",
+              "strokeWidth": 0.8,
+              "strokeAlignment": "center"
+            },
+            {
+              "type": "path",
+              "id": "xyb6D",
+              "name": "Path 10",
+              "x": 73.7,
+              "y": 332.6,
+              "width": 64.6,
+              "height": 84.8,
+              "geometry": "M26.9 3.6Q32.3-3.6 37.7 3.6L61.9 35.2Q67.3 42.4 61.9 49.6L37.7 81.2Q32.3 88.4 26.9 81.2L2.7 49.6Q-2.7 42.4 2.7 35.2Z",
+              "viewBox": [
+                0,
+                0,
+                64.60000000000011,
+                84.80000000000081
+              ],
+              "fill": "#0C171238",
+              "stroke": "#3FB97A52",
+              "strokeWidth": 1.6,
+              "strokeAlignment": "center"
+            },
+            {
+              "type": "path",
+              "id": "3bmF8",
+              "name": "Path 11",
+              "x": 78.1,
+              "y": 338.3,
+              "width": 55.8,
+              "height": 73.4,
+              "geometry": "M23.7 2.8Q27.9-2.8 32.1 2.8L53.7 31.1Q57.9 36.7 53.7 42.3L32.1 70.6Q27.9 76.2 23.7 70.6L2.1 42.3Q-2.1 36.7 2.1 31.1Z",
+              "viewBox": [
+                0,
+                0,
+                55.800000000000125,
+                73.39999999999856
+              ],
+              "stroke": "#3FB97A24",
+              "strokeWidth": 0.8,
+              "strokeAlignment": "center"
+            },
+            {
+              "type": "path",
+              "id": "FNgQo",
+              "name": "Path 12",
+              "x": 73.7,
+              "y": 427.6,
+              "width": 64.6,
+              "height": 84.8,
+              "geometry": "M26.9 3.6Q32.3-3.6 37.7 3.6L61.9 35.2Q67.3 42.4 61.9 49.6L37.7 81.2Q32.3 88.4 26.9 81.2L2.7 49.6Q-2.7 42.4 2.7 35.2Z",
+              "viewBox": [
+                0,
+                0,
+                64.60000000000011,
+                84.7999999999978
+              ],
+              "fill": "#0C171226",
+              "stroke": "#3FB97A38",
+              "strokeWidth": 1.6,
+              "strokeAlignment": "center"
+            },
+            {
+              "type": "path",
+              "id": "jPjYp",
+              "name": "Path 13",
+              "x": 78.1,
+              "y": 433.3,
+              "width": 55.8,
+              "height": 73.4,
+              "geometry": "M23.7 2.8Q27.9-2.8 32.1 2.8L53.7 31.1Q57.9 36.7 53.7 42.3L32.1 70.6Q27.9 76.2 23.7 70.6L2.1 42.3Q-2.1 36.7 2.1 31.1Z",
+              "viewBox": [
+                0,
+                0,
+                55.800000000000125,
+                73.40000000000117
+              ],
+              "stroke": "#3FB97A1A",
+              "strokeWidth": 0.8,
+              "strokeAlignment": "center"
+            }
+          ],
+          "x": 0,
+          "y": 0
+        },
+        {
+          "type": "text",
+          "id": "rune6",
+          "name": "Rune Algiz",
+          "x": 71,
+          "y": 437,
+          "width": 70,
+          "height": 52,
+          "textGrowth": "fixed-width-height",
+          "textAlign": "center",
+          "textAlignVertical": "middle",
+          "content": "ᛉ",
+          "fontFamily": "Noto Sans Runic",
+          "fontSize": 34,
+          "fill": "#3FB97A",
+          "opacity": 0.35
+        },
+        {
+          "type": "text",
+          "id": "rune5",
+          "name": "Rune Madr",
+          "x": 71,
+          "y": 342,
+          "width": 70,
+          "height": 52,
+          "textGrowth": "fixed-width-height",
+          "textAlign": "center",
+          "textAlignVertical": "middle",
+          "content": "ᛘ",
+          "fontFamily": "Noto Sans Runic",
+          "fontSize": 34,
+          "fill": "#3FB97A",
+          "opacity": 0.45
+        },
+        {
+          "type": "text",
+          "id": "rune4",
+          "name": "Rune Ing",
+          "x": 97,
+          "y": 245,
+          "width": 70,
+          "height": 52,
+          "textGrowth": "fixed-width-height",
+          "textAlign": "center",
+          "textAlignVertical": "middle",
+          "content": "ᛜ",
+          "fontFamily": "Noto Sans Runic",
+          "fontSize": 36,
+          "fill": "#7CF7B4",
+          "effect": {
+            "type": "shadow",
+            "shadowType": "outer",
+            "color": "#4BE592",
+            "offset": {
+              "x": 0,
+              "y": 0
+            },
+            "blur": 10
+          }
+        },
+        {
+          "type": "text",
+          "id": "rune3",
+          "name": "Rune Sowilo",
+          "x": 155,
+          "y": 162,
+          "width": 70,
+          "height": 52,
+          "textGrowth": "fixed-width-height",
+          "textAlign": "center",
+          "textAlignVertical": "middle",
+          "content": "ᛋ",
+          "fontFamily": "Noto Sans Runic",
+          "fontSize": 36,
+          "fill": "#5CE39A",
+          "effect": {
+            "type": "shadow",
+            "shadowType": "outer",
+            "color": "#4BE59288",
+            "offset": {
+              "x": 0,
+              "y": 0
+            },
+            "blur": 8
+          }
+        },
+        {
+          "type": "text",
+          "id": "rune2",
+          "name": "Rune Hagalaz",
+          "x": 235,
+          "y": 105,
+          "width": 70,
+          "height": 52,
+          "textGrowth": "fixed-width-height",
+          "textAlign": "center",
+          "textAlignVertical": "middle",
+          "content": "ᚺ",
+          "fontFamily": "Noto Sans Runic",
+          "fontSize": 36,
+          "fill": "#5CE39A",
+          "effect": {
+            "type": "shadow",
+            "shadowType": "outer",
+            "color": "#4BE59288",
+            "offset": {
+              "x": 0,
+              "y": 0
+            },
+            "blur": 8
+          }
+        },
+        {
+          "type": "text",
+          "id": "rune1",
+          "name": "Rune Thurisaz (selected)",
+          "x": 330,
+          "y": 67,
+          "width": 70,
+          "height": 52,
+          "textGrowth": "fixed-width-height",
+          "textAlign": "center",
+          "textAlignVertical": "middle",
+          "content": "ᚦ",
+          "fontFamily": "Noto Sans Runic",
+          "fontSize": 38,
+          "fill": "#F4FFF8",
+          "effect": [
+            {
+              "type": "shadow",
+              "shadowType": "outer",
+              "color": "#FF3B3BB3",
+              "offset": {
+                "x": -2,
+                "y": 0
+              },
+              "blur": 0
+            },
+            {
+              "type": "shadow",
+              "shadowType": "outer",
+              "color": "#3BE0FFB3",
+              "offset": {
+                "x": 2,
+                "y": 0
+              },
+              "blur": 0
+            },
+            {
+              "type": "shadow",
+              "shadowType": "outer",
+              "color": "#7CF7B4",
+              "offset": {
+                "x": 0,
+                "y": 0
+              },
+              "blur": 12
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "id": "lbl6",
+          "name": "Key G",
+          "x": 71,
+          "y": 492,
+          "width": 70,
+          "textGrowth": "fixed-width",
+          "textAlign": "center",
+          "content": "G",
+          "fontFamily": "Roboto Mono",
+          "fontSize": 10,
+          "fontWeight": "500",
+          "fill": "#3FB97A",
+          "opacity": 0.3
+        },
+        {
+          "type": "text",
+          "id": "lbl5",
+          "name": "Key F",
+          "x": 71,
+          "y": 397,
+          "width": 70,
+          "textGrowth": "fixed-width",
+          "textAlign": "center",
+          "content": "F",
+          "fontFamily": "Roboto Mono",
+          "fontSize": 10,
+          "fontWeight": "500",
+          "fill": "#3FB97A",
+          "opacity": 0.38
+        },
+        {
+          "type": "text",
+          "id": "lbl4",
+          "name": "Key R",
+          "x": 97,
+          "y": 300,
+          "width": 70,
+          "textGrowth": "fixed-width",
+          "textAlign": "center",
+          "content": "R",
+          "fontFamily": "Roboto Mono",
+          "fontSize": 10,
+          "fontWeight": "600",
+          "fill": "#7CF7B4"
+        },
+        {
+          "type": "text",
+          "id": "lbl3",
+          "name": "Key B",
+          "x": 155,
+          "y": 217,
+          "width": 70,
+          "textGrowth": "fixed-width",
+          "textAlign": "center",
+          "content": "B",
+          "fontFamily": "Roboto Mono",
+          "fontSize": 10,
+          "fontWeight": "600",
+          "fill": "#5CE39A",
+          "opacity": 0.85
+        },
+        {
+          "type": "text",
+          "id": "lbl2",
+          "name": "Key Q",
+          "x": 235,
+          "y": 160,
+          "width": 70,
+          "textGrowth": "fixed-width",
+          "textAlign": "center",
+          "content": "Q",
+          "fontFamily": "Roboto Mono",
+          "fontSize": 10,
+          "fontWeight": "600",
+          "fill": "#5CE39A",
+          "opacity": 0.85
+        },
+        {
+          "type": "text",
+          "id": "lbl1",
+          "name": "Key M1",
+          "x": 330,
+          "y": 120,
+          "width": 70,
+          "textGrowth": "fixed-width",
+          "textAlign": "center",
+          "content": "M1",
+          "fontFamily": "Roboto Mono",
+          "fontSize": 10,
+          "fontWeight": "700",
+          "fill": "#C8FFE0"
+        },
+        {
+          "type": "frame",
+          "id": "rHYWq",
+          "name": "Dial details",
+          "width": 680,
+          "height": 660,
+          "layout": "none",
+          "children": [
+            {
+              "type": "path",
+              "id": "V0iCk",
+              "name": "Path 1",
+              "x": 330,
+              "y": 500,
+              "width": 350,
+              "height": 160,
+              "geometry": "M70 60L190 120 270 60 230 0M190 120L210 160M270 60L350 90M0 100L70 60",
+              "viewBox": [
+                0,
+                0,
+                350,
+                160
+              ],
+              "stroke": "#3A4A428C",
+              "strokeWidth": 1.2,
+              "strokeAlignment": "center"
+            },
+            {
+              "type": "path",
+              "id": "gmt9v",
+              "name": "Path 2",
+              "x": 301,
+              "y": 314.7,
+              "width": 62.1,
+              "height": 153.9,
+              "geometry": "M62.1 0A117 117 0 0 0 55.7 3.6M49.9 7.5A117 117 0 0 0 44 11.9M38.7 16.4A117 117 0 0 0 33.4 21.4M28.7 26.5A117 117 0 0 0 24.1 32.2M20 37.9A117 117 0 0 0 16.1 44.1M12.8 50.2A117 117 0 0 0 9.6 56.8M7.1 63.3A117 117 0 0 0 4.8 70.3M3 77A117 117 0 0 0 1.6 84.2M0.6 91.1A117 117 0 0 0 0.1 98.4M0 105.3A117 117 0 0 0 0.4 112.7M1.1 119.6A117 117 0 0 0 2.4 126.8M4 133.6A117 117 0 0 0 6.1 140.6M8.5 147.1A117 117 0 0 0 11.5 153.9",
+              "viewBox": [
+                0,
+                0,
+                62.10000000000002,
+                153.90000000000015
+              ],
+              "stroke": "#3FB97ACC",
+              "strokeWidth": 1.6,
+              "strokeAlignment": "center",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "group",
+              "id": "mc1X2",
+              "name": "Group 6",
+              "x": 0,
+              "y": 0,
+              "children": [
+                {
+                  "type": "path",
+                  "id": "mEjwL",
+                  "name": "Ellipse 3",
+                  "x": 413.2,
+                  "y": 292,
+                  "width": 6.4,
+                  "height": 20,
+                  "geometry": "M0 10A10 3.2 90 1 0 6.4 10 10 3.2 90 1 0 0 10Z",
+                  "viewBox": [
+                    0,
+                    0,
+                    6.399999999999977,
+                    20.000000000000114
+                  ],
+                  "fill": "#FF3B3B",
+                  "opacity": 0.8
+                },
+                {
+                  "type": "path",
+                  "id": "fDszy",
+                  "name": "Ellipse 4",
+                  "x": 416.4,
+                  "y": 292,
+                  "width": 6.4,
+                  "height": 20,
+                  "geometry": "M0 10A10 3.2 90 1 0 6.4 10 10 3.2 90 1 0 0 10Z",
+                  "viewBox": [
+                    0,
+                    0,
+                    6.400000000000034,
+                    20.000000000000114
+                  ],
+                  "fill": "#3BE0FF",
+                  "opacity": 0.7
+                },
+                {
+                  "type": "path",
+                  "id": "DVO0t",
+                  "name": "Ellipse 5",
+                  "x": 415.76,
+                  "y": 293.5,
+                  "width": 4.48,
+                  "height": 17,
+                  "geometry": "M0 8.5A8.5 2.24 90 1 0 4.48 8.5 8.5 2.24 90 1 0 0 8.5Z",
+                  "viewBox": [
+                    0,
+                    0,
+                    4.480000000000075,
+                    17.000000000000284
+                  ],
+                  "fill": "#FFFFFF"
+                }
+              ]
+            },
+            {
+              "type": "group",
+              "id": "PFUvI",
+              "name": "Group 10",
+              "x": 0,
+              "y": 0,
+              "children": [
+                {
+                  "type": "path",
+                  "id": "HDnRk",
+                  "name": "Ellipse 7",
+                  "x": 510.11,
+                  "y": 445.73,
+                  "width": 16.28,
+                  "height": 9.72,
+                  "geometry": "M6.919 2.566A2.6 9 62 1 0 9.36 7.157 2.6 9 62 1 0 6.919 2.566Z",
+                  "viewBox": [
+                    0,
+                    0,
+                    16.278620251376026,
+                    9.7230364929963
+                  ],
+                  "fill": "#FF3B3B",
+                  "opacity": 0.8
+                },
+                {
+                  "type": "path",
+                  "id": "H25Dq",
+                  "name": "Ellipse 8",
+                  "x": 511.61,
+                  "y": 448.55,
+                  "width": 16.28,
+                  "height": 9.72,
+                  "geometry": "M6.919 2.566A2.6 9 62 1 0 9.36 7.157 2.6 9 62 1 0 6.919 2.566Z",
+                  "viewBox": [
+                    0,
+                    0,
+                    16.27862025137597,
+                    9.723036492996243
+                  ],
+                  "fill": "#3BE0FF",
+                  "opacity": 0.7
+                },
+                {
+                  "type": "path",
+                  "id": "mECaD",
+                  "name": "Ellipse 9",
+                  "x": 512.1,
+                  "y": 448.02,
+                  "width": 13.8,
+                  "height": 7.97,
+                  "geometry": "M6.048 2.377A1.82 7.65 62 1 0 7.756 5.591 1.82 7.65 62 1 0 6.048 2.377Z",
+                  "viewBox": [
+                    0,
+                    0,
+                    13.803940049729135,
+                    7.9687287401102935
+                  ],
+                  "fill": "#FFFFFF"
+                }
+              ]
+            },
+            {
+              "type": "group",
+              "id": "LLKox",
+              "name": "Group 13",
+              "x": 0,
+              "y": 0,
+              "children": [
+                {
+                  "type": "path",
+                  "id": "AZnVA",
+                  "name": "Ellipse 11",
+                  "x": 287.88,
+                  "y": 457.99,
+                  "width": 16.24,
+                  "height": 10.03,
+                  "geometry": "M6.711 7.662A9 3 28 1 0 9.527 2.364 9 3 28 1 0 6.711 7.662Z",
+                  "viewBox": [
+                    0,
+                    0,
+                    16.23797581358906,
+                    10.025367034668193
+                  ],
+                  "fill": "#FF4A3B"
+                },
+                {
+                  "type": "path",
+                  "id": "wsKUm",
+                  "name": "Ellipse 12",
+                  "x": 291.31,
+                  "y": 458.61,
+                  "width": 10.7,
+                  "height": 6.3,
+                  "geometry": "M4.601 4.565A6 1.6 28 1 0 6.103 1.739 6 1.6 28 1 0 4.601 4.565Z",
+                  "viewBox": [
+                    0,
+                    0,
+                    10.703886295504333,
+                    6.304550064713283
+                  ],
+                  "fill": "#FFB0A0"
+                }
+              ]
+            },
+            {
+              "type": "path",
+              "id": "nzgxD",
+              "name": "Path 14",
+              "x": 409.5,
+              "y": 398,
+              "width": 12,
+              "height": 40,
+              "geometry": "M6 0L12 20 6 40 0 20Z",
+              "viewBox": [
+                0,
+                0,
+                12,
+                40
+              ],
+              "fill": "#FF3B3B",
+              "opacity": 0.85
+            },
+            {
+              "type": "path",
+              "id": "gKfQu",
+              "name": "Path 15",
+              "x": 414.5,
+              "y": 398,
+              "width": 12,
+              "height": 40,
+              "geometry": "M6 0L12 20 6 40 0 20Z",
+              "viewBox": [
+                0,
+                0,
+                12,
+                40
+              ],
+              "fill": "#3BE0FF",
+              "opacity": 0.75
+            },
+            {
+              "type": "path",
+              "id": "pHw58",
+              "name": "Path 16",
+              "x": 412,
+              "y": 398,
+              "width": 12,
+              "height": 40,
+              "geometry": "M6 0L12 20 6 40 0 20Z",
+              "viewBox": [
+                0,
+                0,
+                12,
+                40
+              ],
+              "fill": "#FFFFFF"
+            },
+            {
+              "type": "path",
+              "id": "515B6",
+              "name": "Path 17",
+              "x": 418,
+              "y": 404,
+              "width": 0.01,
+              "height": 28,
+              "geometry": "M0 0L0 28",
+              "viewBox": [
+                0,
+                0,
+                0.01,
+                28
+              ],
+              "fill": "#000000",
+              "stroke": "#C8FFE0",
+              "strokeWidth": 1,
+              "strokeAlignment": "center"
+            }
+          ],
+          "x": 0,
+          "y": 0
+        }
+      ],
+      "effect": {
+        "type": "shader",
+        "url": "./shaders/crt-glow.glsl",
+        "uniforms": {
+          "u_aberration": 2.4,
+          "u_bloom": 1.1,
+          "u_bloomRadius": 6,
+          "u_grain": 0.05,
+          "u_vignette": 0.4
+        }
+      }
+    }
+  ],
+  "variables": {
+    "bg": {
+      "type": "color",
+      "value": "#070A14"
+    },
+    "surface": {
+      "type": "color",
+      "value": "#0F1424"
+    },
+    "surface-2": {
+      "type": "color",
+      "value": "#161C30"
+    },
+    "border": {
+      "type": "color",
+      "value": "#FFFFFF14"
+    },
+    "text": {
+      "type": "color",
+      "value": "#F8FAFC"
+    },
+    "text-dim": {
+      "type": "color",
+      "value": "#94A3B8"
+    },
+    "accent": {
+      "type": "color",
+      "value": "#7C3AED"
+    },
+    "accent-2": {
+      "type": "color",
+      "value": "#22D3EE"
+    },
+    "success": {
+      "type": "color",
+      "value": "#34D399"
+    },
+    "warning": {
+      "type": "color",
+      "value": "#FBBF24"
+    },
+    "radius": {
+      "type": "number",
+      "value": 20
+    },
+    "font": {
+      "type": "string",
+      "value": "Inter"
+    }
+  }
+}

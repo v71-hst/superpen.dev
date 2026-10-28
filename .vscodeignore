@@ -1,0 +1,15 @@
+src/**
+server/**
+extension/**
+node_modules/**
+*.vsix
+start.mjs
+vite.config.ts
+tsconfig.json
+**/*.map
+index.html
+public/**
+examples/**
+release/**
+.gitignore
+README.md

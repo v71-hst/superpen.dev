@@ -1,0 +1,121 @@
+{
+  "name": "pen-editor-remake",
+  "displayName": "Pen Editor (Remake)",
+  "description": "Visual editor for .pen design files with a pen.dev-style interface.",
+  "version": "0.1.0",
+  "publisher": "local-remake",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/v71-hst/superpen.dev.git"
+  },
+  "private": true,
+  "type": "module",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "main": "./dist/extension.cjs",
+  "icon": "media/icon.png",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "penEditorRemake.editor",
+        "displayName": "Pen Editor (Remake)",
+        "selector": [
+          {
+            "filenamePattern": "*.pen"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "commands": [
+      {
+        "command": "penEditorRemake.open",
+        "title": "Open Pen Editor",
+        "category": "Pen Editor",
+        "icon": {
+          "light": "media/button-light.svg",
+          "dark": "media/button-dark.svg"
+        }
+      },
+      {
+        "command": "penEditorRemake.registerMcp",
+        "title": "Register MCP Server with Claude Code",
+        "category": "Pen Editor"
+      },
+      {
+        "command": "penEditorRemake.newFile",
+        "title": "New .pen Design File",
+        "category": "Pen Editor"
+      },
+      {
+        "command": "penEditorRemake.openAsJson",
+        "title": "Open .pen File as JSON",
+        "category": "Pen Editor"
+      },
+      {
+        "command": "penEditorRemake.openInEditor",
+        "title": "Open in Pen Editor",
+        "category": "Pen Editor"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "penEditorRemake.openAsJson",
+          "when": "resourceExtname == .pen",
+          "group": "navigation"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "penEditorRemake.open",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "start": "node start.mjs",
+    "dev": "vite",
+    "typecheck": "tsc --noEmit",
+    "build:webview": "vite build",
+    "build:extension": "esbuild extension/extension.ts --bundle --platform=node --format=cjs --external:vscode --outfile=dist/extension.cjs",
+    "build:mcp": "esbuild extension/mcp.ts --bundle --platform=node --format=cjs --target=node18 --outfile=dist/mcp.cjs",
+    "build": "npm run build:webview && npm run build:extension && npm run build:mcp",
+    "package": "npm run build && vsce package --no-dependencies --skip-license -o release/superpen.vsix"
+  },
+  "dependencies": {
+    "feather-icons": "4.29.2",
+    "imagetracerjs": "1.2.6",
+    "immer": "10.1.1",
+    "lucide-react": "0.577.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "svg-path-bbox": "2.1.0",
+    "svgpath": "2.6.0",
+    "zustand": "4.5.5"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "@types/feather-icons": "4.29.4",
+    "@types/node": "22.7.5",
+    "@types/react": "18.3.11",
+    "@types/react-dom": "18.3.1",
+    "@types/vscode": "1.90.0",
+    "@vitejs/plugin-react": "4.3.2",
+    "@vscode/vsce": "3.2.1",
+    "esbuild": "0.24.0",
+    "typescript": "5.6.3",
+    "vite": "5.4.8",
+    "zod": "3.25.76"
+  }
+}
