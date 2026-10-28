@@ -1,14 +1,27 @@
 <p align="center">
-  <img src="media/banner.png" alt="superpen.dev: design .pen UIs inside VS Code" width="100%">
+  <img src="media/banner.png" alt="Superpencil: design .pen UIs inside VS Code" width="100%">
 </p>
 
-# superpen.dev
+# Superpencil
 
-A VS Code extension for designing UIs in `.pen` files (the pen.dev file format), with a pen.dev-style editor:
+**Superpencil** (from the superpen.dev repo) is a VS Code extension for designing UIs in `.pen` files (the pen.dev file format), with a pen.dev-style editor:
 layers, components, auto layout, variables and themes, script-generated content, GPU shaders, SVG import, and an
 MCP server so Claude can design alongside you.
 
 Your `.pen` files stay plain pen.dev JSON, so they keep working in pen.dev too.
+
+---
+
+## What's new
+
+- **New name and icon**: the extension is now called **Superpencil** (it was "Pen Editor (Remake)"). Updating
+  from the old build replaces it in place; your MCP registration keeps working.
+- **Sharper, lighter zoomed-out view**: below 33% zoom, frames are drawn from images that are pixel-sharp at 33%
+  and drop to half resolution each time you halve the zoom, so far-out views use far less memory. Small UI screens
+  (8+ layers) now get this too instead of staying full live layouts.
+- **Smoother zooming**: the canvas no longer re-measures every frame on each zoom step, skips pointer hit-testing
+  while the view is moving, and keeps the design out of the accessibility tree. On a large file this cut the time
+  spent in slow frames by about 40% and the worst hitch from 90–150 ms to about 60 ms.
 
 ---
 
@@ -22,8 +35,8 @@ You need **VS Code 1.90 or newer**.
    *Or* in a terminal: `code --install-extension path\to\superpen.vsix --force`
 3. **Ctrl+Shift+P → Reload Window**.
 
-Open any `.pen` file and it opens in the visual editor. There's also a pen button in the editor title bar
-(top right) that opens or creates `.pen` files.
+It shows up in the Extensions list as **Superpencil**. Open any `.pen` file and it opens in the visual editor.
+There's also a pen button in the editor title bar (top right) that opens or creates `.pen` files.
 
 > If you also have the official pen.dev extension installed, VS Code may ask which editor to use. Right-click the
 > tab → **Reopen Editor With…** to switch.
@@ -62,7 +75,9 @@ How it works:
 ## Features
 
 - **Canvas**: pan (scroll / Space-drag / middle mouse), zoom (Ctrl+scroll, pinch), Shift+1 fit, Shift+2 zoom to
-  selection. Very large files stay smooth: off-screen frames are skipped and zoomed-out frames are drawn as images.
+  selection. Very large files stay smooth: off-screen frames are skipped, and below 33% zoom frames are drawn as
+  images whose resolution follows the zoom (sharp at 33%, half size at each halving). Selecting a frame or zooming
+  back in switches it back to the live, editable layout.
 - **Editing**: select / deep-select (Ctrl+click), move, resize, draw shapes, text, frames, notes and pen paths,
   auto layout, components and instances, variables and themes, undo/redo through VS Code.
 - **Smart guides**: dragged layers snap to the edges and centres of their neighbours and parent, and to equal
@@ -98,6 +113,11 @@ Editing a `.js` / `.glsl` / image file next to your `.pen` file updates the canv
   A Claude chat can also read the live state with the `diagnose_editor` tool.
 - **"claude" not found when registering MCP** → the registration command is copied to your clipboard; run it in a
   terminal where Claude Code is installed.
+- **Is it safe / will antivirus mind?** The extension is plain JavaScript (no `.exe` or native code). Its only
+  network server listens on `127.0.0.1` (your own PC) so Claude chats can reach the editor, it writes only to
+  `~/.pen-editor`, and the only commands it runs are `node --version` and `claude mcp add/remove` when you register
+  the MCP server. If Node.js isn't installed it starts the MCP server with VS Code's own runtime
+  (`ELECTRON_RUN_AS_NODE`), which some strict corporate security tools flag; installing Node.js avoids that.
 
 ---
 
@@ -110,6 +130,9 @@ npm install
 npm run package        # builds and writes release/superpen.vsix
 npm start [folder]     # optional: run the editor in a browser against a folder of .pen files (defaults to ./examples)
 ```
+
+Set `PEN_PROD=1` before `npm start` to serve the production build instead of the dev server (useful for measuring
+performance, since React's dev mode is much slower).
 
 Project layout:
 
