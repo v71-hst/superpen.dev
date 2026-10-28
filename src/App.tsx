@@ -22,7 +22,7 @@ function EditorCrashed({ error, reset }: { error: Error; reset: () => void }) {
       <div className="home-card">
         <h1>Something went wrong in the editor</h1>
         <p style={{ fontFamily: 'var(--mono)', fontSize: 12, whiteSpace: 'pre-wrap' }}>{error.message}</p>
-        <p>The error was written to the Pen Editor log. Your document is safe — nothing is lost.</p>
+        <p>The error was written to the Superpencil log. Your document is safe — nothing is lost.</p>
         <div className="home-actions">
           <button className="primary" onClick={reset}>
             Try again

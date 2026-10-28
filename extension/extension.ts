@@ -71,7 +71,7 @@ async function registerMcp(context: vscode.ExtensionContext, interactive: boolea
   const r = await run(cmd);
   if (r.ok) {
     await context.globalState.update('mcpRegistered', true);
-    vscode.window.showInformationMessage(`Pen Editor MCP server registered with Claude Code as "${MCP_NAME}". Start a new Claude chat (or run /mcp) to use it.`);
+    vscode.window.showInformationMessage(`Superpencil MCP server registered with Claude Code as "${MCP_NAME}". Start a new Claude chat (or run /mcp) to use it.`);
   } else {
     await vscode.env.clipboard.writeText(cmd);
     vscode.window.showErrorMessage(`Registering the MCP server failed: ${r.out.slice(0, 300)} — the command was copied to your clipboard.`);
@@ -80,7 +80,7 @@ async function registerMcp(context: vscode.ExtensionContext, interactive: boolea
 
 async function maybePromptMcp(context: vscode.ExtensionContext) {
   if (context.globalState.get('mcpRegistered') || context.globalState.get('mcpPromptDismissed')) return;
-  const pick = await vscode.window.showInformationMessage('Register the Pen Editor MCP server with Claude Code so Claude can read and edit your .pen designs?', 'Register', 'Not now', "Don't ask again");
+  const pick = await vscode.window.showInformationMessage('Register the Superpencil MCP server with Claude Code so Claude can read and edit your .pen designs?', 'Register', 'Not now', "Don't ask again");
   if (pick === 'Register') await registerMcp(context, true);
   else if (pick === "Don't ask again") await context.globalState.update('mcpPromptDismissed', true);
 }
@@ -108,7 +108,7 @@ async function openPenEditor() {
   for (const uri of files.sort((a, b) => a.fsPath.localeCompare(b.fsPath))) {
     items.push({ label: path.basename(uri.fsPath), description: vscode.workspace.asRelativePath(path.dirname(uri.fsPath)), uri });
   }
-  const pick = await vscode.window.showQuickPick(items, { placeHolder: 'Open a .pen design in Pen Editor' });
+  const pick = await vscode.window.showQuickPick(items, { placeHolder: 'Open a .pen design in Superpencil' });
   if (!pick) return;
   if (pick.action === 'new') return newPenFile();
   let uri = pick.uri;
@@ -130,13 +130,13 @@ async function newPenFile() {
   await vscode.commands.executeCommand('vscode.openWith', uri, VIEW_TYPE);
 }
 
-// ---------- logging: Output panel ("Pen Editor") + ~/.pen-editor/logs/webview.log ----------
+// ---------- logging: Output panel ("Superpencil") + ~/.pen-editor/logs/webview.log ----------
 
 let output: vscode.OutputChannel | undefined;
 const LOG_FILE = path.join(PEN_HOME, 'logs', 'webview.log');
 
 function writeLog(file: string, level: string, message: string) {
-  output ??= vscode.window.createOutputChannel('Pen Editor');
+  output ??= vscode.window.createOutputChannel('Superpencil');
   const line = `${new Date().toISOString()} [${level}] ${file}: ${message}`;
   output.appendLine(line);
   try {

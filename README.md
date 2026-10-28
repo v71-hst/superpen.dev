@@ -38,7 +38,7 @@ folders next to it — the showcase uses them).
 The extension includes an MCP server, so Claude Code chats can read and edit your designs.
 
 1. Install [Claude Code](https://claude.com/claude-code) so the `claude` command works in a terminal.
-2. In VS Code: **Ctrl+Shift+P → "Pen Editor: Register MCP Server with Claude Code"** (you're also asked once on
+2. In VS Code: **Ctrl+Shift+P → "Superpencil: Register MCP Server with Claude Code"** (you're also asked once on
    first start).
 3. Start a new Claude chat and ask it to work on one of your open `.pen` files.
 
@@ -94,7 +94,7 @@ Editing a `.js` / `.glsl` / image file next to your `.pen` file updates the canv
 
 - **Something looks broken** → there's a "Reload editor" button if the editor ever hits an error, or
   Ctrl+Shift+P → **Reload Window**. Your document is never lost.
-- **Logs**: VS Code → Output panel → **Pen Editor**, or the file `~/.pen-editor/logs/webview.log`.
+- **Logs**: VS Code → Output panel → **Superpencil**, or the file `~/.pen-editor/logs/webview.log`.
   A Claude chat can also read the live state with the `diagnose_editor` tool.
 - **"claude" not found when registering MCP** → the registration command is copied to your clipboard; run it in a
   terminal where Claude Code is installed.

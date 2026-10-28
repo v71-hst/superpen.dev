@@ -1,4 +1,4 @@
-// Pen Editor MCP server (stdio). One process per Claude chat: it talks to every open VS Code window's bridge,
+// Superpencil MCP server (stdio). One process per Claude chat: it talks to every open VS Code window's bridge,
 // lets the chat pick which .pen file to work on, and holds an edit lock on it so other chats can't clobber it.
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -44,7 +44,7 @@ async function rpc(b: BridgeInfo, method: string, params: any = {}, timeoutMs = 
   }
 }
 
-/** Live VS Code windows running the Pen Editor extension (stale registry entries are removed). */
+/** Live VS Code windows running the Superpencil extension (stale registry entries are removed). */
 async function bridges(): Promise<BridgeInfo[]> {
   let files: string[] = [];
   try {
@@ -92,7 +92,7 @@ function norm(p: string) {
 
 async function resolveFile(file: string) {
   const files = await allFiles(true);
-  if (!files.length) throw new Error('No VS Code window with the Pen Editor extension is running (or it has no .pen files). Open VS Code with the extension installed.');
+  if (!files.length) throw new Error('No VS Code window with the Superpencil extension is running (or it has no .pen files). Open VS Code with the extension installed.');
   const want = norm(file.trim());
   let hits = files.filter(f => norm(f.path) === want);
   if (!hits.length && path.isAbsolute(file)) {
@@ -142,11 +142,11 @@ const server = new McpServer(
   { name: 'pen-editor', version: '0.2.0' },
   {
     instructions:
-      'Edits .pen design files open in VS Code (Pen Editor extension). Start with list_open_files, then select_file to choose the file this chat works on (this takes an edit lock so other chats cannot edit it at the same time). Call get_guide once for the .pen format. Edit with apply_operations, then screenshot to verify visually.',
+      'Edits .pen design files open in VS Code (Superpencil extension). Start with list_open_files, then select_file to choose the file this chat works on (this takes an edit lock so other chats cannot edit it at the same time). Call get_guide once for the .pen format. Edit with apply_operations, then screenshot to verify visually.',
   },
 );
 
-tool('list_open_files', 'List .pen files open in Pen Editor across all VS Code windows, with unsaved state and which chat (if any) holds the edit lock. include_closed also lists .pen files in the workspaces that are not open.', { include_closed: z.boolean().optional() }, async ({ include_closed }) => {
+tool('list_open_files', 'List .pen files open in Superpencil across all VS Code windows, with unsaved state and which chat (if any) holds the edit lock. include_closed also lists .pen files in the workspaces that are not open.', { include_closed: z.boolean().optional() }, async ({ include_closed }) => {
   const files = await allFiles(!!include_closed);
   if (!files.length) return text('No .pen files are open. Use include_closed: true to list workspace files, or ask the user to open one.');
   const lines = files.map(f => {

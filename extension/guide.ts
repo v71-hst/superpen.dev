@@ -1,5 +1,5 @@
 // Reference text returned by the get_guide tool.
-export const GUIDE = `# .pen format and editing guide (Pen Editor MCP)
+export const GUIDE = `# .pen format and editing guide (Superpencil MCP)
 
 ## Workflow
 1. list_open_files → select_file (takes the edit lock for this chat; opens the file if needed).

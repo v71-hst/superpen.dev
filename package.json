@@ -1,6 +1,6 @@
 {
   "name": "pen-editor-remake",
-  "displayName": "Pen Editor (Remake)",
+  "displayName": "Superpencil",
   "description": "Visual editor for .pen design files with a pen.dev-style interface.",
   "version": "0.1.0",
   "publisher": "local-remake",
@@ -27,7 +27,7 @@
     "customEditors": [
       {
         "viewType": "penEditorRemake.editor",
-        "displayName": "Pen Editor (Remake)",
+        "displayName": "Superpencil",
         "selector": [
           {
             "filenamePattern": "*.pen"
@@ -39,8 +39,8 @@
     "commands": [
       {
         "command": "penEditorRemake.open",
-        "title": "Open Pen Editor",
-        "category": "Pen Editor",
+        "title": "Open in Superpencil",
+        "category": "Superpencil",
         "icon": {
           "light": "media/button-light.svg",
           "dark": "media/button-dark.svg"
@@ -49,22 +49,22 @@
       {
         "command": "penEditorRemake.registerMcp",
         "title": "Register MCP Server with Claude Code",
-        "category": "Pen Editor"
+        "category": "Superpencil"
       },
       {
         "command": "penEditorRemake.newFile",
         "title": "New .pen Design File",
-        "category": "Pen Editor"
+        "category": "Superpencil"
       },
       {
         "command": "penEditorRemake.openAsJson",
         "title": "Open .pen File as JSON",
-        "category": "Pen Editor"
+        "category": "Superpencil"
       },
       {
         "command": "penEditorRemake.openInEditor",
-        "title": "Open in Pen Editor",
-        "category": "Pen Editor"
+        "title": "Open in Superpencil",
+        "category": "Superpencil"
       }
     ],
     "menus": {
