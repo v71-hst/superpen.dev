@@ -1,13 +1,14 @@
 // Paint editor popover: solid / gradient / image fills, alpha, gradient stops and variable binding.
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X } from 'lucide-react';
+import { X, Pipette, Monitor } from 'lucide-react';
 import { parseColor, toHex, colorCss, type RGBA } from '../render/paint';
 import { useStore } from '../editor/store';
 import { resolveVariable, isVarRef } from '../model/resolve';
 import { NumberField, Select, fmt } from './common';
 import { currentTree } from '../editor/tree';
 import { ShaderControls } from './AssetControls';
+import { startPicking, stopPicking, pickFromScreen, screenPickerSupported } from '../editor/eyedropper';
 
 type HSV = { h: number; s: number; v: number; a: number };
 
@@ -40,6 +41,7 @@ function hsvToRgb({ h, s, v, a }: HSV): RGBA {
 /** Color editing widget for a single color value (hex string or $variable). */
 function ColorArea({ value, onChange, theme }: { value: string; onChange: (v: string) => void; theme: any }) {
   const doc = useStore(s => s.doc)!;
+  const picking = useStore(s => !!s.pickColor);
   const resolved = isVarRef(value) ? resolveVariable(doc, value.slice(1), theme) : value;
   const rgba = parseColor(resolved) ?? { r: 0, g: 0, b: 0, a: 1 };
   const [hsv, setHsv] = useState<HSV>(() => rgbToHsv(rgba));
@@ -101,6 +103,14 @@ function ColorArea({ value, onChange, theme }: { value: string; onChange: (v: st
           />
         </div>
         <NumberField value={Math.round(hsv.a * 100)} suffix="%" min={0} max={100} onChange={v => emit({ ...hsv, a: v / 100 })} style={{ width: 64 }} />
+        <button className={'icon-btn' + (picking ? ' on' : '')} title="Pick a color from a layer (keeps variables) — Esc to cancel" onClick={() => (picking ? stopPicking() : startPicking(onChange))}>
+          <Pipette />
+        </button>
+        {screenPickerSupported && (
+          <button className="icon-btn" title="Pick any pixel on screen" onClick={() => pickFromScreen().then(c => c && emit({ ...rgbToHsv(parseColor(c)!), a: hsv.a }))}>
+            <Monitor />
+          </button>
+        )}
       </div>
     </>
   );
@@ -140,17 +150,28 @@ export function PaintPopover({ anchor, paint, onChange, onClose, allowImage = tr
   }, [anchor]);
   useEffect(() => {
     const down = (e: PointerEvent) => {
+      // A canvas click while the eyedropper picks for this popover must not close it.
+      if (useStore.getState().pickColor && !ref.current?.contains(e.target as Node)) return;
       if (!ref.current?.contains(e.target as Node) && !(e.target as HTMLElement).closest?.('.swatch-btn')) onClose();
     };
-    const key = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      // Escape first cancels a pending eyedropper pick, then closes the popover.
+      if (useStore.getState().pickColor) {
+        e.stopImmediatePropagation();
+        return stopPicking();
+      }
+      onClose();
+    };
     const t = setTimeout(() => window.addEventListener('pointerdown', down, true));
-    window.addEventListener('keydown', key);
+    window.addEventListener('keydown', key, true);
     return () => {
       clearTimeout(t);
       window.removeEventListener('pointerdown', down, true);
-      window.removeEventListener('keydown', key);
+      window.removeEventListener('keydown', key, true);
     };
   }, [onClose]);
+  useEffect(() => () => stopPicking(), []);
 
   const kind = typeof paint === 'string' ? 'color' : paint?.type === 'gradient' ? (paint.gradientType ?? 'linear') : (paint?.type ?? 'color');
   const solidValue = typeof paint === 'string' ? paint : paint?.type === 'color' ? paint.color : '#000000';

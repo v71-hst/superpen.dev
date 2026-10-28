@@ -1,6 +1,7 @@
 // Infinite canvas: renders the document, selection/hover overlay, frame labels and all pointer gestures.
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { NodeView, RenderCtx, type RenderContextValue } from '../render/NodeView';
+import { pickAt, colorFromChain } from '../editor/eyedropper';
 import { useStore, keySource, applyProps } from '../editor/store';
 import { useTree, ancestry, currentTree, type Tree } from '../editor/tree';
 import { canvasRect, clientToWorld, elFor, isAbsolutelyPositioned, markUserViewChange, moveNode, parentLayoutOf, screenRectOf, worldRectOf, zoomBy } from '../editor/ops';
@@ -326,6 +327,11 @@ export function Canvas() {
       return;
     }
 
+    if (tool === 'eyedropper') {
+      pickAt(chainFromElement(target), e.shiftKey);
+      return;
+    }
+
     if (tool === 'comment') {
       // Pin to the deepest real node under the pointer so the comment follows it.
       const chain = chainFromElement(target).filter(k => keySource(k).kind === 'real');
@@ -481,6 +487,10 @@ export function Canvas() {
     const s = useStore.getState();
     if (!d) {
       if (tool === 'pen') setPenHover(clientToWorld(e.clientX, e.clientY));
+      if (tool === 'eyedropper' && !panning) {
+        const k = colorFromChain(chainFromElement(pointerTarget(e)))?.key ?? null;
+        if (k !== s.hover) s.set({ hover: k });
+      }
       if ((tool === 'select' || tool === 'scale') && !panning && tree) {
         const t = pointerTarget(e);
         const lk = t.closest<HTMLElement>('[data-label-k]')?.dataset.labelK;

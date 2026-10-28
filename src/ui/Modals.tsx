@@ -47,6 +47,7 @@ const SHORTCUTS: [string, [string, string][]][] = [
       ['Text', 'T'],
       ['Frame', 'F / A'],
       ['Note', 'N'],
+      ['Eyedropper (Shift: stroke)', 'I'],
       ['Hand (hold)', 'H / Space'],
     ],
   ],

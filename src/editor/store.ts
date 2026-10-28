@@ -7,7 +7,7 @@ import { log, takeViewSource } from './diagnostics';
 
 setAutoFreeze(false);
 
-export type Tool = 'select' | 'scale' | 'rect' | 'ellipse' | 'polygon' | 'icon' | 'text' | 'frame' | 'note' | 'hand' | 'pen' | 'comment';
+export type Tool = 'select' | 'scale' | 'rect' | 'ellipse' | 'polygon' | 'icon' | 'text' | 'frame' | 'note' | 'hand' | 'pen' | 'comment' | 'eyedropper';
 export type LeftTab = 'layers' | 'slides' | 'components' | 'libraries';
 export type Modal = null | 'shortcuts' | 'variables' | 'settings' | 'about' | 'iconPicker' | 'find' | 'lint';
 
@@ -65,6 +65,10 @@ type State = {
   pending: PendingReview | null;
   /** Comment pin being opened/edited on the canvas. */
   openComment: string | null;
+  /** A color field waiting for an eyedropper pick on the canvas. */
+  pickColor: ((color: string) => void) | null;
+  /** Tool to return to after a color-field pick. */
+  prevTool: Tool | null;
 };
 
 type Actions = {
@@ -114,6 +118,8 @@ export const useStore = create<State & Actions>((set, get) => ({
   reviewMode: localStorage.getItem('pen.reviewMode') === '1',
   pending: null,
   openComment: null,
+  pickColor: null,
+  prevTool: null,
 
   openDoc: (doc, file) =>
     set({ doc, savedDoc: doc, file, past: [], future: [], selection: [], hover: null, editingKey: null, previewTheme: null, expanded: {}, lastMerge: null, view: fitViewForDoc(doc), stateView: null, pending: null, openComment: null }),

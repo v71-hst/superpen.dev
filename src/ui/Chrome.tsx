@@ -30,6 +30,7 @@ import {
   StickyNote,
   Triangle,
   Type,
+  Pipette,
 } from 'lucide-react';
 import { useStore, isDirty, type Tool } from '../editor/store';
 import { useTree } from '../editor/tree';
@@ -115,6 +116,7 @@ export function Toolbar() {
       {btn('note', StickyNote, 'Note (N)')}
       {btn('hand', Hand, 'Hand (H)')}
       {btn('comment', MessageSquare, 'Comment (C)')}
+      {btn('eyedropper', Pipette, 'Eyedropper (I): click a layer to copy its color, or apply it to the selection (Shift: stroke)')}
       <button className="tool" title="Components" onClick={() => useStore.setState({ leftOpen: true, leftTab: 'components' })}>
         <Component strokeWidth={1.75} />
       </button>

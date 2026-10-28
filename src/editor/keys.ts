@@ -20,6 +20,7 @@ import {
 import { saveDoc, saveDocAs } from './fileio';
 import { confirmDiscard } from '../ui/Chrome';
 import { flushEdits, inVsCode } from './host';
+import { stopPicking } from './eyedropper';
 
 function typing(e: KeyboardEvent) {
   const t = e.target as HTMLElement;
@@ -141,6 +142,7 @@ export function installShortcuts() {
         e.preventDefault();
         return deleteSelection();
       case 'Escape': {
+        if (s.pickColor) return stopPicking();
         if (s.tool !== 'select') return s.set({ tool: 'select' });
         if (s.openComment) return s.set({ openComment: null });
         if (s.stateView) return s.set({ stateView: null });
@@ -167,9 +169,10 @@ export function installShortcuts() {
       }
     }
     if (e.altKey || e.shiftKey) return;
-    const tools: Record<string, any> = { v: 'select', k: 'scale', r: 'rect', o: 'ellipse', p: 'pen', t: 'text', f: 'frame', a: 'frame', n: 'note', h: 'hand', c: 'comment' };
+    const tools: Record<string, any> = { v: 'select', k: 'scale', r: 'rect', o: 'ellipse', p: 'pen', t: 'text', f: 'frame', a: 'frame', n: 'note', h: 'hand', c: 'comment', i: 'eyedropper' };
     if (tools[k]) {
       const t = tools[k];
+      if (s.pickColor) s.set({ pickColor: null });
       if (t === 'rect' || t === 'ellipse') s.set({ shapeTool: t });
       if (t === 'select' || t === 'scale') s.set({ selectTool: t });
       s.set({ tool: t });
