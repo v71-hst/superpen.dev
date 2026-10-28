@@ -66,64 +66,70 @@ export function penFsPlugin(workspace: string): Plugin {
     res.end(body);
   };
 
+  const api = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
+    if (!req.url?.startsWith('/api/')) return next();
+    const url = new URL(req.url, 'http://localhost');
+    try {
+      if (url.pathname === '/api/info') {
+        return send(res, 200, JSON.stringify({ workspace: root, files: listPenFiles(root).sort() }));
+      }
+      if (url.pathname === '/api/file') {
+        const full = safe(url.searchParams.get('path'));
+        if (!full) return send(res, 400, JSON.stringify({ error: 'bad path' }));
+        if (req.method === 'GET') {
+          if (!fs.existsSync(full)) return send(res, 404, JSON.stringify({ error: 'not found' }));
+          return send(res, 200, fs.readFileSync(full), MIME[path.extname(full).toLowerCase()] ?? 'application/octet-stream');
+        }
+        if (req.method === 'PUT') {
+          const body = await readBody(req);
+          fs.mkdirSync(path.dirname(full), { recursive: true });
+          fs.writeFileSync(full, body);
+          return send(res, 200, JSON.stringify({ ok: true, mtime: fs.statSync(full).mtimeMs }));
+        }
+      }
+      if (url.pathname === '/api/stat') {
+        const full = safe(url.searchParams.get('path'));
+        if (!full || !fs.existsSync(full)) return send(res, 404, JSON.stringify({ error: 'not found' }));
+        return send(res, 200, JSON.stringify({ mtime: fs.statSync(full).mtimeMs }));
+      }
+      if (url.pathname === '/api/watch') {
+        const full = safe(url.searchParams.get('path'));
+        if (!full || !fs.existsSync(full)) return send(res, 404, JSON.stringify({ error: 'not found' }));
+        res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
+        res.write(': ok\n\n');
+        let timer: NodeJS.Timeout | undefined;
+        const watcher = fs.watch(full, () => {
+          clearTimeout(timer);
+          timer = setTimeout(() => {
+            try {
+              res.write(`data: ${JSON.stringify({ mtime: fs.statSync(full).mtimeMs })}\n\n`);
+            } catch {
+              /* file may be mid-write */
+            }
+          }, 150);
+        });
+        const ping = setInterval(() => res.write(': ping\n\n'), 25000);
+        req.on('close', () => {
+          watcher.close();
+          clearInterval(ping);
+          clearTimeout(timer);
+        });
+        return;
+      }
+      send(res, 404, JSON.stringify({ error: 'unknown endpoint' }));
+    } catch (err) {
+      send(res, 500, JSON.stringify({ error: String(err) }));
+    }
+  };
+
   return {
     name: 'pen-fs',
     configureServer(server) {
-      server.middlewares.use(async (req, res, next) => {
-        if (!req.url?.startsWith('/api/')) return next();
-        const url = new URL(req.url, 'http://localhost');
-        try {
-          if (url.pathname === '/api/info') {
-            return send(res, 200, JSON.stringify({ workspace: root, files: listPenFiles(root).sort() }));
-          }
-          if (url.pathname === '/api/file') {
-            const full = safe(url.searchParams.get('path'));
-            if (!full) return send(res, 400, JSON.stringify({ error: 'bad path' }));
-            if (req.method === 'GET') {
-              if (!fs.existsSync(full)) return send(res, 404, JSON.stringify({ error: 'not found' }));
-              return send(res, 200, fs.readFileSync(full), MIME[path.extname(full).toLowerCase()] ?? 'application/octet-stream');
-            }
-            if (req.method === 'PUT') {
-              const body = await readBody(req);
-              fs.mkdirSync(path.dirname(full), { recursive: true });
-              fs.writeFileSync(full, body);
-              return send(res, 200, JSON.stringify({ ok: true, mtime: fs.statSync(full).mtimeMs }));
-            }
-          }
-          if (url.pathname === '/api/stat') {
-            const full = safe(url.searchParams.get('path'));
-            if (!full || !fs.existsSync(full)) return send(res, 404, JSON.stringify({ error: 'not found' }));
-            return send(res, 200, JSON.stringify({ mtime: fs.statSync(full).mtimeMs }));
-          }
-          if (url.pathname === '/api/watch') {
-            const full = safe(url.searchParams.get('path'));
-            if (!full || !fs.existsSync(full)) return send(res, 404, JSON.stringify({ error: 'not found' }));
-            res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
-            res.write(': ok\n\n');
-            let timer: NodeJS.Timeout | undefined;
-            const watcher = fs.watch(full, () => {
-              clearTimeout(timer);
-              timer = setTimeout(() => {
-                try {
-                  res.write(`data: ${JSON.stringify({ mtime: fs.statSync(full).mtimeMs })}\n\n`);
-                } catch {
-                  /* file may be mid-write */
-                }
-              }, 150);
-            });
-            const ping = setInterval(() => res.write(': ping\n\n'), 25000);
-            req.on('close', () => {
-              watcher.close();
-              clearInterval(ping);
-              clearTimeout(timer);
-            });
-            return;
-          }
-          send(res, 404, JSON.stringify({ error: 'unknown endpoint' }));
-        } catch (err) {
-          send(res, 500, JSON.stringify({ error: String(err) }));
-        }
-      });
+      server.middlewares.use(api);
+    },
+    // `PEN_PROD=1 node start.mjs` serves the production build (for measuring performance without React dev checks).
+    configurePreviewServer(server) {
+      server.middlewares.use(api);
     },
   };
 }

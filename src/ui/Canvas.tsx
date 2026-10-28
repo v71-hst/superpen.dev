@@ -8,7 +8,7 @@ import { makeUrlResolver } from '../editor/fileio';
 import { allIds, displayName, locate, newId } from '../model/doc';
 import type { PenNode, RNode } from '../model/types';
 import { fmt } from './common';
-import { onViewChanged, scheduleCull } from '../editor/culling';
+import { onViewChanged, pointerTarget, rootWorldRect, scheduleCull } from '../editor/culling';
 import { LOD_ZOOM, bitmapUrl, getBitmap, hasFixedSize, lodEligible, lodInteraction, requestBitmap, type Bitmap } from '../editor/lod';
 import { deepResolve, isGeneratedKey } from '../model/resolve';
 import { fillList, primaryColor } from '../render/paint';
@@ -294,7 +294,7 @@ export function Canvas() {
 
   // ---- pointer gestures ----
   const onPointerDown = (e: React.PointerEvent) => {
-    const target = e.target as HTMLElement;
+    const target = pointerTarget(e);
     if (target.closest('[data-editing]')) return;
     if (target.closest('.island, .menu, .popover')) return;
     // Stop the browser's own text selection / native drag-and-drop: they cancel our pointer gestures mid-drag
@@ -482,7 +482,7 @@ export function Canvas() {
     if (!d) {
       if (tool === 'pen') setPenHover(clientToWorld(e.clientX, e.clientY));
       if ((tool === 'select' || tool === 'scale') && !panning && tree) {
-        const t = e.target as HTMLElement;
+        const t = pointerTarget(e);
         const lk = t.closest<HTMLElement>('[data-label-k]')?.dataset.labelK;
         const chain = chainFromElement(t);
         const k = lk ?? (chain.length ? pickFromChain(chain, s.selection, tree, e.ctrlKey || e.metaKey) : null);
@@ -805,7 +805,7 @@ export function Canvas() {
       onPointerLeave={() => useStore.getState().hover && useStore.getState().set({ hover: null })}
       onContextMenu={e => e.preventDefault()}
     >
-      <div id="pen-world" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` }}>
+      <div id="pen-world" aria-hidden style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` }}>
         <RenderCtx.Provider value={renderCtx}>{tree && <Roots tree={tree} />}</RenderCtx.Provider>
       </div>
       {tree && <Overlay tree={tree} onResizeStart={onResizeStart} draft={draft} />}
@@ -863,11 +863,17 @@ function Overlay({ tree, onResizeStart, draft }: { tree: Tree; onResizeStart: (e
     const toLocal = (r: DOMRect): Rect => ({ x: r.left - c.left, y: r.top - c.top, w: r.width, h: r.height });
     const sel = selection.map(key => ({ key, r: screenRectOf(key) })).filter(x => x.r).map(x => ({ key: x.key, r: toLocal(x.r!) }));
     const hr = hover && !selection.includes(hover) ? screenRectOf(hover) : null;
+    // Label positions come from the document and the view where possible: measuring every frame on each zoom step
+    // forces a layout of the whole design.
     const labels = tree.roots
       .filter(n => n.props.enabled !== false && (n.type === 'frame' || n.instanceOf || n.isComponent || n.type === 'group'))
-      .map(n => ({ key: n.key, r: elFor(n.key)?.getBoundingClientRect() }))
-      .filter(x => x.r && x.r.right > c.left && x.r.left < c.right && x.r.bottom > c.top - 24 && x.r.top - 24 < c.bottom)
-      .map(x => ({ key: x.key, r: toLocal(x.r!) }));
+      .map(n => {
+        const w = rootWorldRect(n);
+        if (w) return { key: n.key, r: { x: view.x + w.x * view.zoom, y: view.y + w.y * view.zoom, w: w.w * view.zoom, h: w.h * view.zoom } as Rect | null };
+        const b = elFor(n.key)?.getBoundingClientRect();
+        return { key: n.key, r: b ? toLocal(b) : null };
+      })
+      .filter((x): x is { key: string; r: Rect } => !!x.r && x.r.x + x.r.w > 0 && x.r.x < c.width && x.r.y + x.r.h > -24 && x.r.y - 24 < c.height);
     setBoxes({ sel, hover: hr ? toLocal(hr) : null, labels });
   }, [tree, selection, hover, view, tick, editingKey]);
 
