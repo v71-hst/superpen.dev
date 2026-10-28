@@ -1,5 +1,7 @@
 // Zoomed-out level of detail: large top-level frames are shown as GPU-backed bitmaps instead of live DOM.
 // Bitmaps are rendered in the background (closest to the viewport first) and refreshed when a frame changes.
+// Each bitmap is sharp at LOD_ZOOM; zooming further out switches to half-resolution copies (mip levels), made by
+// downscaling the previous level so lower zooms upload and composite smaller textures.
 import React from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { useStore } from './store';
@@ -10,12 +12,15 @@ import { makeUrlResolver } from './fileio';
 import type { RNode } from '../model/types';
 
 /** Below this zoom, big frames may be drawn from bitmaps. */
-export const LOD_ZOOM = 0.3;
-/** Frames with fewer nodes than this are cheap enough to always render live. */
-const MIN_NODES = 40;
+export const LOD_ZOOM = 1 / 3;
+/** Frames with fewer nodes than this (labels, single shapes) are cheap enough to always render live. */
+const MIN_NODES = 8;
 const MAX_BITMAP_SIDE = 2048;
+/** Mip levels stop once the longest side would drop below this many pixels. */
+const MIN_LEVEL_SIDE = 48;
 
-export type Bitmap = { url: string; node: RNode; ratio: number; w: number; h: number };
+/** `levels[i]` is the bitmap at `ratio / 2^i` (filled in on demand); `levels[0] === url`. */
+export type Bitmap = { url: string; node: RNode; ratio: number; w: number; h: number; levels: (string | undefined)[] };
 
 const bitmaps = new Map<string, Bitmap>();
 const queued = new Set<string>();
@@ -57,11 +62,105 @@ export function hasFixedSize(n: RNode) {
 
 function bitmapRatio(w: number, h: number): number {
   const dpr = devicePixelRatio || 1;
-  return Math.min(LOD_ZOOM * dpr * 1.1, MAX_BITMAP_SIDE / Math.max(w, h, 1));
+  return Math.min(LOD_ZOOM * dpr, MAX_BITMAP_SIDE / Math.max(w, h, 1));
 }
 
 export function getBitmap(key: string): Bitmap | undefined {
   return bitmaps.get(key);
+}
+
+function levelSize(bm: Bitmap, i: number) {
+  const r = bm.ratio / 2 ** i;
+  return { w: Math.max(1, Math.round(bm.w * r)), h: Math.max(1, Math.round(bm.h * r)) };
+}
+
+/** The smallest level that still has at least one bitmap pixel per screen pixel at this zoom. */
+function wantedLevel(bm: Bitmap, zoom: number): number {
+  const need = zoom * (devicePixelRatio || 1);
+  let i = 0;
+  while (bm.ratio / 2 ** (i + 1) >= need && Math.max(bm.w, bm.h) * (bm.ratio / 2 ** (i + 1)) >= MIN_LEVEL_SIDE) i++;
+  return i;
+}
+
+/** Image URL to show for a bitmap at this zoom; if the right level isn't made yet, uses the next sharper one and queues it. */
+export function bitmapUrl(bm: Bitmap, zoom: number): string {
+  const want = wantedLevel(bm, zoom);
+  for (let i = want; i > 0; i--) {
+    if (bm.levels[i]) return bm.levels[i]!;
+    if (i === want) requestLevel(bm.node.key, want);
+  }
+  return bm.url;
+}
+
+const levelQueue = new Map<string, number>();
+let levelWorking = false;
+let levelTimer: ReturnType<typeof setTimeout> | undefined;
+/** Downscaling is cheap, but waits for zooming to pause briefly so swaps don't land mid-gesture. */
+const LEVEL_IDLE_MS = 150;
+
+function requestLevel(key: string, level: number) {
+  if ((levelQueue.get(key) ?? -1) >= level) return;
+  levelQueue.set(key, level);
+  clearTimeout(levelTimer);
+  levelTimer = setTimeout(workLevels, LEVEL_IDLE_MS);
+}
+
+async function workLevels() {
+  if (levelWorking) return;
+  const quiet = performance.now() - lastInteraction;
+  if (quiet < LEVEL_IDLE_MS) {
+    levelTimer = setTimeout(workLevels, LEVEL_IDLE_MS - quiet);
+    return;
+  }
+  levelWorking = true;
+  try {
+    for (const [key, want] of levelQueue) {
+      levelQueue.delete(key);
+      const bm = bitmaps.get(key);
+      if (!bm) continue;
+      // Halve one level at a time from the sharpest one below `want`: a single big downscale would alias.
+      let from = want;
+      while (from > 0 && !bm.levels[from]) from--;
+      for (let i = from + 1; i <= want; i++) {
+        const { w, h } = levelSize(bm, i);
+        const url = await downscale(bm.levels[i - 1]!, w, h);
+        if (bitmaps.get(key) !== bm) {
+          URL.revokeObjectURL(url);
+          break;
+        }
+        bm.levels[i] = url;
+      }
+      bump();
+      if (performance.now() - lastInteraction < LEVEL_IDLE_MS) break;
+    }
+  } catch (e) {
+    console.warn('[pen-editor] bitmap level failed', e);
+  } finally {
+    levelWorking = false;
+    if (levelQueue.size) levelTimer = setTimeout(workLevels, LEVEL_IDLE_MS);
+  }
+}
+
+async function downscale(src: string, w: number, h: number): Promise<string> {
+  const blob = await (await fetch(src)).blob();
+  const img = await createImageBitmap(blob, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' });
+  const cv = new OffscreenCanvas(w, h);
+  cv.getContext('2d')!.drawImage(img, 0, 0);
+  img.close();
+  const url = URL.createObjectURL(await cv.convertToBlob({ type: 'image/png' }));
+  await predecode(url);
+  return url;
+}
+
+/** Decode before the <img> switches to it, so the frame doesn't blank for a frame while swapping. */
+function predecode(url: string) {
+  const img = new Image();
+  img.src = url;
+  return img.decode().catch(() => {});
+}
+
+function revoke(bm: Bitmap) {
+  for (const u of bm.levels) if (u) URL.revokeObjectURL(u);
 }
 
 function bump() {
@@ -152,8 +251,10 @@ async function renderBitmap(n: RNode) {
   if (currentTree()?.byKey.get(n.key) !== n) return requestBitmap(n.key);
   const blob = await (await fetch(shot.dataUrl)).blob();
   const old = bitmaps.get(n.key);
-  if (old) URL.revokeObjectURL(old.url);
-  bitmaps.set(n.key, { url: URL.createObjectURL(blob), node: n, ratio, w, h });
+  if (old) revoke(old);
+  const url = URL.createObjectURL(blob);
+  await predecode(url);
+  bitmaps.set(n.key, { url, node: n, ratio, w, h, levels: [url] });
   bump();
 }
 
@@ -179,7 +280,8 @@ function unstage() {
 
 /** Drop all bitmaps (new file opened). */
 export function resetLod() {
-  for (const b of bitmaps.values()) URL.revokeObjectURL(b.url);
+  for (const b of bitmaps.values()) revoke(b);
   bitmaps.clear();
   queued.clear();
+  levelQueue.clear();
 }

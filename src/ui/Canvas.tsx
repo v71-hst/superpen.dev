@@ -9,7 +9,7 @@ import { allIds, displayName, locate, newId } from '../model/doc';
 import type { PenNode, RNode } from '../model/types';
 import { fmt } from './common';
 import { onViewChanged, scheduleCull } from '../editor/culling';
-import { LOD_ZOOM, getBitmap, hasFixedSize, lodEligible, lodInteraction, requestBitmap, type Bitmap } from '../editor/lod';
+import { LOD_ZOOM, bitmapUrl, getBitmap, hasFixedSize, lodEligible, lodInteraction, requestBitmap, type Bitmap } from '../editor/lod';
 import { deepResolve, isGeneratedKey } from '../model/resolve';
 import { fillList, primaryColor } from '../render/paint';
 import { ErrorBoundary, NodeErrorBox } from './ErrorBoundary';
@@ -1029,7 +1029,7 @@ function Roots({ tree }: { tree: Tree }) {
     if (bm && !mounted.current.has(n.key) && !active.has(n.key)) {
       if (budget <= 0 || (budget < LIVE_MOUNTS_PER_FRAME && !onScreen(n.props))) {
         deferred = true;
-        return <BitmapRoot key={n.key} n={n} bm={bm} />;
+        return <BitmapRoot key={n.key} n={n} bm={bm} zoom={zoom} />;
       }
       budget--;
     }
@@ -1048,7 +1048,7 @@ function Roots({ tree }: { tree: Tree }) {
     }
     if (bm && bm.node !== n) want.push(n.key);
     if (bm && zoom * dpr <= bm.ratio * 1.15) {
-      byKey.set(n.key, <BitmapRoot key={n.key} n={n} bm={bm} />);
+      byKey.set(n.key, <BitmapRoot key={n.key} n={n} bm={bm} zoom={zoom} />);
       continue;
     }
     if (!bm) want.push(n.key);
@@ -1076,13 +1076,13 @@ function SafeRoot({ n }: { n: RNode }) {
   );
 }
 
-function BitmapRoot({ n, bm }: { n: RNode; bm: Bitmap }) {
+function BitmapRoot({ n, bm, zoom }: { n: RNode; bm: Bitmap; zoom: number }) {
   const p = n.props;
   return (
     <img
       data-k={n.key}
       data-bitmap
-      src={bm.url}
+      src={bitmapUrl(bm, zoom)}
       draggable={false}
       alt=""
       style={{ position: 'absolute', left: p.x, top: p.y, width: bm.w, height: bm.h, display: 'block', userSelect: 'none' }}
