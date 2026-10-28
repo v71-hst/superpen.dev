@@ -218,7 +218,8 @@ export function Canvas() {
       e.preventDefault();
       if (e.ctrlKey || e.metaKey) {
         const factor = Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0035));
-        zoomBy(factor, e.clientX, e.clientY);
+        // One event never zooms more than 4x either way, however large the reported delta.
+        zoomBy(Math.min(4, Math.max(0.25, factor)), e.clientX, e.clientY);
       } else {
         const { view } = useStore.getState();
         const dx = e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX;
@@ -228,8 +229,24 @@ export function Canvas() {
         useStore.getState().setView({ x: view.x - dx * mul, y: view.y - dy * mul });
       }
     };
+    // Ctrl+wheel / touchpad pinch anywhere in the editor (panels, toolbar, labels) zooms the canvas. Letting it
+    // through would make the browser engine zoom or pinch-magnify the whole page, shifting everything at once.
+    const globalZoom = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      if (el.contains(e.target as Node) && !(e.target as HTMLElement).closest('.island, .menu, .popover')) return; // canvas handler zooms
+      const factor = Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0035));
+      const c = el.getBoundingClientRect();
+      const x = Math.min(Math.max(e.clientX, c.left), c.right);
+      const y = Math.min(Math.max(e.clientY, c.top), c.bottom);
+      zoomBy(Math.min(4, Math.max(0.25, factor)), x, y);
+    };
     el.addEventListener('wheel', wheel, { passive: false });
-    return () => el.removeEventListener('wheel', wheel);
+    window.addEventListener('wheel', globalZoom, { passive: false, capture: true });
+    return () => {
+      el.removeEventListener('wheel', wheel);
+      window.removeEventListener('wheel', globalZoom, { capture: true } as any);
+    };
   }, []);
 
   useEffect(() => onViewChanged(), [view]);

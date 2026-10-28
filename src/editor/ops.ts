@@ -6,6 +6,7 @@ import { applyProps, keySource, useStore } from './store';
 import { builderIndex, currentTree } from './tree';
 import { parseSizing } from '../render/NodeView';
 import { ensureRendered } from './culling';
+import { viewChangeSource } from './diagnostics';
 import { svgToNodes, looksLikeSvg } from '../model/svgImport';
 import { vectorizeImage, type VectorizeOptions } from '../render/vectorize';
 import { makeUrlResolver } from './fileio';
@@ -486,6 +487,7 @@ export function zoomToRect(r: { x: number; y: number; w: number; h: number }, ma
   const zoom = Math.max(0.02, Math.min(maxZoom, availW / Math.max(r.w, 1), availH / Math.max(r.h, 1)));
   const x = left + pad + (availW - r.w * zoom) / 2 - r.x * zoom;
   const y = pad + (availH - r.h * zoom) / 2 - r.y * zoom;
+  viewChangeSource('zoomTo');
   useStore.getState().setView({ x, y, zoom });
 }
 
@@ -503,6 +505,7 @@ function propsRect(key: string) {
 let userViewEpoch = 0;
 export function markUserViewChange() {
   userViewEpoch++;
+  viewChangeSource('user');
 }
 
 export function zoomToKeys(keys: string[], maxZoom = 1) {
@@ -530,7 +533,10 @@ export function zoomToKeys(keys: string[], maxZoom = 1) {
 
 export function zoomToFit() {
   const tree = currentTree();
-  if (!tree?.roots.length) return useStore.getState().setView({ x: 400, y: 100, zoom: 1 });
+  if (!tree?.roots.length) {
+    viewChangeSource('zoomTo');
+    return useStore.getState().setView({ x: 400, y: 100, zoom: 1 });
+  }
   zoomToKeys(tree.roots.filter(r => r.props.enabled !== false).map(r => r.key), 1);
 }
 

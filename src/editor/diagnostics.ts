@@ -43,8 +43,31 @@ export function recentLog() {
   return recent.slice(-50);
 }
 
+/** Set by the code that is about to change the view, so changes from anywhere else can be logged as suspicious. */
+let viewSource = '';
+export function viewChangeSource(source: string) {
+  viewSource = source;
+}
+export function takeViewSource() {
+  const s = viewSource;
+  viewSource = '';
+  return s;
+}
+
 export function installDiagnostics() {
   window.addEventListener('error', e => log('error', `uncaught: ${e.message}`, e.error ?? `${e.filename}:${e.lineno}`));
   window.addEventListener('unhandledrejection', e => log('error', 'unhandled rejection', e.reason));
+  // Page-level pinch-zoom or a window/display-scale change shifts the whole canvas without the view changing.
+  const vv = window.visualViewport;
+  let lastScale = vv?.scale ?? 1;
+  vv?.addEventListener('resize', () => {
+    if (Math.abs(vv.scale - lastScale) > 0.001) log('warn', `page magnification changed to ${vv.scale.toFixed(3)} (browser pinch-zoom)`, { offsetLeft: vv.offsetLeft, offsetTop: vv.offsetTop });
+    lastScale = vv.scale;
+  });
+  let lastDpr = devicePixelRatio;
+  window.addEventListener('resize', () => {
+    if (devicePixelRatio !== lastDpr) log('warn', `display scale changed ${lastDpr} -> ${devicePixelRatio} (VS Code zoom level?)`);
+    lastDpr = devicePixelRatio;
+  });
   log('info', 'editor started', { inVsCode, ua: navigator.userAgent.slice(0, 120) });
 }

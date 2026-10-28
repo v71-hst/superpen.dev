@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { produce, setAutoFreeze } from 'immer';
 import type { PenDoc, PenNode, Theme } from '../model/types';
 import { locate } from '../model/doc';
+import { log, takeViewSource } from './diagnostics';
 
 setAutoFreeze(false);
 
@@ -142,6 +143,8 @@ export const useStore = create<State & Actions>((set, get) => ({
     const next = { ...get().view, ...v };
     // A non-finite value would freeze the canvas (every later pan/zoom stays NaN); ignore such updates.
     if (!isFinite(next.x) || !isFinite(next.y) || !isFinite(next.zoom) || next.zoom <= 0) return;
+    // Every intended view change names its source; anything else is logged with a stack to find stray jumps.
+    if (!takeViewSource()) log('warn', 'view changed from an unexpected place', { from: get().view, to: next, stack: new Error().stack?.split('\n').slice(2, 7).join(' < ') });
     set({ view: next });
   },
   notify: text => {
