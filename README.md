@@ -16,6 +16,8 @@ Your `.pen` files stay plain pen.dev JSON, so they keep working in pen.dev too.
 
 - **New name and icon**: the extension is now called **Superpencil** (it was "Pen Editor (Remake)"). Updating
   from the old build replaces it in place; your MCP registration keeps working.
+- **Sidebar**: a Superpencil icon in the activity bar opens a **Designs** list of every `.pen` file in your
+  workspace (click to open), with buttons for a new design and for registering the MCP server.
 - **Sharper, lighter zoomed-out view**: below 33% zoom, frames are drawn from images that are pixel-sharp at 33%
   and drop to half resolution each time you halve the zoom, so far-out views use far less memory. Small UI screens
   (8+ layers) now get this too instead of staying full live layouts.
@@ -36,7 +38,8 @@ You need **VS Code 1.90 or newer**.
 3. **Ctrl+Shift+P → Reload Window**.
 
 It shows up in the Extensions list as **Superpencil**. Open any `.pen` file and it opens in the visual editor.
-There's also a pen button in the editor title bar (top right) that opens or creates `.pen` files.
+The Superpencil icon in the activity bar (left) lists your workspace's designs, and there's also a pen button in the
+editor title bar (top right) that opens or creates `.pen` files.
 
 > If you also have the official pen.dev extension installed, VS Code may ask which editor to use. Right-click the
 > tab → **Reopen Editor With…** to switch.

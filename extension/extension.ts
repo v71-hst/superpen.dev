@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { exec } from 'node:child_process';
 import { Bridge, PEN_HOME } from './bridge';
+import { registerSidebar } from './sidebar';
 
 const VIEW_TYPE = 'penEditorRemake.editor';
 const MCP_NAME = 'pen-editor';
@@ -19,6 +20,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('penEditorRemake.registerMcp', () => registerMcp(context, true)),
   );
   maybePromptMcp(context);
+  registerSidebar(context, VIEW_TYPE);
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider(VIEW_TYPE, new PenEditorProvider(context), {
       webviewOptions: { retainContextWhenHidden: true },

@@ -24,6 +24,29 @@
     "onStartupFinished"
   ],
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "superpencil",
+          "title": "Superpencil",
+          "icon": "media/activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "superpencil": [
+        {
+          "id": "superpencil.designs",
+          "name": "Designs"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "superpencil.designs",
+        "contents": "No .pen designs in this workspace yet.\n[New .pen Design File](command:penEditorRemake.newFile)\n[Open .pen File…](command:penEditorRemake.open)\nLet Claude Code read and edit your designs:\n[Register MCP Server](command:penEditorRemake.registerMcp)"
+      }
+    ],
     "customEditors": [
       {
         "viewType": "penEditorRemake.editor",
@@ -49,12 +72,14 @@
       {
         "command": "penEditorRemake.registerMcp",
         "title": "Register MCP Server with Claude Code",
-        "category": "Superpencil"
+        "category": "Superpencil",
+        "icon": "$(plug)"
       },
       {
         "command": "penEditorRemake.newFile",
         "title": "New .pen Design File",
-        "category": "Superpencil"
+        "category": "Superpencil",
+        "icon": "$(add)"
       },
       {
         "command": "penEditorRemake.openAsJson",
@@ -65,6 +90,12 @@
         "command": "penEditorRemake.openInEditor",
         "title": "Open in Superpencil",
         "category": "Superpencil"
+      },
+      {
+        "command": "penEditorRemake.refreshDesigns",
+        "title": "Refresh Designs",
+        "category": "Superpencil",
+        "icon": "$(refresh)"
       }
     ],
     "menus": {
@@ -79,6 +110,36 @@
         {
           "command": "penEditorRemake.open",
           "group": "navigation"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "penEditorRemake.newFile",
+          "when": "view == superpencil.designs",
+          "group": "navigation@1"
+        },
+        {
+          "command": "penEditorRemake.refreshDesigns",
+          "when": "view == superpencil.designs",
+          "group": "navigation@2"
+        },
+        {
+          "command": "penEditorRemake.registerMcp",
+          "when": "view == superpencil.designs",
+          "group": "more"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "penEditorRemake.openAsJson",
+          "when": "view == superpencil.designs && viewItem == penFile",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "penEditorRemake.refreshDesigns",
+          "when": "false"
         }
       ]
     }
