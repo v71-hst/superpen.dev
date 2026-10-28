@@ -4,3 +4,7 @@ dist/
 !release/*.vsix
 *.log
 .DS_Store
+
+# Local notes and dev tooling (not part of the published extension)
+CLAUDE.md
+dev/
