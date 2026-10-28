@@ -6,7 +6,7 @@
 
 **Superpencil** (from the superpen.dev repo) is a VS Code extension for designing UIs in `.pen` files (the pen.dev file format), with a pen.dev-style editor:
 layers, components, auto layout, variables and themes, script-generated content, GPU shaders, SVG import, and an
-MCP server so Claude can design alongside you.
+MCP server so Claude or Codex can design alongside you.
 
 Your `.pen` files stay plain pen.dev JSON, so they keep working in pen.dev too.
 
@@ -14,6 +14,11 @@ Your `.pen` files stay plain pen.dev JSON, so they keep working in pen.dev too.
 
 ## What's new
 
+- **Eyedropper** (I): click any layer to copy its colour, or apply it to the selected layers (Shift: as stroke).
+  The colour picker has a pipette too (picks a layer's colour and keeps `$variable` links) and, where supported, a
+  button to pick any pixel on screen.
+- **Codex support**: **"Superpencil: Register MCP Server with Codex"** adds the MCP server to Codex's
+  `~/.codex/config.toml`, so Codex chats (CLI or VS Code extension) can read and edit designs like Claude Code.
 - **New name and icon**: the extension is now called **Superpencil** (it was "Pen Editor (Remake)"). Updating
   from the old build replaces it in place; your MCP registration keeps working.
 - **Sidebar**: a Superpencil icon in the activity bar opens a **Designs** list of every `.pen` file in your
@@ -49,7 +54,7 @@ folders next to it — the showcase uses them).
 
 ---
 
-## Using Claude with it (optional)
+## Using Claude or Codex with it (optional)
 
 The extension includes an MCP server, so Claude Code chats can read and edit your designs.
 
@@ -57,6 +62,11 @@ The extension includes an MCP server, so Claude Code chats can read and edit you
 2. In VS Code: **Ctrl+Shift+P → "Superpencil: Register MCP Server with Claude Code"** (you're also asked once on
    first start).
 3. Start a new Claude chat and ask it to work on one of your open `.pen` files.
+
+**Using Codex instead?** Run **Ctrl+Shift+P → "Superpencil: Register MCP Server with Codex"**. It adds a
+`[mcp_servers.pen-editor]` entry to `~/.codex/config.toml` (or `$CODEX_HOME/config.toml`), keeping a `.bak` copy
+of the old file, then works the same way in a new Codex chat. The editor's lock badge shows which chat
+("Claude chat …" / "Codex chat …") holds a file.
 
 How it works:
 
@@ -90,6 +100,8 @@ How it works:
   one on the canvas, and pick which state an instance shows.
 - **Prototypes**: link any layer to another frame (Design panel → Prototype) with a transition. In Present mode
   links are clickable and hover/pressed states play automatically.
+- **Eyedropper** (I): click a layer to copy its colour, or apply it to the selection (Shift: as stroke). The
+  pipette in the colour picker fills that colour field from a layer, keeping variable links.
 - **Mixed selections**: select shapes and text together and edit fill, stroke and typography at once; each change
   goes only to the layers it applies to.
 - **Find & replace** (Ctrl+F) across text, layer names and variable references.

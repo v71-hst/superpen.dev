@@ -44,7 +44,7 @@
     "viewsWelcome": [
       {
         "view": "superpencil.designs",
-        "contents": "No .pen designs in this workspace yet.\n[New .pen Design File](command:penEditorRemake.newFile)\n[Open .pen File…](command:penEditorRemake.open)\nLet Claude Code read and edit your designs:\n[Register MCP Server](command:penEditorRemake.registerMcp)"
+        "contents": "No .pen designs in this workspace yet.\n[New .pen Design File](command:penEditorRemake.newFile)\n[Open .pen File…](command:penEditorRemake.open)\nLet Claude Code or Codex read and edit your designs:\n[Register with Claude Code](command:penEditorRemake.registerMcp)\n[Register with Codex](command:penEditorRemake.registerMcpCodex)"
       }
     ],
     "customEditors": [
@@ -74,6 +74,11 @@
         "title": "Register MCP Server with Claude Code",
         "category": "Superpencil",
         "icon": "$(plug)"
+      },
+      {
+        "command": "penEditorRemake.registerMcpCodex",
+        "title": "Register MCP Server with Codex",
+        "category": "Superpencil"
       },
       {
         "command": "penEditorRemake.newFile",
@@ -125,6 +130,11 @@
         },
         {
           "command": "penEditorRemake.registerMcp",
+          "when": "view == superpencil.designs",
+          "group": "more"
+        },
+        {
+          "command": "penEditorRemake.registerMcpCodex",
           "when": "view == superpencil.designs",
           "group": "more"
         }

@@ -2,6 +2,7 @@
 import * as vscode from 'vscode';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import { exec } from 'node:child_process';
 import { Bridge, PEN_HOME } from './bridge';
 import { registerSidebar } from './sidebar';
@@ -18,6 +19,7 @@ export function activate(context: vscode.ExtensionContext) {
   installMcpScript(context);
   context.subscriptions.push(
     vscode.commands.registerCommand('penEditorRemake.registerMcp', () => registerMcp(context, true)),
+    vscode.commands.registerCommand('penEditorRemake.registerMcpCodex', () => registerMcpCodex(context)),
   );
   maybePromptMcp(context);
   registerSidebar(context, VIEW_TYPE);
@@ -57,12 +59,17 @@ function run(cmd: string): Promise<{ ok: boolean; out: string }> {
   return new Promise(resolve => exec(cmd, { timeout: 30_000, windowsHide: true }, (err, stdout, stderr) => resolve({ ok: !err, out: (stdout + stderr).trim() })));
 }
 
+/** How to start the MCP server: system Node.js if present, else VS Code's own runtime. */
+async function mcpLaunch(): Promise<{ command: string; env: Record<string, string> }> {
+  const nodeOk = (await run('node --version')).ok;
+  return nodeOk ? { command: 'node', env: {} } : { command: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } };
+}
+
 async function registerMcp(context: vscode.ExtensionContext, interactive: boolean) {
   installMcpScript(context);
-  const nodeOk = (await run('node --version')).ok;
-  // Without a system Node.js, run the server with VS Code's own runtime.
-  const launch = nodeOk ? `node "${MCP_SCRIPT}"` : `"${process.execPath}" "${MCP_SCRIPT}"`;
-  const env = nodeOk ? '' : ' -e ELECTRON_RUN_AS_NODE=1';
+  const { command, env: envVars } = await mcpLaunch();
+  const launch = `"${command}" "${MCP_SCRIPT}"`;
+  const env = Object.entries(envVars).map(([k, v]) => ` -e ${k}=${v}`).join('');
   const cmd = `claude mcp add --scope user${env} ${MCP_NAME} -- ${launch}`;
   if (!(await run('claude --version')).ok) {
     await vscode.env.clipboard.writeText(cmd);
@@ -80,10 +87,57 @@ async function registerMcp(context: vscode.ExtensionContext, interactive: boolea
   }
 }
 
+/**
+ * Codex (CLI and VS Code extension) reads MCP servers from $CODEX_HOME/config.toml (default ~/.codex). The
+ * [mcp_servers.pen-editor] table is written directly, so this works without the codex CLI on PATH.
+ */
+async function registerMcpCodex(context: vscode.ExtensionContext) {
+  installMcpScript(context);
+  const { command, env } = await mcpLaunch();
+  const home = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
+  const file = path.join(home, 'config.toml');
+  // JSON strings are valid TOML basic strings (same escapes), which keeps Windows paths safe.
+  const q = (v: string) => JSON.stringify(v);
+  const block = [
+    `[mcp_servers.${MCP_NAME}]`,
+    `command = ${q(command)}`,
+    `args = [${q(MCP_SCRIPT)}]`,
+    ...(Object.keys(env).length ? [`env = { ${Object.entries(env).map(([k, v]) => `${k} = ${q(v)}`).join(', ')} }`] : []),
+  ].join('\n');
+  try {
+    fs.mkdirSync(home, { recursive: true });
+    const old = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+    if (old) fs.copyFileSync(file, file + '.bak');
+    const next = (removeTomlTable(old, `mcp_servers.${MCP_NAME}`).trimEnd() + '\n\n' + block + '\n').trimStart();
+    fs.writeFileSync(file, next);
+    await context.globalState.update('mcpRegisteredCodex', true);
+    vscode.window.showInformationMessage(`Superpencil MCP server registered with Codex as "${MCP_NAME}" in ${file}. Start a new Codex chat to use it.`);
+  } catch (e: any) {
+    await vscode.env.clipboard.writeText(block + '\n');
+    vscode.window.showErrorMessage(`Could not update ${file}: ${e?.message ?? e} — the config block was copied to your clipboard; paste it into that file.`);
+  }
+}
+
+/** Removes a TOML table and its sub-tables ([name], [name.env], ...) from the text. */
+function removeTomlTable(text: string, name: string): string {
+  const out: string[] = [];
+  let skipping = false;
+  for (const line of text.split(/\r?\n/)) {
+    const m = /^\s*\[\[?\s*([^\]]+?)\s*\]\]?\s*(#.*)?$/.exec(line);
+    if (m) {
+      const t = m[1].replace(/\s*\.\s*/g, '.').replace(/"([^"]*)"/g, '$1');
+      skipping = t === name || t.startsWith(name + '.');
+    }
+    if (!skipping) out.push(line);
+  }
+  return out.join('\n');
+}
+
 async function maybePromptMcp(context: vscode.ExtensionContext) {
-  if (context.globalState.get('mcpRegistered') || context.globalState.get('mcpPromptDismissed')) return;
-  const pick = await vscode.window.showInformationMessage('Register the Superpencil MCP server with Claude Code so Claude can read and edit your .pen designs?', 'Register', 'Not now', "Don't ask again");
-  if (pick === 'Register') await registerMcp(context, true);
+  if (context.globalState.get('mcpRegistered') || context.globalState.get('mcpRegisteredCodex') || context.globalState.get('mcpPromptDismissed')) return;
+  const pick = await vscode.window.showInformationMessage('Register the Superpencil MCP server so Claude Code or Codex can read and edit your .pen designs?', 'Claude Code', 'Codex', 'Not now', "Don't ask again");
+  if (pick === 'Claude Code') await registerMcp(context, true);
+  else if (pick === 'Codex') await registerMcpCodex(context);
   else if (pick === "Don't ask again") await context.globalState.update('mcpPromptDismissed', true);
 }
 

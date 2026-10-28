@@ -300,7 +300,7 @@ export class Bridge {
       const idle = now - cur.lastActive;
       if (!force && idle < TAKEOVER_IDLE_MS) {
         throw new Error(
-          `${path.basename(file)} is locked by another Claude session "${cur.label}" (active ${Math.round(idle / 1000)}s ago). ` +
+          `${path.basename(file)} is locked by another AI session "${cur.label}" (active ${Math.round(idle / 1000)}s ago). ` +
             `Ask the user before interrupting it; call select_file again with force: true to take over.`,
         );
       }

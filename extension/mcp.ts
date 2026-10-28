@@ -1,4 +1,4 @@
-// Superpencil MCP server (stdio). One process per Claude chat: it talks to every open VS Code window's bridge,
+// Superpencil MCP server (stdio). One process per AI chat (Claude Code, Codex, ...): it talks to every open VS Code window's bridge,
 // lets the chat pick which .pen file to work on, and holds an edit lock on it so other chats can't clobber it.
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -14,7 +14,17 @@ const BRIDGE_DIR = path.join(os.homedir(), '.pen-editor', 'bridges');
 type BridgeInfo = { port: number; token: string; pid: number; window: string; folders: string[]; lastFocused: number; file: string };
 type FileInfo = { path: string; name: string; open: boolean; dirty: boolean; window: string; lock: null | { session: string; label: string; you: boolean; idleSeconds: number } };
 
-const session = { id: crypto.randomUUID(), label: `Claude chat ${crypto.randomBytes(2).toString('hex')}` };
+const tag = crypto.randomBytes(2).toString('hex');
+const session = { id: crypto.randomUUID(), label: `AI chat ${tag}` };
+let labelSet = false;
+
+/** Names the session after the connecting client ("Claude chat 3f2a", "Codex chat 91c0"). */
+function clientLabel(name: string | undefined) {
+  const n = (name ?? '').toLowerCase();
+  if (n.includes('claude')) return `Claude chat ${tag}`;
+  if (n.includes('codex')) return `Codex chat ${tag}`;
+  return name ? `${name.slice(0, 30)} chat ${tag}` : `AI chat ${tag}`;
+}
 let selected: { path: string; bridge: BridgeInfo; readOnly: boolean } | null = null;
 
 function pidAlive(pid: number) {
@@ -162,7 +172,10 @@ tool(
   'Choose the .pen file this chat works on and take its edit lock (opens it in VS Code if needed). If another chat is actively editing it, the call is refused unless force is true; a holder idle for over 2 minutes is taken over with a warning. Optionally name this chat (label) so the user can see who holds the lock.',
   { file: z.string().describe('Path, workspace-relative path, or file name'), label: z.string().optional(), force: z.boolean().optional() },
   async ({ file, label, force }) => {
-    if (label) session.label = label.slice(0, 60);
+    if (label) {
+      session.label = label.slice(0, 60);
+      labelSet = true;
+    }
     const f = await resolveFile(file);
     if (selected && norm(selected.path) !== norm(f.path) && !selected.readOnly) await rpc(selected.bridge, 'release', { path: selected.path }).catch(() => undefined);
     try {
@@ -174,7 +187,7 @@ tool(
           (summary ? `\n${JSON.stringify(summary, null, 2)}` : ''),
       );
     } catch (e: any) {
-      if (/locked by another Claude session/.test(e.message)) {
+      if (/locked by another \w+ session/.test(e.message)) {
         selected = { path: f.path, bridge: f.bridge, readOnly: true };
         return text(`Selected ${f.name} READ-ONLY. ${e.message}`);
       }
@@ -395,6 +408,9 @@ process.stdin.on('close', shutdown);
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
+server.server.oninitialized = () => {
+  if (!labelSet) session.label = clientLabel(server.server.getClientVersion()?.name);
+};
 server.connect(new StdioServerTransport()).catch(e => {
   console.error('[pen-editor mcp] failed to start', e);
   process.exit(1);
