@@ -1,5 +1,5 @@
 // Infinite canvas: renders the document, selection/hover overlay, frame labels and all pointer gestures.
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { NodeView, RenderCtx, type RenderContextValue } from '../render/NodeView';
 import { pickAt, colorFromChain } from '../editor/eyedropper';
 import { useStore, keySource, applyProps } from '../editor/store';
@@ -12,7 +12,7 @@ import { fmt } from './common';
 import { onViewChanged, pointerTarget, rootWorldRect, scheduleCull } from '../editor/culling';
 import { LOD_ZOOM, bitmapUrl, getBitmap, hasFixedSize, lodEligible, lodInteraction, requestBitmap, type Bitmap } from '../editor/lod';
 import { deepResolve, isGeneratedKey } from '../model/resolve';
-import { fillList, primaryColor } from '../render/paint';
+import { fillList, fillsToBackground, primaryColor } from '../render/paint';
 import { ErrorBoundary, NodeErrorBox } from './ErrorBoundary';
 import { snapMove, type Guides } from '../editor/snapping';
 import { addComment } from '../editor/comments';
@@ -1106,11 +1106,21 @@ function BitmapRoot({ n, bm, zoom }: { n: RNode; bm: Bitmap; zoom: number }) {
   );
 }
 
+/** Stand-in until a frame's bitmap is ready: its own fills (background images included), so it doesn't flash grey. */
 function PlaceholderRoot({ n }: { n: RNode }) {
   const p = n.props;
   const vars = useStore(s => s.doc?.variables);
-  const fill = primaryColor(fillList(deepResolve({ variables: vars } as any, p.fill, n.theme)));
-  return <div data-k={n.key} data-placeholder style={{ position: 'absolute', left: p.x, top: p.y, width: p.width, height: p.height, background: fill ?? 'rgba(128,128,128,0.12)', borderRadius: typeof p.cornerRadius === 'number' ? p.cornerRadius : undefined }} />;
+  const { resolveUrl } = useContext(RenderCtx);
+  const fills = fillList(deepResolve({ variables: vars } as any, p.fill, n.theme));
+  const bg = fillsToBackground(fills, p.width, p.height, resolveUrl);
+  const painted = bg.backgroundImage || bg.backgroundColor || bg.background;
+  return (
+    <div
+      data-k={n.key}
+      data-placeholder
+      style={{ ...(painted ? bg : { background: primaryColor(fills) ?? 'rgba(128,128,128,0.12)' }), position: 'absolute', left: p.x, top: p.y, width: p.width, height: p.height, borderRadius: typeof p.cornerRadius === 'number' ? p.cornerRadius : undefined }}
+    />
+  );
 }
 
 /**

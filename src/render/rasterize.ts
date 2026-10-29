@@ -50,15 +50,57 @@ async function embeddedFontCss(): Promise<string> {
   return parts.join('\n');
 }
 
+const scaledCache = new Map<string, Promise<string>>();
+
+/**
+ * Data URL of an image downscaled so its longest side is at most `maxSide` (rounded up to a power of two so
+ * captures at similar scales share one copy). Small images, SVGs and anything that can't be decoded are inlined
+ * unchanged.
+ */
+function toScaledDataUrl(url: string, maxSide: number): Promise<string> {
+  const side = 2 ** Math.ceil(Math.log2(Math.max(64, maxSide)));
+  const key = side + '|' + url;
+  let p = scaledCache.get(key);
+  if (!p) {
+    p = (async () => {
+      try {
+        const blob = await (await fetch(url)).blob();
+        if (blob.type === 'image/svg+xml') return toDataUrl(url);
+        const probe = await createImageBitmap(blob);
+        const { width: w, height: h } = probe;
+        probe.close();
+        if (Math.max(w, h) <= side) return toDataUrl(url);
+        const k = side / Math.max(w, h);
+        const rw = Math.max(1, Math.round(w * k));
+        const rh = Math.max(1, Math.round(h * k));
+        const img = await createImageBitmap(blob, { resizeWidth: rw, resizeHeight: rh, resizeQuality: 'high' });
+        const cv = new OffscreenCanvas(rw, rh);
+        cv.getContext('2d')!.drawImage(img, 0, 0);
+        img.close();
+        const out = await cv.convertToBlob({ type: 'image/webp', quality: 0.9 });
+        return await new Promise<string>(res => {
+          const fr = new FileReader();
+          fr.onload = () => res(fr.result as string);
+          fr.readAsDataURL(out);
+        });
+      } catch {
+        return toDataUrl(url);
+      }
+    })();
+    scaledCache.set(key, p);
+  }
+  return p;
+}
+
 /** Thrown with `requireImages` when an image could not be embedded (e.g. a remote host that blocks cross-origin reads). */
 export class ImagesUnavailableError extends Error {}
 
 /** Inlines images as data URLs; returns how many could not be fetched (they would render blank in the SVG). */
-async function inlineImages(root: HTMLElement): Promise<number> {
+async function inlineImages(root: HTMLElement, maxSide?: number): Promise<number> {
   const jobs: Promise<void>[] = [];
   let missing = 0;
   const inline = async (url: string) => {
-    const d = await toDataUrl(url);
+    const d = await (maxSide ? toScaledDataUrl(url, maxSide) : toDataUrl(url));
     if (!d.startsWith('data:')) missing++;
     return d;
   };
@@ -99,6 +141,8 @@ export type RasterOptions = {
   crop?: { x: number; y: number; w: number; h: number };
   /** Throw ImagesUnavailableError instead of rendering images that could not be embedded as blanks. */
   requireImages?: boolean;
+  /** Downscale embedded images to at most this many pixels on their longest side (small captures don't need more). */
+  maxImageSide?: number;
 };
 
 /** Clone of `el` with canvases replaced by images (canvas pixels are not part of a DOM clone). */
@@ -163,7 +207,7 @@ async function buildSvg(el: HTMLElement, opts: Omit<RasterOptions, 'format'>) {
   clone.style.contentVisibility = '';
   if (opts.forceVisible) clone.style.visibility = 'visible';
   clone.querySelectorAll('[data-k]').forEach(x => x.removeAttribute('data-k'));
-  if ((await inlineImages(clone)) && opts.requireImages) throw new ImagesUnavailableError('some images could not be embedded');
+  if ((await inlineImages(clone, opts.maxImageSide)) && opts.requireImages) throw new ImagesUnavailableError('some images could not be embedded');
   const wrapper = document.createElement('div');
   wrapper.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
   wrapper.style.cssText = `position:relative;width:${w}px;height:${h}px;overflow:hidden;${opts.background ? `background:${opts.background};` : ''}`;

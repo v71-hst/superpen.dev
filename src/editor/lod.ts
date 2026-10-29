@@ -253,7 +253,8 @@ async function renderBitmap(n: RNode) {
   const ratio = bitmapRatio(w, h);
   let shot: Awaited<ReturnType<typeof rasterize>>;
   try {
-    shot = await rasterize(el, { format: 'png', pixelRatio: ratio, requireImages: true });
+    // No image inside can need more pixels than the whole bitmap has.
+    shot = await rasterize(el, { format: 'png', pixelRatio: ratio, requireImages: true, maxImageSide: Math.ceil(Math.max(w, h) * ratio) });
   } catch (e) {
     unstage();
     if (!(e instanceof ImagesUnavailableError)) throw e;
