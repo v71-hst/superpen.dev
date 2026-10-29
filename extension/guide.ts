@@ -58,6 +58,13 @@ Clicking it in Present mode navigates. Use this to wire up flows (buttons -> scr
 The user can pin comments on the canvas. Tool results include a note when comments are waiting: read them with get_comments,
 do what they ask, then reply_comment (optionally resolve: true).
 
+## Sections
+Files with many top-level frames should be organised into sections: named groups of top-level frames (one per feature
+or area). create_section groups frames without moving them; the user hides or shows whole sections in the Sections tab,
+and frames in hidden sections are not rendered, which keeps big files fast. When you add new top-level frames to a file
+that has sections, add them to the right section (update_section add_frame_ids). Only hide or show sections when the
+user asks; you can still read and edit frames in hidden sections.
+
 ## apply_operations
 [
   { "op": "insert", "parent": "<frame id or null for top level>", "index": 0, "node": { "type": "frame", ... , "children": [...] } },

@@ -1,5 +1,6 @@
 // Editing commands shared by keyboard shortcuts, menus, panels and canvas gestures.
 import type { PenDoc, PenNode } from '../model/types';
+import { hiddenFrameIds } from './sections';
 import { allIds, cloneWithNewIds, locate, newId } from '../model/doc';
 import { materializeRef } from '../model/resolve';
 import { applyProps, keySource, useStore } from './store';
@@ -537,7 +538,9 @@ export function zoomToFit() {
     viewChangeSource('zoomTo');
     return useStore.getState().setView({ x: 400, y: 100, zoom: 1 });
   }
-  zoomToKeys(tree.roots.filter(r => r.props.enabled !== false).map(r => r.key), 1);
+  const hidden = hiddenFrameIds(useStore.getState().doc);
+  const shown = tree.roots.filter(r => r.props.enabled !== false && !hidden.has(r.key));
+  zoomToKeys((shown.length ? shown : tree.roots).map(r => r.key), 1);
 }
 
 export function zoomBy(factor: number, cx?: number, cy?: number) {

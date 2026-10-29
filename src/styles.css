@@ -333,6 +333,9 @@ html.light ::-webkit-scrollbar-thumb {
 .layer-row.drop-into {
   border-color: var(--sel);
 }
+.layer-name .muted {
+  color: var(--muted);
+}
 .layer-row.hidden-layer .layer-name,
 .layer-row.hidden-layer .layer-icon {
   opacity: 0.45;

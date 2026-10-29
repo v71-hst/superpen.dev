@@ -254,6 +254,34 @@ tool(
 );
 
 tool(
+  'list_sections',
+  'Sections group top-level frames by feature or area (e.g. "HUD", "Menus", "Saber bench"). Lists each section with its frames and whether the user hid it, plus the frames not in any section. Hidden sections are not rendered on the canvas, which keeps large files fast.',
+  {},
+  async () => json(await callEditor('sections', {})),
+);
+
+tool(
+  'create_section',
+  'Group top-level frames into a named section. Use this to organise files with many top-level frames: the user can then hide or show a whole section at once in the Sections tab, and hidden frames are not rendered (big files stay fast). Frames are not moved; a frame belongs to one section at a time. Get frame ids from get_editor_state or list_sections. Leave hidden false unless the user asked to hide it. Requires the edit lock.',
+  { name: z.string(), frame_ids: z.array(z.string()), hidden: z.boolean().optional() },
+  async a => json(await callEditor('createSection', a, true)),
+);
+
+tool(
+  'update_section',
+  'Rename a section, add or remove its frames, or show/hide it (hidden: true hides its frames on the canvas until the user shows them). Only change hidden when the user asks. Requires the edit lock.',
+  { id: z.string(), name: z.string().optional(), add_frame_ids: z.array(z.string()).optional(), remove_frame_ids: z.array(z.string()).optional(), hidden: z.boolean().optional() },
+  async a => json(await callEditor('updateSection', a, true)),
+);
+
+tool(
+  'delete_section',
+  'Delete a section (its frames stay in the file and become visible again). Requires the edit lock.',
+  { id: z.string() },
+  async a => json(await callEditor('deleteSection', a, true)),
+);
+
+tool(
   'lint_design',
   'Design lint for the whole file or one node (id): literal colors that duplicate a variable, tiny or low-contrast text, fractional positions, empty/hidden layers, too many fonts, plus rendering problems (overflowing text, missing components/variables/icons/fonts). Run after larger edits.',
   { id: z.string().optional() },

@@ -1,6 +1,6 @@
-// Left island: Layers / Slides / Components / Libraries tabs.
+// Left island: Layers / Sections / Slides / Components / Libraries tabs.
 import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronRight, Component, Eye, EyeOff, FileDown, Layers, Library, Monitor, Play, Plus, Search, Diamond } from 'lucide-react';
+import { ChevronRight, Component, Eye, EyeOff, FileDown, Layers, LayoutGrid, Library, Monitor, Play, Plus, Search, Diamond } from 'lucide-react';
 import { useStore, keySource, applyProps } from '../editor/store';
 import { useTree, type Tree } from '../editor/tree';
 import { displayName, allIds, newId, locate } from '../model/doc';
@@ -10,6 +10,7 @@ import { makeUrlResolver } from '../editor/fileio';
 import { moveNode, toggleComponent, zoomToKeys, clientToWorld, worldRectOf } from '../editor/ops';
 import { layerIconFor } from './common';
 import { printSlides } from './Present';
+import { sectionsOf, setAllSectionsHidden, setSectionHidden } from '../editor/sections';
 
 export function LeftPanel() {
   const tab = useStore(s => s.leftTab);
@@ -17,6 +18,7 @@ export function LeftPanel() {
   const set = useStore(s => s.set);
   const tabs = [
     { id: 'layers', label: 'Layers', Icon: Layers },
+    { id: 'sections', label: 'Sections', Icon: LayoutGrid },
     { id: 'slides', label: 'Slides', Icon: Monitor },
     { id: 'components', label: 'Components', Icon: Component },
     { id: 'libraries', label: 'Libraries', Icon: Library },
@@ -32,6 +34,7 @@ export function LeftPanel() {
         ))}
       </div>
       {tree && tab === 'layers' && <LayersTab tree={tree} />}
+      {tree && tab === 'sections' && <SectionsTab tree={tree} />}
       {tree && tab === 'slides' && <SlidesTab tree={tree} />}
       {tree && tab === 'components' && <ComponentsTab tree={tree} />}
       {tree && tab === 'libraries' && <LibrariesTab />}
@@ -338,6 +341,64 @@ function SlidesTab({ tree }: { tree: Tree }) {
           <FileDown size={14} /> Export PDF
         </button>
       </div>
+    </>
+  );
+}
+
+// ---------------- sections ----------------
+
+/** Named groups of top-level frames; hidden ones aren't rendered at all until shown again. */
+function SectionsTab({ tree }: { tree: Tree }) {
+  const doc = useStore(s => s.doc);
+  const sections = sectionsOf(doc);
+  const hiddenCount = sections.filter(s => s.hidden).length;
+  const zoomTo = (frames: string[]) => {
+    const keys = frames.filter(k => tree.byKey.has(k));
+    if (keys.length) zoomToKeys(keys, 1);
+  };
+  return (
+    <>
+      <div className="panel-scroll">
+        {sections.map(sec => {
+          const count = sec.frames.filter(k => tree.byKey.has(k)).length;
+          return (
+            <div key={sec.id} className={'layer-row' + (sec.hidden ? ' hidden-layer' : '')} style={{ paddingLeft: 8 }} onClick={() => !sec.hidden && zoomTo(sec.frames)} title={sec.hidden ? 'Hidden: show it to zoom there' : 'Zoom to this section'}>
+              <span className="layer-icon">
+                <LayoutGrid strokeWidth={1.75} />
+              </span>
+              <span className="layer-name">
+                {sec.name} <span className="muted">· {count}</span>
+              </span>
+              <span className={'row-actions' + (sec.hidden ? ' pinned' : '')}>
+                <button
+                  title={sec.hidden ? 'Show section' : 'Hide section'}
+                  onClick={e => {
+                    e.stopPropagation();
+                    setSectionHidden(sec.id, !sec.hidden);
+                  }}
+                >
+                  {sec.hidden ? <EyeOff strokeWidth={1.75} /> : <Eye strokeWidth={1.75} />}
+                </button>
+              </span>
+            </div>
+          );
+        })}
+        {!sections.length && (
+          <div className="help-text">
+            No sections yet. Ask Claude to group your frames into sections (for example "group my frames into sections by feature"). You can then hide whole sections here: hidden frames aren't drawn at all, which keeps big files fast.
+          </div>
+        )}
+      </div>
+      {sections.length > 0 && (
+        <div className="panel-footer">
+          <button onClick={() => setAllSectionsHidden(false)} disabled={!hiddenCount}>
+            <Eye size={14} /> Show all
+          </button>
+          <button onClick={() => setAllSectionsHidden(true)} disabled={hiddenCount === sections.length}>
+            <EyeOff size={14} /> Hide all
+          </button>
+        </div>
+      )}
     </>
   );
 }

@@ -15,6 +15,7 @@ import { agentEdit, recordAgentChange, reviewStatus } from './review';
 import { commentsOf, openForAgent, postMessage, setResolved } from './comments';
 import { lintDesign } from './lint';
 import { exportRoblox } from './roblox';
+import { createSection, deleteSection, hiddenFrameIds, sectionsOf, updateSection } from './sections';
 
 /** Things the agent should know after any call: review mode, and comments from the user waiting for an answer. */
 function agentNotes(): string[] {
@@ -23,6 +24,13 @@ function agentNotes(): string[] {
   if (r) notes.push(r);
   const open = openForAgent(useStore.getState().doc);
   if (open.length) notes.push(`The user left ${open.length} open comment${open.length > 1 ? 's' : ''} on the canvas waiting for a reply: call get_comments.`);
+  const doc = useStore.getState().doc;
+  const sections = sectionsOf(doc);
+  const roots = doc?.children?.length ?? 0;
+  if (!sections.length && roots >= 30)
+    notes.push(`This file has ${roots} top-level frames and no sections. Grouping them with create_section (one section per feature or area, e.g. "HUD", "Menus") lets the user hide whole groups in the Sections tab, and hidden frames aren't rendered, which keeps a big file fast. Offer this to the user, or do it when they ask to organise the file.`);
+  const hidden = sections.filter(x => x.hidden);
+  if (hidden.length) notes.push(`${hidden.length} section(s) are hidden by the user (${hidden.map(x => x.name).join(', ')}): their frames aren't drawn on the canvas. Don't unhide them unless asked; you can still read and edit those frames.`);
   return notes;
 }
 
@@ -156,7 +164,8 @@ export async function handleAgentRequest(method: string, params: any): Promise<a
       return {
         file: s.file?.name,
         version: doc.version,
-        topLevel: tree.roots.map(describe),
+        topLevel: tree.roots.map(n => describe(n) + (hiddenFrameIds(doc).has(n.key) ? ' [in hidden section]' : '')),
+        sections: sectionsOf(doc).map(x => `${x.name} #${x.id}: ${x.frames.length} frames${x.hidden ? ' (hidden)' : ''}`),
         nodeCount: tree.byKey.size,
         components: comps.length,
         variables: Object.keys(doc.variables ?? {}).length,
@@ -187,6 +196,35 @@ export async function handleAgentRequest(method: string, params: any): Promise<a
       const r = out as ReturnType<typeof applyOperations> | null;
       if (r) requestAnimationFrame(() => flash(r.touched));
       return { results: r?.results ?? [], notes: agentNotes() };
+    }
+    case 'sections': {
+      const grouped = new Set(sectionsOf(doc).flatMap(x => x.frames));
+      return {
+        sections: sectionsOf(doc).map(x => ({
+          id: x.id,
+          name: x.name,
+          hidden: !!x.hidden,
+          frames: x.frames.map(k => (tree.byKey.get(k) ? `${displayName(tree.byKey.get(k)!.props)} #${k}` : `#${k} (deleted)`)),
+        })),
+        ungrouped: tree.roots.filter(n => !grouped.has(n.key)).map(n => `${displayName(n.props)} #${n.key}`),
+      };
+    }
+    case 'createSection': {
+      const frames: string[] = params.frame_ids ?? [];
+      if (!params.name || !frames.length) throw new Error('name and frame_ids are required');
+      const id = createSection(String(params.name), frames, !!params.hidden);
+      flushEdits();
+      return { id, notes: agentNotes() };
+    }
+    case 'updateSection': {
+      updateSection(params.id, { name: params.name, add: params.add_frame_ids, remove: params.remove_frame_ids, hidden: params.hidden });
+      flushEdits();
+      return { ok: true, notes: agentNotes() };
+    }
+    case 'deleteSection': {
+      deleteSection(params.id);
+      flushEdits();
+      return { ok: true };
     }
     case 'comments': {
       const all = commentsOf(doc);

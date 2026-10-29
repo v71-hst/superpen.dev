@@ -8,7 +8,7 @@ import { log, takeViewSource } from './diagnostics';
 setAutoFreeze(false);
 
 export type Tool = 'select' | 'scale' | 'rect' | 'ellipse' | 'polygon' | 'icon' | 'text' | 'frame' | 'note' | 'hand' | 'pen' | 'comment' | 'eyedropper';
-export type LeftTab = 'layers' | 'slides' | 'components' | 'libraries';
+export type LeftTab = 'layers' | 'sections' | 'slides' | 'components' | 'libraries';
 export type Modal = null | 'shortcuts' | 'variables' | 'settings' | 'about' | 'iconPicker' | 'find' | 'lint';
 
 /** Agent edits waiting for the user to accept or reject them (review mode). */
