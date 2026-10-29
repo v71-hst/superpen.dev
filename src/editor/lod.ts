@@ -6,7 +6,7 @@ import React from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { useStore } from './store';
 import { currentTree } from './tree';
-import { rasterize } from '../render/rasterize';
+import { ImagesUnavailableError, rasterize } from '../render/rasterize';
 import { NodeView, RenderCtx } from '../render/NodeView';
 import { makeUrlResolver } from './fileio';
 import type { RNode } from '../model/types';
@@ -51,8 +51,14 @@ function containsShader(n: RNode): boolean {
   return v;
 }
 
+/**
+ * Frames with images that can't be embedded in a bitmap (remote hosts that block cross-origin reads) stay live, or
+ * the images would vanish when zoomed out. Keyed by node version, so an edit gives the frame another try.
+ */
+const liveOnly = new WeakSet<RNode>();
+
 export function lodEligible(n: RNode): boolean {
-  return nodeCount(n) >= MIN_NODES && !n.props.rotation && typeof n.props.x === 'number' && typeof n.props.y === 'number' && !containsShader(n);
+  return !liveOnly.has(n) && nodeCount(n) >= MIN_NODES && !n.props.rotation && typeof n.props.x === 'number' && typeof n.props.y === 'number' && !containsShader(n);
 }
 
 /** Placeholders need a known size; frames that hug their content must render live once before they get a bitmap. */
@@ -245,7 +251,16 @@ async function renderBitmap(n: RNode) {
   const h = el.offsetHeight;
   if (!w || !h) return unstage();
   const ratio = bitmapRatio(w, h);
-  const shot = await rasterize(el, { format: 'png', pixelRatio: ratio });
+  let shot: Awaited<ReturnType<typeof rasterize>>;
+  try {
+    shot = await rasterize(el, { format: 'png', pixelRatio: ratio, requireImages: true });
+  } catch (e) {
+    unstage();
+    if (!(e instanceof ImagesUnavailableError)) throw e;
+    liveOnly.add(n);
+    bump();
+    return;
+  }
   unstage();
   // The frame may have changed while rendering; only keep the bitmap if it is still current.
   if (currentTree()?.byKey.get(n.key) !== n) return requestBitmap(n.key);

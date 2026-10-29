@@ -50,8 +50,18 @@ async function embeddedFontCss(): Promise<string> {
   return parts.join('\n');
 }
 
-async function inlineImages(root: HTMLElement) {
+/** Thrown with `requireImages` when an image could not be embedded (e.g. a remote host that blocks cross-origin reads). */
+export class ImagesUnavailableError extends Error {}
+
+/** Inlines images as data URLs; returns how many could not be fetched (they would render blank in the SVG). */
+async function inlineImages(root: HTMLElement): Promise<number> {
   const jobs: Promise<void>[] = [];
+  let missing = 0;
+  const inline = async (url: string) => {
+    const d = await toDataUrl(url);
+    if (!d.startsWith('data:')) missing++;
+    return d;
+  };
   const all = [root, ...root.querySelectorAll<HTMLElement>('*')];
   for (const el of all) {
     const bg = el.style?.backgroundImage;
@@ -59,17 +69,18 @@ async function inlineImages(root: HTMLElement) {
       jobs.push(
         (async () => {
           let out = bg;
-          for (const m of bg.matchAll(/url\("?([^")]+)"?\)/g)) if (!m[1].startsWith('data:')) out = out.split(m[1]).join(await toDataUrl(new URL(m[1], location.href).href));
+          for (const m of bg.matchAll(/url\("?([^")]+)"?\)/g)) if (!m[1].startsWith('data:')) out = out.split(m[1]).join(await inline(new URL(m[1], location.href).href));
           el.style.backgroundImage = out;
         })(),
       );
     }
     if (el.tagName.toLowerCase() === 'image') {
       const href = el.getAttribute('href');
-      if (href && !href.startsWith('data:')) jobs.push(toDataUrl(new URL(href, location.href).href).then(d => el.setAttribute('href', d)));
+      if (href && !href.startsWith('data:')) jobs.push(inline(new URL(href, location.href).href).then(d => el.setAttribute('href', d)));
     }
   }
   await Promise.all(jobs);
+  return missing;
 }
 
 export type RasterOptions = {
@@ -86,6 +97,8 @@ export type RasterOptions = {
   dropSelector?: string;
   /** Crop to this rectangle relative to the element (node units) instead of the element box. */
   crop?: { x: number; y: number; w: number; h: number };
+  /** Throw ImagesUnavailableError instead of rendering images that could not be embedded as blanks. */
+  requireImages?: boolean;
 };
 
 /** Clone of `el` with canvases replaced by images (canvas pixels are not part of a DOM clone). */
@@ -150,7 +163,7 @@ async function buildSvg(el: HTMLElement, opts: Omit<RasterOptions, 'format'>) {
   clone.style.contentVisibility = '';
   if (opts.forceVisible) clone.style.visibility = 'visible';
   clone.querySelectorAll('[data-k]').forEach(x => x.removeAttribute('data-k'));
-  await inlineImages(clone);
+  if ((await inlineImages(clone)) && opts.requireImages) throw new ImagesUnavailableError('some images could not be embedded');
   const wrapper = document.createElement('div');
   wrapper.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
   wrapper.style.cssText = `position:relative;width:${w}px;height:${h}px;overflow:hidden;${opts.background ? `background:${opts.background};` : ''}`;
