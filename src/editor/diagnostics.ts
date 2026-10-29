@@ -39,6 +39,44 @@ export function uiSnapshot() {
   };
 }
 
+/**
+ * How the canvas is actually drawn right now: per top-level element whether it is a bitmap, placeholder or live,
+ * which on-screen ones are culled, and which bitmaps fail to load or decode (e.g. a revoked blob URL).
+ */
+export async function canvasSnapshot() {
+  const world = document.getElementById('pen-world');
+  const c = document.getElementById('pen-canvas')?.getBoundingClientRect();
+  if (!world || !c) return null;
+  const all = { bitmap: 0, placeholder: 0, live: 0 };
+  const onScreen = { bitmap: 0, placeholder: 0, live: 0, culled: 0 };
+  const imgs: HTMLImageElement[] = [];
+  for (const el of Array.from(world.children) as HTMLElement[]) {
+    if (!el.dataset.k) continue;
+    const kind = el.dataset.bitmap !== undefined ? 'bitmap' : el.dataset.placeholder !== undefined ? 'placeholder' : 'live';
+    all[kind]++;
+    const r = el.getBoundingClientRect();
+    if (r.right < c.left || r.left > c.right || r.bottom < c.top || r.top > c.bottom) continue;
+    onScreen[kind]++;
+    if (el.style.contentVisibility === 'hidden') onScreen.culled++;
+    if (kind === 'bitmap') imgs.push(el as HTMLImageElement);
+  }
+  const broken: string[] = [];
+  await Promise.all(
+    imgs.slice(0, 400).map(async img => {
+      const ok = img.complete && img.naturalWidth > 0 && (await img.decode().then(() => true, () => false));
+      if (!ok) broken.push(`${img.dataset.k} ${img.src.slice(0, 60)}`);
+    }),
+  );
+  return {
+    dpr: devicePixelRatio,
+    world: { transform: world.style.transform, willChange: world.style.willChange, pointerEvents: world.style.pointerEvents },
+    all,
+    onScreen,
+    brokenBitmaps: broken.length,
+    brokenSample: broken.slice(0, 5),
+  };
+}
+
 export function recentLog() {
   return recent.slice(-50);
 }

@@ -9,6 +9,7 @@ import { currentTree } from './tree';
 import { ImagesUnavailableError, rasterize } from '../render/rasterize';
 import { NodeView, RenderCtx } from '../render/NodeView';
 import { makeUrlResolver } from './fileio';
+import { log } from './diagnostics';
 import type { RNode } from '../model/types';
 
 /** Below this zoom, big frames may be drawn from bitmaps. */
@@ -23,6 +24,14 @@ const MIN_LEVEL_SIDE = 48;
 export type Bitmap = { url: string; node: RNode; ratio: number; w: number; h: number; levels: (string | undefined)[] };
 
 const bitmaps = new Map<string, Bitmap>();
+const stats = { renderFailures: 0, levelFailures: 0, liveOnly: 0 };
+
+/** For diagnose_editor: how many bitmaps and mip levels exist, what is queued, and failures so far. */
+export function lodStats() {
+  let levels = 0;
+  for (const b of bitmaps.values()) levels += b.levels.filter(Boolean).length;
+  return { lodZoom: LOD_ZOOM, bitmaps: bitmaps.size, levels, queued: queued.size, levelQueue: levelQueue.size, working, ...stats };
+}
 const queued = new Set<string>();
 let working = false;
 let idleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -140,7 +149,8 @@ async function workLevels() {
       if (performance.now() - lastInteraction < LEVEL_IDLE_MS) break;
     }
   } catch (e) {
-    console.warn('[pen-editor] bitmap level failed', e);
+    stats.levelFailures++;
+    log('warn', 'bitmap level failed', e);
   } finally {
     levelWorking = false;
     if (levelQueue.size) levelTimer = setTimeout(workLevels, LEVEL_IDLE_MS);
@@ -234,7 +244,8 @@ async function work() {
     const cur = bitmaps.get(key);
     if (n && lodEligible(n) && cur?.node !== n) await renderBitmap(n);
   } catch (e) {
-    console.warn('[pen-editor] bitmap render failed', key, e);
+    stats.renderFailures++;
+    log('warn', `bitmap render failed for ${key}`, e);
   } finally {
     working = false;
     if (queued.size) schedule(performance.now() - lastInteraction > IDLE_MS ? 30 : IDLE_MS);
@@ -259,6 +270,7 @@ async function renderBitmap(n: RNode) {
     unstage();
     if (!(e instanceof ImagesUnavailableError)) throw e;
     liveOnly.add(n);
+    stats.liveOnly++;
     bump();
     return;
   }

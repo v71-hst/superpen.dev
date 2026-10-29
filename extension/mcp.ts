@@ -383,7 +383,7 @@ tool('read_asset', 'Read a text asset (script, shader, svg…) next to the selec
   return text(r.content);
 });
 
-tool('diagnose_editor', 'Debugging aid: the editor UI state (viewport, panels present, modal, selection) and its recent internal log (errors, agent requests). Use when the user reports the editor misbehaving.', {}, async () => json(await callEditor('diagnose')));
+tool('diagnose_editor', 'Debugging aid: the editor UI state (viewport, panels present, modal, selection), how the canvas is drawn (bitmap/placeholder/live frames on screen, culled or broken bitmaps, display scale), zoomed-out bitmap stats, and the recent internal log (errors, agent requests). Use when the user reports the editor misbehaving.', {}, async () => json(await callEditor('diagnose')));
 
 tool('save_file', 'Save the selected file to disk (requires the edit lock).', {}, async () => {
   const s = requireSelected();

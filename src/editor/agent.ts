@@ -1,7 +1,8 @@
 // Handles MCP requests forwarded by the extension: reads, atomic edits, screenshots, layout checks, exports.
 import { useStore } from './store';
 import { rasterize } from '../render/rasterize';
-import { recentLog, uiSnapshot } from './diagnostics';
+import { canvasSnapshot, recentLog, uiSnapshot } from './diagnostics';
+import { lodStats } from './lod';
 import { currentTree } from './tree';
 import { elFor, insertSvg, vectorizeNode, zoomToKeys } from './ops';
 import { ensureRendered } from './culling';
@@ -280,7 +281,7 @@ export async function handleAgentRequest(method: string, params: any): Promise<a
       return r;
     }
     case 'diagnose':
-      return { ui: uiSnapshot(), log: recentLog() };
+      return { ui: uiSnapshot(), canvas: await canvasSnapshot(), lod: lodStats(), log: recentLog() };
     case 'root':
       return rootOf(params.id);
     default:
