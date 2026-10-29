@@ -15,6 +15,24 @@ MCP server so Claude or Codex can design alongside you.
 
 ## What's new
 
+### 0.2.1
+- **Sections**: group top-level frames into named sections (ask Claude to "group my frames into sections"). Hide or
+  show whole sections from the new **Sections** tab in the left panel; hidden frames aren't drawn at all, which keeps
+  big files fast. Hidden sections stay hidden when you reopen the file.
+- **Sections viewer**: the grid button next to the zoom control switches the canvas from **Classic** (everything) to
+  **Sections**, which shows one section at a time like slides. Step with the arrows, the section picker, or
+  Page Up / Page Down.
+- **Claude keeps big files light**: new MCP tools (`list_sections`, `create_section`, `update_section`,
+  `focus_sections`, `delete_section`). Claude is told to show only the sections it is working on, and can still
+  edit, screenshot and export frames in hidden sections.
+- **Image-heavy files**: zoomed-out snapshots embed images at the size they're shown (a 4K background was being
+  embedded in full for every screen), so they appear about 3× faster; screens waiting for a snapshot show their
+  background instead of a grey box; and far zoomed out, screens no longer stay fully live, which fixes the canvas going
+  blank in VS Code.
+- **Web images**: images linked by URL (`https://…`) no longer vanish below 33% zoom.
+- `diagnose_editor` now reports how the canvas is drawn, to help track down rendering problems.
+
+### 0.2.0
 - **Eyedropper** (I): click any layer to copy its colour, or apply it to the selected layers (Shift: as stroke).
   The colour picker has a pipette too (picks a layer's colour and keeps `$variable` links) and, where supported, a
   button to pick any pixel on screen.

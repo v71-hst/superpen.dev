@@ -2,7 +2,7 @@
   "name": "pen-editor-remake",
   "displayName": "Superpencil",
   "description": "Visual editor for Superpencil .spen and pen.dev .pen design files.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "local-remake",
   "license": "UNLICENSED",
   "repository": {
