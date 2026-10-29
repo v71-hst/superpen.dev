@@ -3,6 +3,8 @@ import React, { useMemo, useRef, useState } from 'react';
 import {
   ArrowUp,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   CircleUser,
   Circle,
   Code,
@@ -11,6 +13,7 @@ import {
   Hand,
   ImagePlus,
   Keyboard,
+  LayoutGrid,
   ListChecks,
   Lock,
   MessageSquare,
@@ -40,6 +43,7 @@ import { allIds, displayName, newId } from '../model/doc';
 import { useMenu, layerIconFor, type MenuItem } from './common';
 import type { RNode } from '../model/types';
 import { blobToDataUrl, inVsCode, post, request } from '../editor/host';
+import { sectionsOf, viewerSections } from '../editor/sections';
 import { createAssetFile } from './AssetControls';
 import { setReviewMode } from '../editor/review';
 
@@ -218,12 +222,97 @@ async function importImage() {
   input.click();
 }
 
+// ---- viewers: Classic (every frame) or Sections (one section at a time, like slides) ----
+
+/** Switches the canvas viewer; the Sections viewer opens on the last viewed (or first) section. */
+export function setViewer(viewer: 'classic' | 'sections') {
+  const s = useStore.getState();
+  if (viewer === 'classic') return s.set({ viewer });
+  const list = viewerSections(s.doc);
+  const id = list.some(x => x.id === s.viewerSection) ? s.viewerSection : (list[0]?.id ?? null);
+  s.set({ viewer, viewerSection: id });
+  if (id) zoomToSection(id);
+}
+
+export function gotoSection(id: string) {
+  useStore.getState().set({ viewerSection: id });
+  zoomToSection(id);
+}
+
+/** Next/previous section in the Sections viewer (wraps around). */
+export function stepSection(delta: number) {
+  const s = useStore.getState();
+  const list = viewerSections(s.doc);
+  if (!list.length) return;
+  const i = Math.max(0, list.findIndex(x => x.id === s.viewerSection));
+  gotoSection(list[(i + delta + list.length) % list.length].id);
+}
+
+function zoomToSection(id: string) {
+  const sec = viewerSections(useStore.getState().doc).find(x => x.id === id);
+  if (sec?.frames.length) zoomToKeys(sec.frames, 1);
+}
+
+/** Top bar of the Sections viewer: previous / section picker / next. */
+export function SectionBar() {
+  const viewer = useStore(s => s.viewer);
+  const doc = useStore(s => s.doc);
+  const current = useStore(s => s.viewerSection);
+  const menu = useMenu();
+  if (viewer !== 'sections') return null;
+  const list = viewerSections(doc);
+  if (!sectionsOf(doc).length)
+    return (
+      <div className="island section-bar">
+        <span className="section-empty">No sections yet: ask Claude to group your frames into sections.</span>
+      </div>
+    );
+  const i = Math.max(0, list.findIndex(x => x.id === current));
+  const sec = list[i];
+  return (
+    <div className="island section-bar">
+      <button className="zbtn" title="Previous section (Page Up)" onClick={() => stepSection(-1)}>
+        <ChevronLeft strokeWidth={1.75} />
+      </button>
+      <button
+        className="section-name"
+        title="Pick a section"
+        onClick={e =>
+          menu.open({
+            anchor: (e.currentTarget as HTMLElement).getBoundingClientRect(),
+            items: list.map(x => ({ label: x.name, kbd: String(x.frames.length), checked: x.id === sec.id, onClick: () => gotoSection(x.id) })),
+          })
+        }
+      >
+        {sec.name}
+        <span className="section-count">
+          {i + 1}/{list.length}
+        </span>
+        <ChevronDown strokeWidth={1.75} />
+      </button>
+      <button className="zbtn" title="Next section (Page Down)" onClick={() => stepSection(1)}>
+        <ChevronRight strokeWidth={1.75} />
+      </button>
+      {menu.node}
+    </div>
+  );
+}
+
 export function ZoomControl() {
   const zoom = useStore(s => s.view.zoom);
   const hasRight = useStore(s => s.selection.length > 0 && s.rightOpen);
+  const viewer = useStore(s => s.viewer);
   const menu = useMenu();
   return (
     <div className={'island zoom-ctl' + (hasRight ? '' : ' no-right')}>
+      <button
+        className={'zbtn' + (viewer === 'sections' ? ' on' : '')}
+        title={viewer === 'sections' ? 'Sections viewer (one section at a time): switch to Classic' : 'Classic viewer: switch to Sections (one section at a time)'}
+        onClick={() => setViewer(viewer === 'sections' ? 'classic' : 'sections')}
+      >
+        <LayoutGrid strokeWidth={1.75} />
+      </button>
+      <span className="zsep" />
       <button className="zbtn" title="Zoom out (Ctrl+-)" onClick={() => zoomBy(1 / 1.25)}>
         <Minus strokeWidth={1.75} />
       </button>

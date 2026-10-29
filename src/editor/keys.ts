@@ -18,7 +18,7 @@ import {
   zoomToKeys,
 } from './ops';
 import { saveDoc, saveDocAs } from './fileio';
-import { confirmDiscard } from '../ui/Chrome';
+import { confirmDiscard, stepSection } from '../ui/Chrome';
 import { flushEdits, inVsCode } from './host';
 import { stopPicking } from './eyedropper';
 
@@ -137,6 +137,11 @@ export function installShortcuts() {
     if (e.shiftKey && (e.code === 'Digit0' || e.key === ')')) return setZoom(1);
 
     switch (e.key) {
+      case 'PageDown':
+      case 'PageUp':
+        if (s.viewer !== 'sections') return;
+        e.preventDefault();
+        return stepSection(e.key === 'PageDown' ? 1 : -1);
       case 'Delete':
       case 'Backspace':
         e.preventDefault();

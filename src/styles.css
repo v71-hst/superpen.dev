@@ -691,6 +691,8 @@ html.light ::-webkit-scrollbar-thumb {
 .menu {
   position: fixed;
   z-index: 50;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
   min-width: 126px;
   background: var(--popover);
   border-radius: 10px;
@@ -1218,6 +1220,72 @@ html.light ::-webkit-scrollbar-thumb {
   align-items: center;
   padding: 0 4px;
   gap: 2px;
+}
+.zoom-ctl .zsep {
+  width: 1px;
+  height: 18px;
+  background: var(--sep);
+  margin: 0 2px;
+}
+.zoom-ctl .zbtn.on {
+  background: var(--control-active);
+  color: var(--sel);
+}
+.section-bar {
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  height: 36px;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+  max-width: calc(100vw - 520px);
+}
+.section-bar .zbtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  color: var(--fg);
+}
+.section-bar .zbtn svg {
+  width: 14px;
+  height: 14px;
+}
+.section-bar .zbtn:hover,
+.section-bar .section-name:hover {
+  background: var(--control);
+}
+.section-bar .section-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fg-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.section-bar .section-name svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+.section-bar .section-count {
+  color: var(--muted);
+  font-weight: 400;
+}
+.section-bar .section-empty {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 0 12px;
 }
 .zoom-ctl.no-right {
   right: 8px;

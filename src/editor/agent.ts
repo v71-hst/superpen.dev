@@ -15,7 +15,7 @@ import { agentEdit, recordAgentChange, reviewStatus } from './review';
 import { commentsOf, openForAgent, postMessage, setResolved } from './comments';
 import { lintDesign } from './lint';
 import { exportRoblox } from './roblox';
-import { createSection, deleteSection, hiddenFrameIds, sectionsOf, updateSection } from './sections';
+import { createSection, deleteSection, focusSections, hiddenFrameIds, sectionsOf, updateSection, viewerSections } from './sections';
 
 /** Things the agent should know after any call: review mode, and comments from the user waiting for an answer. */
 function agentNotes(): string[] {
@@ -28,9 +28,16 @@ function agentNotes(): string[] {
   const sections = sectionsOf(doc);
   const roots = doc?.children?.length ?? 0;
   if (!sections.length && roots >= 30)
-    notes.push(`This file has ${roots} top-level frames and no sections. Grouping them with create_section (one section per feature or area, e.g. "HUD", "Menus") lets the user hide whole groups in the Sections tab, and hidden frames aren't rendered, which keeps a big file fast. Offer this to the user, or do it when they ask to organise the file.`);
+    notes.push(`This file has ${roots} top-level frames and no sections. Grouping them with create_section (one section per feature or area, e.g. "HUD", "Menus") lets you and the user hide whole groups, and hidden frames aren't rendered, which keeps a big file fast. Offer this to the user, or do it when they ask to organise the file.`);
   const hidden = sections.filter(x => x.hidden);
-  if (hidden.length) notes.push(`${hidden.length} section(s) are hidden by the user (${hidden.map(x => x.name).join(', ')}): their frames aren't drawn on the canvas. Don't unhide them unless asked; you can still read and edit those frames.`);
+  const st = useStore.getState();
+  if (sections.length && !hidden.length && roots >= 30 && st.viewer !== 'sections')
+    notes.push(`All ${sections.length} sections are visible. Before working on one area, call focus_sections with the section(s) you need: the others stop rendering, so the editor (and your screenshots) stay fast. Tell the user which sections you hid; they can show them again in the Sections tab.`);
+  if (hidden.length) notes.push(`Hidden sections (not drawn on the canvas): ${hidden.map(x => x.name).join(', ')}. You can still read, edit, screenshot and export their frames. Show a hidden section only if the task needs it on screen.`);
+  if (st.viewer === 'sections') {
+    const cur = viewerSections(doc).find(x => x.id === st.viewerSection) ?? viewerSections(doc)[0];
+    if (cur) notes.push(`The user is in the Sections viewer looking at "${cur.name}" (only that section is drawn).`);
+  }
   return notes;
 }
 
@@ -220,6 +227,13 @@ export async function handleAgentRequest(method: string, params: any): Promise<a
       updateSection(params.id, { name: params.name, add: params.add_frame_ids, remove: params.remove_frame_ids, hidden: params.hidden });
       flushEdits();
       return { ok: true, notes: agentNotes() };
+    }
+    case 'focusSections': {
+      const ids: string[] = params.ids ?? [];
+      if (!ids.length) throw new Error('ids is required (section ids from list_sections)');
+      focusSections(ids);
+      flushEdits();
+      return { ok: true, hidden: sectionsOf(useStore.getState().doc).filter(x => x.hidden).map(x => x.name), notes: agentNotes() };
     }
     case 'deleteSection': {
       deleteSection(params.id);

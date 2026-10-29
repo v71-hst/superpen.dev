@@ -41,6 +41,9 @@ type State = {
   previewTheme: Theme | null;
   leftOpen: boolean;
   leftTab: LeftTab;
+  /** Canvas viewer: everything (classic) or one section at a time (sections). Not saved in the file. */
+  viewer: 'classic' | 'sections';
+  viewerSection: string | null;
   rightOpen: boolean;
   uiTheme: 'dark' | 'light';
   modal: Modal;
@@ -102,6 +105,8 @@ export const useStore = create<State & Actions>((set, get) => ({
   previewTheme: null,
   leftOpen: false,
   leftTab: 'layers',
+  viewer: 'classic',
+  viewerSection: null,
   rightOpen: true,
   uiTheme: (localStorage.getItem('pen.uiTheme') as 'dark' | 'light') || 'dark',
   modal: null,

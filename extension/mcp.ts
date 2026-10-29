@@ -269,9 +269,16 @@ tool(
 
 tool(
   'update_section',
-  'Rename a section, add or remove its frames, or show/hide it (hidden: true hides its frames on the canvas until the user shows them). Only change hidden when the user asks. Requires the edit lock.',
+  'Rename a section, add or remove its frames, or show/hide it (hidden: true stops its frames rendering on the canvas until shown again). To show only the sections you are working on, use focus_sections. Requires the edit lock.',
   { id: z.string(), name: z.string().optional(), add_frame_ids: z.array(z.string()).optional(), remove_frame_ids: z.array(z.string()).optional(), hidden: z.boolean().optional() },
   async a => json(await callEditor('updateSection', a, true)),
+);
+
+tool(
+  'focus_sections',
+  'Show only these sections and hide every other one. Do this before working on one area of a large file: hidden frames are not rendered, so the editor stays fast and screenshots are quicker. Hidden frames can still be read, edited, screenshotted and exported. Tell the user which sections you hid (they can show them again in the Sections tab). Requires the edit lock.',
+  { ids: z.array(z.string()) },
+  async a => json(await callEditor('focusSections', a, true)),
 );
 
 tool(

@@ -26,6 +26,49 @@ export function hiddenFrameIds(doc: PenDoc | null): Set<string> {
   return set;
 }
 
+export const UNGROUPED = '__ungrouped';
+
+/** Sections in viewer order, plus an "Ungrouped" entry for top-level frames that aren't in any section. */
+export function viewerSections(doc: PenDoc | null): PenSection[] {
+  const list = sectionsOf(doc);
+  const grouped = new Set(list.flatMap(s => s.frames));
+  const rest = (doc?.children ?? []).map(n => n.id).filter(id => !grouped.has(id));
+  return rest.length ? [...list, { id: UNGROUPED, name: 'Ungrouped', frames: rest }] : list;
+}
+
+const canvasCache = new WeakMap<object, { key: string; set: Set<string> }>();
+
+/**
+ * Top-level frames not drawn on the canvas right now: frames in hidden sections (Classic viewer), or every frame
+ * outside the current section (Sections viewer, which also shows the current section if it is hidden).
+ */
+export function canvasHiddenIds(s: { doc: PenDoc | null; viewer: 'classic' | 'sections'; viewerSection: string | null }): Set<string> {
+  if (!s.doc || s.viewer === 'classic' || !sectionsOf(s.doc).length) return hiddenFrameIds(s.doc);
+  const key = `${s.viewerSection}`;
+  const hit = canvasCache.get(s.doc);
+  if (hit && hit.key === key) return hit.set;
+  const list = viewerSections(s.doc);
+  const current = list.find(x => x.id === s.viewerSection) ?? list[0];
+  const shown = new Set(current?.frames ?? []);
+  const set = new Set((s.doc.children ?? []).map(n => n.id).filter(id => !shown.has(id)));
+  canvasCache.set(s.doc, { key, set });
+  return set;
+}
+
+/** Shows exactly these sections and hides every other one (agents use this to keep the canvas light). */
+export function focusSections(ids: string[]) {
+  useStore.getState().edit(d => {
+    const list = sectionsOf(d);
+    const bad = ids.filter(id => !list.some(x => x.id === id));
+    if (bad.length) throw new Error(`sections not found: ${bad.join(', ')} (use list_sections)`);
+    for (const x of list) {
+      if (ids.includes(x.id)) delete x.hidden;
+      else x.hidden = true;
+    }
+    (d as any).sections = [...list];
+  });
+}
+
 /** A frame belongs to at most one section: adding it to one removes it from the others. */
 function claim(list: PenSection[], frames: string[], owner: PenSection) {
   const ids = new Set(frames);

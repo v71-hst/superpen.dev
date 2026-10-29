@@ -10,7 +10,7 @@ import { allIds, displayName, locate, newId } from '../model/doc';
 import type { PenNode, RNode } from '../model/types';
 import { fmt } from './common';
 import { onViewChanged, pointerTarget, rootWorldRect, scheduleCull } from '../editor/culling';
-import { hiddenFrameIds } from '../editor/sections';
+import { canvasHiddenIds } from '../editor/sections';
 import { LOD_ZOOM, bitmapUrl, getBitmap, hasFixedSize, lodEligible, lodInteraction, requestBitmap, type Bitmap } from '../editor/lod';
 import { deepResolve, isGeneratedKey } from '../model/resolve';
 import { fillList, fillsToBackground, primaryColor } from '../render/paint';
@@ -852,6 +852,7 @@ function Overlay({ tree, onResizeStart, draft }: { tree: Tree; onResizeStart: (e
   const hover = useStore(s => s.hover);
   const view = useStore(s => s.view);
   const doc = useStore(s => s.doc);
+  const viewerKey = useStore(s => s.viewer + ':' + s.viewerSection);
   const editingKey = useStore(s => s.editingKey);
   const [tick, setTick] = useState(0);
   const [boxes, setBoxes] = useState<{ sel: { key: string; r: Rect }[]; hover: Rect | null; labels: { key: string; r: Rect }[] }>({ sel: [], hover: null, labels: [] });
@@ -876,7 +877,7 @@ function Overlay({ tree, onResizeStart, draft }: { tree: Tree; onResizeStart: (e
     const hr = hover && !selection.includes(hover) ? screenRectOf(hover) : null;
     // Label positions come from the document and the view where possible: measuring every frame on each zoom step
     // forces a layout of the whole design.
-    const hiddenIds = hiddenFrameIds(doc);
+    const hiddenIds = canvasHiddenIds(useStore.getState());
     const labels = tree.roots
       .filter(n => n.props.enabled !== false && !(hiddenIds.has(n.key) && !selection.includes(n.key)) && (n.type === 'frame' || n.instanceOf || n.isComponent || n.type === 'group'))
       .map(n => {
@@ -887,7 +888,7 @@ function Overlay({ tree, onResizeStart, draft }: { tree: Tree; onResizeStart: (e
       })
       .filter((x): x is { key: string; r: Rect } => !!x.r && x.r.x + x.r.w > 0 && x.r.x < c.width && x.r.y + x.r.h > -24 && x.r.y - 24 < c.height);
     setBoxes({ sel, hover: hr ? toLocal(hr) : null, labels });
-  }, [tree, doc, selection, hover, view, tick, editingKey]);
+  }, [tree, doc, viewerKey, selection, hover, view, tick, editingKey]);
 
   const single = boxes.sel.length === 1 ? boxes.sel[0] : null;
   const singleNode = single ? tree.byKey.get(single.key) : undefined;
@@ -1011,7 +1012,10 @@ function Roots({ tree }: { tree: Tree }) {
   const editingKey = useStore(s => s.editingKey);
   const pinnedRoots = useStore(s => s.pinnedRoots);
   useStore(s => s.lodVersion);
-  const hidden = hiddenFrameIds(useStore(s => s.doc));
+  const doc = useStore(s => s.doc);
+  const viewer = useStore(s => s.viewer);
+  const viewerSection = useStore(s => s.viewerSection);
+  const hidden = canvasHiddenIds({ doc, viewer, viewerSection });
   const mounted = useRef(new Set<string>());
   const [, setTick] = useState(0);
 
@@ -1059,7 +1063,8 @@ function Roots({ tree }: { tree: Tree }) {
   const byKey = new Map<string, React.ReactNode>();
   for (const n of order) {
     if (n.props.enabled === false) continue;
-    // Frames in hidden sections aren't rendered unless selected, edited or pinned by an agent.
+    // Frames in hidden sections (or outside the current section in the Sections viewer) aren't rendered unless
+    // selected, edited or pinned by an agent.
     if (hidden.has(n.key) && !active.has(n.key)) continue;
     const eligible = lodEligible(n);
     const bm = eligible ? getBitmap(n.key) : undefined;
