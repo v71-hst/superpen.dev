@@ -1073,7 +1073,10 @@ function Roots({ tree }: { tree: Tree }) {
       continue;
     }
     if (!bm) want.push(n.key);
-    if (mounted.current.has(n.key) || bm || !hasFixedSize(n)) byKey.set(n.key, live(n, bm));
+    // A frame that was live stays live while its bitmap is made (no flash), but far out a placeholder showing its
+    // fills looks the same and keeps dozens of image-heavy live frames from exhausting GPU memory.
+    const keepMounted = mounted.current.has(n.key) && zoom >= LOD_ZOOM / 2;
+    if (keepMounted || bm || !hasFixedSize(n)) byKey.set(n.key, live(n, bm));
     else byKey.set(n.key, <PlaceholderRoot key={n.key} n={n} />);
   }
   // Document order is kept so stacking doesn't change while frames switch.
