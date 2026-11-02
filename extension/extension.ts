@@ -7,7 +7,6 @@ import * as os from 'node:os';
 import { exec } from 'node:child_process';
 import { Bridge, PEN_HOME, DESIGN_GLOB } from './bridge';
 import { registerSidebar } from './sidebar';
-import { generateSvg, setAiPenKey } from './aipen';
 
 const VIEW_TYPE = 'penEditorRemake.editor';
 const MCP_NAME = 'pen-editor';
@@ -27,7 +26,6 @@ export function activate(context: vscode.ExtensionContext) {
   );
   maybePromptMcp(context);
   registerSidebar(context, VIEW_TYPE);
-  context.subscriptions.push(vscode.commands.registerCommand('penEditorRemake.setAiPenKey', () => setAiPenKey(context)));
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider(VIEW_TYPE, new PenEditorProvider(context), {
       webviewOptions: { retainContextWhenHidden: true },
@@ -325,14 +323,6 @@ class PenEditorProvider implements vscode.CustomTextEditorProvider {
               ok = false;
             }
             post({ type: 'response', id: m.id, result: ok });
-            break;
-          }
-          case 'aiPen': {
-            try {
-              post({ type: 'response', id: m.id, result: await generateSvg(this.context, m.request) });
-            } catch (e: any) {
-              post({ type: 'response', id: m.id, result: { error: String(e?.message ?? e) } });
-            }
             break;
           }
           case 'notify':

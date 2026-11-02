@@ -133,12 +133,11 @@ How it works:
   the Design panel. Shapes menu → **Script** creates a starter file.
 - **Shaders**: WebGL fills and effects (`.glsl`) with animation, mouse, shape-aware SDF, content and backdrop
   textures. Settings get sliders and colour pickers automatically.
-- **AI Pen** (Shift+P): drag an area, describe what to draw ("heraldic lion with a crown, white line art"), and your
-  own AI model draws it as editable vector paths. Select the drawing to **Refine** it ("thicker lines", "add a tail")
-  or **Redraw** it; the model also sees your hand edits. Set it up once: **Superpencil: Set AI Pen API Key**, and
-  pick the provider in Settings → `superpencil.aiPen` (Claude via the Anthropic API by default, or any OpenAI-compatible
-  endpoint such as OpenRouter or a local model). You pay your provider directly; nothing goes through us. Claude and
-  Codex chats can use it too (`generate_svg`).
+- **AI Pen** (Shift+P): drag an area and describe what to draw ("heraldic lion with a crown, white line art"). Your
+  connected AI chat (Claude Code, Codex or any MCP agent) is the pen: it picks up the request and draws it in passes,
+  and you watch each stroke trace onto the canvas under an "AI Pen" cursor. Select a drawing to ask for changes. No
+  sign-in or API keys: it uses the AI you already have connected. (If the chat is idle, tell it "draw my AI Pen
+  requests".) You can also just ask the chat to draw something with AI Pen.
 - **SVG**: paste SVG code or import an `.svg` file and it becomes editable vector shapes. Image fills can be
   traced into vectors (logo / illustration / detailed).
 - **Export**: PNG / JPG / SVG / HTML per layer, slides presentation mode.

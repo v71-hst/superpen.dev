@@ -9,6 +9,10 @@ setAutoFreeze(false);
 
 /** A box on the canvas for AI Pen: `x`/`y` are relative to `parent` (or the canvas), `wx`/`wy` are world coordinates. */
 export type AiPenBox = { x: number; y: number; wx: number; wy: number; width: number; height: number; parent: string | null };
+/** Something the user asked AI Pen to draw (or to change, when `refine` is set); the MCP agent picks it up. */
+export type AiPenRequest = { id: string; prompt: string; box: AiPenBox; refine?: string; frame?: string; status: 'waiting' | 'drawing'; t: number };
+/** One batch of shapes an agent drew, replayed on the canvas stroke by stroke. */
+export type AiPenPass = { id: number; frame: string; markup: string; keys: string[] };
 export type Tool = 'select' | 'scale' | 'rect' | 'ellipse' | 'polygon' | 'icon' | 'text' | 'frame' | 'note' | 'hand' | 'pen' | 'aipen' | 'comment' | 'eyedropper';
 export type LeftTab = 'layers' | 'sections' | 'slides' | 'components' | 'libraries';
 export type Modal = null | 'shortcuts' | 'variables' | 'settings' | 'about' | 'iconPicker' | 'find' | 'lint';
@@ -46,9 +50,10 @@ type State = {
   /** Canvas viewer: everything (classic) or one section at a time (sections). Not saved in the file. */
   viewer: 'classic' | 'sections';
   viewerSection: string | null;
-  /** AI Pen: the box waiting for a prompt, and drawings in progress (world coordinates). */
+  /** AI Pen: the box waiting for a prompt, requests for the connected AI, and drawing passes being animated. */
   aiPenDraft: AiPenBox | null;
-  aiPenJobs: { id: number; box: AiPenBox; prompt: string }[];
+  aiPenRequests: AiPenRequest[];
+  aiPenPasses: AiPenPass[];
   rightOpen: boolean;
   uiTheme: 'dark' | 'light';
   modal: Modal;
@@ -113,7 +118,8 @@ export const useStore = create<State & Actions>((set, get) => ({
   viewer: 'classic',
   viewerSection: null,
   aiPenDraft: null,
-  aiPenJobs: [],
+  aiPenRequests: [],
+  aiPenPasses: [],
   rightOpen: true,
   uiTheme: (localStorage.getItem('pen.uiTheme') as 'dark' | 'light') || 'dark',
   modal: null,

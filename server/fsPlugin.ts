@@ -3,7 +3,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Plugin } from 'vite';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { DEFAULT_MODEL, requestSvg, type Provider } from '../extension/aipenCore';
 
 const MIME: Record<string, string> = {
   '.pen': 'application/json',
@@ -87,23 +86,6 @@ export function penFsPlugin(workspace: string): Plugin {
           fs.mkdirSync(path.dirname(full), { recursive: true });
           fs.writeFileSync(full, body);
           return send(res, 200, JSON.stringify({ ok: true, mtime: fs.statSync(full).mtimeMs }));
-        }
-      }
-      // AI Pen outside VS Code; configured with PEN_AI_PROVIDER, PEN_AI_MODEL, PEN_AI_BASE_URL and PEN_AI_KEY
-      // (or ANTHROPIC_API_KEY / an `ant auth login` profile for the Anthropic provider).
-      if (url.pathname === '/api/aipen' && req.method === 'POST') {
-        const provider = (process.env.PEN_AI_PROVIDER === 'openai-compatible' ? 'openai-compatible' : 'anthropic') as Provider;
-        const cfg = {
-          provider,
-          model: process.env.PEN_AI_MODEL || DEFAULT_MODEL[provider],
-          baseUrl: (process.env.PEN_AI_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\/+$/, ''),
-          effort: (process.env.PEN_AI_EFFORT as any) || 'medium',
-        };
-        try {
-          const svg = await requestSvg(JSON.parse((await readBody(req)).toString('utf8')), cfg, process.env.PEN_AI_KEY || undefined);
-          return send(res, 200, JSON.stringify({ svg, model: cfg.model }));
-        } catch (e: any) {
-          return send(res, 200, JSON.stringify({ error: String(e?.message ?? e) }));
         }
       }
       if (url.pathname === '/api/stat') {

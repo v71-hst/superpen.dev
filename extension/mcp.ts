@@ -128,7 +128,7 @@ async function callEditor(method: string, params: any = {}, write = false) {
   const s = requireSelected();
   if (write && s.readOnly) throw new Error(`${path.basename(s.path)} is selected read-only because another chat holds the lock. Call select_file with force: true to take over (ask the user first).`);
   try {
-    return await rpc(s.bridge, 'call', { path: s.path, method, params, write }, method === 'generateSvg' ? 310_000 : undefined);
+    return await rpc(s.bridge, 'call', { path: s.path, method, params, write });
   } catch (e: any) {
     if (/fetch failed|ECONNREFUSED|aborted/i.test(String(e?.message))) throw new Error('Lost connection to the VS Code window that had this file open. Call select_file again.');
     throw e;
@@ -373,18 +373,35 @@ tool(
 );
 
 tool(
-  'generate_svg',
-  "Draw an icon or illustration with the user's AI Pen model (the provider and API key they set up in Superpencil, not you): describe it in prompt and it becomes editable vector paths in a new frame of width×height. Good for detailed artwork such as emblems, mascots or illustrations. For simple shapes you can write the SVG yourself with insert_svg instead. To revise an AI Pen drawing, pass refine_id (its frame id) and say what to change in prompt; the model also sees how it currently looks. Can take a minute or more. Requires the edit lock.",
+  'ai_pen_requests',
+  'Drawings the user asked AI Pen for: they dragged a box on the canvas and described it (kind "draw"), or asked for a change to an AI Pen drawing (kind "change", with frame_id). You are the pen: draw each one with ai_pen_draw. Tool notes tell you when requests are waiting.',
+  {},
+  async () => json(await callEditor('aiPenRequests', {})),
+);
+
+tool(
+  'ai_pen_draw',
+  [
+    'Draw with AI Pen: the user watches each call trace onto the canvas stroke by stroke under an "AI Pen" cursor. Pass request_id for a user request (its box is used), frame_id to keep drawing in an existing frame, or x/y/width/height (+parent) for a new drawing.',
+    'svg: SVG elements (<path>, <circle>, <rect>, <g>...) in the frame’s own coordinates, 0..width by 0..height (a full <svg> with its own viewBox also works). No <text> or <image>.',
+    'Draw like a designer, not in one go: (1) decide a spec first (stroke width, line caps, palette, corner radius; match artwork already in the file), (2) one call per pass: big blocking shapes/silhouette, then secondary forms, then details and highlights, (3) after each pass call screenshot on the frame_id and compare it with the request, fixing proportions in the next pass (clear: true redraws the frame, or edit single paths with apply_operations), (4) prefer few, smooth cubic Bézier paths and give shapes ids. Finish with done: true.',
+    'Requires the edit lock.',
+  ].join(' '),
   {
-    prompt: z.string().describe('What to draw, including style (e.g. "heraldic lion with a crown, white line art"), or what to change when refine_id is set'),
-    width: z.number().positive().optional().describe('Frame width (default 256)'),
-    height: z.number().positive().optional().describe('Frame height (default 256)'),
+    request_id: z.string().optional().describe('From ai_pen_requests'),
+    frame_id: z.string().optional().describe('Keep drawing in this frame (returned by the first call)'),
+    svg: z.string().optional().describe('SVG elements for this pass, in frame coordinates'),
     x: z.number().optional(),
     y: z.number().optional(),
-    parent: z.string().optional().describe('Frame id to draw into (default: top level, in the middle of the view)'),
-    refine_id: z.string().optional().describe('Id of an AI Pen frame to redraw instead of drawing a new one'),
+    width: z.number().positive().optional(),
+    height: z.number().positive().optional(),
+    parent: z.string().optional().describe('Frame to draw into for a new drawing (default: top level)'),
+    name: z.string().optional(),
+    prompt: z.string().optional().describe('What this drawing is (stored on the frame) when there is no request'),
+    clear: z.boolean().optional().describe('Remove everything in the frame before this pass'),
+    done: z.boolean().optional().describe('Last pass: completes the request'),
   },
-  async a => json(await callEditor('generateSvg', a, true)),
+  async a => json(await callEditor('aiPenDraw', a, true)),
 );
 
 tool(

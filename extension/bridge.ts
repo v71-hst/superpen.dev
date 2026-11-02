@@ -342,12 +342,10 @@ export class Bridge {
     if (!panel) throw new Error('editor is not open');
     const id = ++this.seq;
     return new Promise((resolve, reject) => {
-      // AI Pen waits on a model provider, which can take a few minutes for detailed drawings.
-      const limit = method === 'generateSvg' ? 300_000 : 60_000;
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error(`the editor did not respond to ${method} within ${limit / 1000}s`));
-      }, limit);
+        reject(new Error(`the editor did not respond to ${method} within 60s`));
+      }, 60_000);
       this.pending.set(id, { resolve, reject, timer });
       panel.webview.postMessage({ type: 'mcp', id, method, params });
     });

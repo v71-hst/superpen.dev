@@ -8,7 +8,7 @@ import { displayName, locate } from '../model/doc';
 import type { RNode } from '../model/types';
 import { Select } from './common';
 import { Section } from './RightPanel';
-import { refineAiPen, runAiPen, type AiPenMeta } from '../editor/aipen';
+import { requestRefine, type AiPenMeta } from '../editor/aipen';
 
 const PRESETS = ['hover', 'pressed', 'disabled', 'focused', 'selected'];
 
@@ -134,39 +134,34 @@ export function PrototypeSection({ n, set }: { n: RNode; set: (c: Record<string,
   );
 }
 
-/** For frames drawn with AI Pen: say what to change and redraw (the model also sees how it looks now). */
+/** For frames drawn with AI Pen: ask the connected AI for a change; it sees the request on its next tool call. */
 export function AiPenSection({ n }: { n: RNode }) {
   const [text, setText] = useState('');
-  const busy = useStore(s => s.aiPenJobs.length > 0);
+  const waiting = useStore(s => s.aiPenRequests.some(r => r.refine === n.key && r.status === 'waiting'));
   const meta = n.props.aiPen as AiPenMeta | undefined;
-  if (!meta?.prompt) return null;
-  const go = (feedback: string) => {
+  if (!meta) return null;
+  const send = () => {
+    if (!text.trim()) return;
+    requestRefine(n.key, text);
     setText('');
-    runAiPen(() => refineAiPen(n.key, feedback).then(({ id }) => useStore.getState().select([id])));
   };
   return (
     <Section title="AI Pen">
-      <div className="hint">
-        “{meta.prompt}”{meta.model ? ` · ${meta.model}` : ''}
-      </div>
+      {meta.prompt && <div className="hint">“{meta.prompt}”</div>}
       <input
         className="text-input"
-        placeholder="What to change, e.g. thicker lines, add a crown"
+        placeholder="Ask your AI to change it, e.g. thicker lines, add a tail"
         value={text}
         onChange={e => setText(e.target.value)}
         onKeyDown={e => {
           e.stopPropagation();
-          if (e.key === 'Enter' && text.trim()) go(text.trim());
+          if (e.key === 'Enter') send();
         }}
       />
-      <div className="row2">
-        <button className="rp-btn" disabled={busy || !text.trim()} onClick={() => go(text.trim())}>
-          Refine
-        </button>
-        <button className="rp-btn" disabled={busy} title="Redraw from the original prompt" onClick={() => go('')}>
-          Redraw
-        </button>
-      </div>
+      <button className="rp-btn" disabled={!text.trim()} onClick={send}>
+        Send to AI
+      </button>
+      {waiting && <div className="hint">Waiting for your AI chat. If it's idle, tell it “draw my AI Pen requests”.</div>}
     </Section>
   );
 }

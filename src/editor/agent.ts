@@ -15,7 +15,7 @@ import { agentEdit, recordAgentChange, reviewStatus } from './review';
 import { commentsOf, openForAgent, postMessage, setResolved } from './comments';
 import { lintDesign } from './lint';
 import { exportRoblox } from './roblox';
-import { drawWithAiPen, refineAiPen } from './aipen';
+import { aiPenDraw, requestsForAgent } from './aipen';
 import { createSection, deleteSection, focusSections, hiddenFrameIds, sectionsOf, updateSection, viewerSections } from './sections';
 
 /** Things the agent should know after any call: review mode, and comments from the user waiting for an answer. */
@@ -32,6 +32,9 @@ function agentNotes(): string[] {
     notes.push(`This file has ${roots} top-level frames and no sections. Grouping them with create_section (one section per feature or area, e.g. "HUD", "Menus") lets you and the user hide whole groups, and hidden frames aren't rendered, which keeps a big file fast. Offer this to the user, or do it when they ask to organise the file.`);
   const hidden = sections.filter(x => x.hidden);
   const st = useStore.getState();
+  const pen = st.aiPenRequests.filter(r => r.status === 'waiting');
+  if (pen.length)
+    notes.unshift(`AI Pen: the user is waiting for ${pen.length} drawing request${pen.length > 1 ? 's' : ''} (${pen.map(r => `"${r.prompt.slice(0, 60)}"`).join(', ')}). Call ai_pen_requests, then draw each with ai_pen_draw.`);
   if (sections.length && !hidden.length && roots >= 30 && st.viewer !== 'sections')
     notes.push(`All ${sections.length} sections are visible. Before working on one area, call focus_sections with the section(s) you need: the others stop rendering, so the editor (and your screenshots) stay fast. Tell the user which sections you hid; they can show them again in the Sections tab.`);
   if (hidden.length) notes.push(`Hidden sections (not drawn on the canvas): ${hidden.map(x => x.name).join(', ')}. You can still read, edit, screenshot and export their frames. Show a hidden section only if the task needs it on screen.`);
@@ -325,26 +328,13 @@ export async function handleAgentRequest(method: string, params: any): Promise<a
       requestAnimationFrame(() => flash([r.id]));
       return r;
     }
-    case 'generateSvg': {
+    case 'aiPenRequests':
+      return { requests: requestsForAgent(), notes: agentNotes() };
+    case 'aiPenDraw': {
       const before = useStore.getState().doc;
-      let r: { id: string; paths: number };
-      if (params.refine_id) {
-        r = await refineAiPen(String(params.refine_id), String(params.prompt ?? ''));
-      } else {
-        const width = Math.max(8, Number(params.width) || 256);
-        const height = Math.max(8, Number(params.height) || 256);
-        const parent: string | null = params.parent ?? null;
-        if (parent) requireNode(parent);
-        const pr = parent ? worldRectOf(parent) : null;
-        // Without a position the drawing goes in the middle of the user's view (like insert_svg).
-        const c = clientToWorld(innerWidth / 2, innerHeight / 2);
-        const x = params.x ?? (parent ? 0 : Math.round(c.x - width / 2));
-        const y = params.y ?? (parent ? 0 : Math.round(c.y - height / 2));
-        r = await drawWithAiPen(String(params.prompt ?? ''), { x, y, wx: (pr?.x ?? 0) + x, wy: (pr?.y ?? 0) + y, width, height, parent });
-      }
-      recordAgentChange(before, 'generate_svg', () => [r.id]);
+      const r = aiPenDraw(params);
+      recordAgentChange(before, 'ai_pen_draw', () => [r.frame_id]);
       flushEdits();
-      requestAnimationFrame(() => flash([r.id]));
       return { ...r, notes: agentNotes() };
     }
     case 'vectorize': {
