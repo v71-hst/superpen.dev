@@ -1,4 +1,4 @@
-// Right panel sections for component states, instance state and prototype links.
+// Right panel sections for component states, instance state, prototype links and AI Pen drawings.
 import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { useStore, keySource } from '../editor/store';
@@ -8,6 +8,7 @@ import { displayName, locate } from '../model/doc';
 import type { RNode } from '../model/types';
 import { Select } from './common';
 import { Section } from './RightPanel';
+import { refineAiPen, runAiPen, type AiPenMeta } from '../editor/aipen';
 
 const PRESETS = ['hover', 'pressed', 'disabled', 'focused', 'selected'];
 
@@ -129,6 +130,43 @@ export function PrototypeSection({ n, set }: { n: RNode; set: (c: Record<string,
       </div>
       {link && to !== '__back' && !tree.byKey.has(to) && <div className="hint" style={{ color: 'var(--danger, #e5484d)' }}>The target frame no longer exists.</div>}
       {link && <div className="hint">Click this layer in Present mode to follow the link.</div>}
+    </Section>
+  );
+}
+
+/** For frames drawn with AI Pen: say what to change and redraw (the model also sees how it looks now). */
+export function AiPenSection({ n }: { n: RNode }) {
+  const [text, setText] = useState('');
+  const busy = useStore(s => s.aiPenJobs.length > 0);
+  const meta = n.props.aiPen as AiPenMeta | undefined;
+  if (!meta?.prompt) return null;
+  const go = (feedback: string) => {
+    setText('');
+    runAiPen(() => refineAiPen(n.key, feedback).then(({ id }) => useStore.getState().select([id])));
+  };
+  return (
+    <Section title="AI Pen">
+      <div className="hint">
+        “{meta.prompt}”{meta.model ? ` · ${meta.model}` : ''}
+      </div>
+      <input
+        className="text-input"
+        placeholder="What to change, e.g. thicker lines, add a crown"
+        value={text}
+        onChange={e => setText(e.target.value)}
+        onKeyDown={e => {
+          e.stopPropagation();
+          if (e.key === 'Enter' && text.trim()) go(text.trim());
+        }}
+      />
+      <div className="row2">
+        <button className="rp-btn" disabled={busy || !text.trim()} onClick={() => go(text.trim())}>
+          Refine
+        </button>
+        <button className="rp-btn" disabled={busy} title="Redraw from the original prompt" onClick={() => go('')}>
+          Redraw
+        </button>
+      </div>
     </Section>
   );
 }

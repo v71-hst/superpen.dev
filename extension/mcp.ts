@@ -128,7 +128,7 @@ async function callEditor(method: string, params: any = {}, write = false) {
   const s = requireSelected();
   if (write && s.readOnly) throw new Error(`${path.basename(s.path)} is selected read-only because another chat holds the lock. Call select_file with force: true to take over (ask the user first).`);
   try {
-    return await rpc(s.bridge, 'call', { path: s.path, method, params, write });
+    return await rpc(s.bridge, 'call', { path: s.path, method, params, write }, method === 'generateSvg' ? 310_000 : undefined);
   } catch (e: any) {
     if (/fetch failed|ECONNREFUSED|aborted/i.test(String(e?.message))) throw new Error('Lost connection to the VS Code window that had this file open. Call select_file again.');
     throw e;
@@ -370,6 +370,21 @@ tool(
     const r = await rpc(s.bridge, 'export', { path: s.path, target, params: { id, format, scale } });
     return text(`Exported to ${r.path}`);
   },
+);
+
+tool(
+  'generate_svg',
+  "Draw an icon or illustration with the user's AI Pen model (the provider and API key they set up in Superpencil, not you): describe it in prompt and it becomes editable vector paths in a new frame of width×height. Good for detailed artwork such as emblems, mascots or illustrations. For simple shapes you can write the SVG yourself with insert_svg instead. To revise an AI Pen drawing, pass refine_id (its frame id) and say what to change in prompt; the model also sees how it currently looks. Can take a minute or more. Requires the edit lock.",
+  {
+    prompt: z.string().describe('What to draw, including style (e.g. "heraldic lion with a crown, white line art"), or what to change when refine_id is set'),
+    width: z.number().positive().optional().describe('Frame width (default 256)'),
+    height: z.number().positive().optional().describe('Frame height (default 256)'),
+    x: z.number().optional(),
+    y: z.number().optional(),
+    parent: z.string().optional().describe('Frame id to draw into (default: top level, in the middle of the view)'),
+    refine_id: z.string().optional().describe('Id of an AI Pen frame to redraw instead of drawing a new one'),
+  },
+  async a => json(await callEditor('generateSvg', a, true)),
 );
 
 tool(

@@ -4,7 +4,7 @@ import { rasterize } from '../render/rasterize';
 import { canvasSnapshot, recentLog, uiSnapshot } from './diagnostics';
 import { lodStats } from './lod';
 import { currentTree } from './tree';
-import { elFor, insertSvg, vectorizeNode, zoomToKeys } from './ops';
+import { clientToWorld, elFor, insertSvg, vectorizeNode, worldRectOf, zoomToKeys } from './ops';
 import { ensureRendered } from './culling';
 import { flushEdits } from './host';
 import { applyOperations, describe, nodeJson, outline, searchNodes, type Operation } from '../model/operations';
@@ -15,6 +15,7 @@ import { agentEdit, recordAgentChange, reviewStatus } from './review';
 import { commentsOf, openForAgent, postMessage, setResolved } from './comments';
 import { lintDesign } from './lint';
 import { exportRoblox } from './roblox';
+import { drawWithAiPen, refineAiPen } from './aipen';
 import { createSection, deleteSection, focusSections, hiddenFrameIds, sectionsOf, updateSection, viewerSections } from './sections';
 
 /** Things the agent should know after any call: review mode, and comments from the user waiting for an answer. */
@@ -323,6 +324,28 @@ export async function handleAgentRequest(method: string, params: any): Promise<a
       flushEdits();
       requestAnimationFrame(() => flash([r.id]));
       return r;
+    }
+    case 'generateSvg': {
+      const before = useStore.getState().doc;
+      let r: { id: string; paths: number };
+      if (params.refine_id) {
+        r = await refineAiPen(String(params.refine_id), String(params.prompt ?? ''));
+      } else {
+        const width = Math.max(8, Number(params.width) || 256);
+        const height = Math.max(8, Number(params.height) || 256);
+        const parent: string | null = params.parent ?? null;
+        if (parent) requireNode(parent);
+        const pr = parent ? worldRectOf(parent) : null;
+        // Without a position the drawing goes in the middle of the user's view (like insert_svg).
+        const c = clientToWorld(innerWidth / 2, innerHeight / 2);
+        const x = params.x ?? (parent ? 0 : Math.round(c.x - width / 2));
+        const y = params.y ?? (parent ? 0 : Math.round(c.y - height / 2));
+        r = await drawWithAiPen(String(params.prompt ?? ''), { x, y, wx: (pr?.x ?? 0) + x, wy: (pr?.y ?? 0) + y, width, height, parent });
+      }
+      recordAgentChange(before, 'generate_svg', () => [r.id]);
+      flushEdits();
+      requestAnimationFrame(() => flash([r.id]));
+      return { ...r, notes: agentNotes() };
     }
     case 'vectorize': {
       const before = useStore.getState().doc;

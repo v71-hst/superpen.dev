@@ -418,7 +418,19 @@ export function selectAll() {
 
 // ---------- SVG import & vectorize ----------
 
-export type InsertSvgOptions = { parent?: string | null; index?: number; x?: number; y?: number; width?: number; height?: number; name?: string };
+export type InsertSvgOptions = {
+  parent?: string | null;
+  index?: number;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  name?: string;
+  /** Extra properties stored on the new frame (e.g. AI Pen's prompt). */
+  meta?: Record<string, unknown>;
+  /** Replace this node (same parent and position in the layer list) in the same undo step. */
+  replace?: string;
+};
 
 /** Converts SVG markup to editable vector nodes and inserts them as a frame. Returns the new frame id. */
 export function insertSvg(markup: string, opts: InsertSvgOptions = {}): { id: string; paths: number; skipped: string[] } {
@@ -429,6 +441,15 @@ export function insertSvg(markup: string, opts: InsertSvgOptions = {}): { id: st
   s.edit(d => {
     const copy = cloneWithNewIds(node, allIds(d));
     id = copy.id;
+    if (opts.meta) Object.assign(copy, opts.meta);
+    if (opts.replace) {
+      const old = locate(d, opts.replace);
+      if (old) {
+        const at = old.siblings.indexOf(old.node);
+        old.siblings.splice(at, 1);
+        if (opts.index === undefined) opts = { ...opts, index: at };
+      }
+    }
     let parent = opts.parent ?? null;
     if (parent && keySource(parent).kind !== 'real') parent = null;
     const loc = parent ? locate(d, parent) : null;

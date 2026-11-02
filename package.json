@@ -109,6 +109,11 @@
         "title": "Refresh Designs",
         "category": "Superpencil",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "penEditorRemake.setAiPenKey",
+        "title": "Set AI Pen API Key",
+        "category": "Superpencil"
       }
     ],
     "menus": {
@@ -170,6 +175,46 @@
           "when": "false"
         }
       ]
+    },
+    "configuration": {
+      "title": "Superpencil",
+      "properties": {
+        "superpencil.aiPen.provider": {
+          "type": "string",
+          "enum": [
+            "anthropic",
+            "openai-compatible"
+          ],
+          "enumDescriptions": [
+            "Claude through the Anthropic API (API key, ANTHROPIC_API_KEY, or an `ant auth login` profile).",
+            "Any OpenAI-compatible chat completions endpoint: OpenRouter, DeepSeek, a local model server, and so on."
+          ],
+          "default": "anthropic",
+          "markdownDescription": "Which model provider **AI Pen** uses to draw. Set the key with **Superpencil: Set AI Pen API Key**."
+        },
+        "superpencil.aiPen.model": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Model id. Empty uses `claude-opus-5-5` for Anthropic. Required for OpenAI-compatible endpoints (for example an OpenRouter model id)."
+        },
+        "superpencil.aiPen.baseUrl": {
+          "type": "string",
+          "default": "https://openrouter.ai/api/v1",
+          "markdownDescription": "Base URL of the OpenAI-compatible endpoint (`/chat/completions` is appended)."
+        },
+        "superpencil.aiPen.effort": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "default": "medium",
+          "markdownDescription": "Anthropic only: how hard Claude thinks about each drawing. Higher is slower and costs more, and can give better detail."
+        }
+      }
     }
   },
   "scripts": {
@@ -194,6 +239,7 @@
     "zustand": "4.5.5"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^1.3.0",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@types/feather-icons": "4.29.4",
     "@types/node": "22.7.5",

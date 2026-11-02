@@ -1694,3 +1694,86 @@ html.light .modal {
 @keyframes pen-from-left { from { transform: translateX(-40%); opacity: 0 } }
 @keyframes pen-from-bottom { from { transform: translateY(40%); opacity: 0 } }
 @keyframes pen-from-top { from { transform: translateY(-40%); opacity: 0 } }
+
+/* AI Pen: area being drawn into, its prompt box, and placeholders while a drawing renders */
+.aipen-box {
+  position: absolute;
+  border: 1.5px dashed var(--instance);
+  border-radius: 4px;
+  background: rgba(139, 92, 246, 0.06);
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  overflow: hidden;
+}
+.aipen-box:not(.draft) {
+  animation: aipen-pulse 1.4s ease-in-out infinite;
+}
+.aipen-box span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 6px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--instance);
+  color: #fff;
+  font-size: 11px;
+  white-space: nowrap;
+}
+@keyframes aipen-pulse {
+  50% { background: rgba(139, 92, 246, 0.16); }
+}
+.aipen-prompt {
+  position: absolute;
+  width: 300px;
+  padding: 8px;
+  border-radius: 12px;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.aipen-prompt textarea {
+  resize: none;
+  background: var(--control);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  color: var(--fg-strong);
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 8px;
+  outline: none;
+}
+.aipen-prompt textarea:focus {
+  border-color: var(--instance);
+}
+.aipen-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.aipen-actions .hint {
+  flex: 1;
+}
+.aipen-actions button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--fg);
+  background: var(--control);
+}
+.aipen-actions button:hover {
+  background: var(--control-hover);
+}
+.aipen-actions button.primary {
+  background: var(--instance);
+  color: #fff;
+}
+.aipen-actions button:disabled {
+  opacity: 0.5;
+}

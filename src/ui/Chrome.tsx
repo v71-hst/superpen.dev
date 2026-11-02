@@ -28,6 +28,7 @@ import {
   Plus,
   Scaling,
   SlidersHorizontal,
+  Sparkles,
   Square,
   Star,
   StickyNote,
@@ -115,6 +116,7 @@ export function Toolbar() {
         <ChevronDown strokeWidth={2.5} />
       </button>
       {btn('pen', PenTool, 'Pen (P)')}
+      {btn('aipen', Sparkles, 'AI Pen (Shift+P): drag an area, describe what to draw, and your AI model draws it as editable vectors')}
       {btn('text', Type, 'Text (T)')}
       {btn('frame', Frame, 'Frame (F)')}
       {btn('note', StickyNote, 'Note (N)')}

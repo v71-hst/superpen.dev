@@ -132,6 +132,7 @@ export function installShortcuts() {
       return;
     }
 
+    if (e.shiftKey && e.code === 'KeyP') return s.set({ tool: 'aipen' });
     if (e.shiftKey && (e.code === 'Digit1' || e.key === '!')) return zoomToFit();
     if (e.shiftKey && (e.code === 'Digit2' || e.key === '@')) return zoomToKeys(s.selection, 8);
     if (e.shiftKey && (e.code === 'Digit0' || e.key === ')')) return setZoom(1);

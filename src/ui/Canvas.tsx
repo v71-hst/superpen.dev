@@ -10,6 +10,7 @@ import { allIds, displayName, locate, newId } from '../model/doc';
 import type { PenNode, RNode } from '../model/types';
 import { fmt } from './common';
 import { onViewChanged, pointerTarget, rootWorldRect, scheduleCull } from '../editor/culling';
+import { AiPenLayer } from './AiPen';
 import { canvasHiddenIds } from '../editor/sections';
 import { LOD_ZOOM, bitmapUrl, getBitmap, hasFixedSize, lodEligible, lodInteraction, requestBitmap, type Bitmap } from '../editor/lod';
 import { deepResolve, isGeneratedKey } from '../model/resolve';
@@ -726,13 +727,18 @@ export function Canvas() {
     const clicked = w * s.view.zoom < 3 && h * s.view.zoom < 3;
     const x0 = clicked ? a.x : b.x < a.x ? a.x - w : a.x;
     const y0 = clicked ? a.y : b.y < a.y ? a.y - h : a.y;
-    const defaults: Record<string, [number, number]> = { frame: [400, 300], rect: [100, 100], ellipse: [100, 100], polygon: [100, 100], icon: [24, 24], note: [240, 160], text: [0, 0] };
+    const defaults: Record<string, [number, number]> = { aipen: [256, 256], frame: [400, 300], rect: [100, 100], ellipse: [100, 100], polygon: [100, 100], icon: [24, 24], note: [240, 160], text: [0, 0] };
     if (clicked) [w, h] = defaults[d.tool] ?? [100, 100];
     const pr = d.parent ? worldRectOf(d.parent) : null;
     const x = Math.round(x0 - (pr?.x ?? 0));
     const y = Math.round(y0 - (pr?.y ?? 0));
     w = Math.round(w);
     h = Math.round(h);
+    if (d.tool === 'aipen') {
+      // AI Pen: the dragged area becomes the drawing's box; the prompt opens next to it.
+      useStore.setState({ tool: 'select', aiPenDraft: { x, y, wx: Math.round(x0), wy: Math.round(y0), width: w, height: h, parent: d.parent } });
+      return;
+    }
     let node: PenNode;
     const base = { x, y };
     switch (d.tool) {
@@ -821,6 +827,7 @@ export function Canvas() {
       </div>
       {tree && <Overlay tree={tree} onResizeStart={onResizeStart} draft={draft} />}
       {tree && <CanvasExtras tree={tree} draft={draft} onGapStart={onGapStart} dragging={!!drag.current} />}
+      <AiPenLayer />
       {tool === 'pen' && penPoints.length > 0 && <PenPreview points={penPoints} hover={penHover} />}
     </div>
   );

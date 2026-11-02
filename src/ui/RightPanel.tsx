@@ -58,7 +58,7 @@ import { PaintPopover, paintSwatch } from './ColorPicker';
 import { ICON_NAMES } from './icons';
 import { blobToDataUrl, downloadDataUrl } from '../editor/host';
 import { ScriptControls, ShaderControls } from './AssetControls';
-import { InstanceStateSection, PrototypeSection, StatesSection } from './RightPanelExtras';
+import { AiPenSection, InstanceStateSection, PrototypeSection, StatesSection } from './RightPanelExtras';
 import { exportRoblox } from '../editor/roblox';
 
 type Ctx = {
@@ -169,6 +169,7 @@ export function RightPanel() {
         {iconN && <PaintSection {...ctxOf(iconN, iconT)} prop="fill" title={mixed ? 'Icon color' : 'Color'} />}
         <EffectsSection {...ctx} />
         <PrototypeSection n={n} set={set} />
+        {!multi && <AiPenSection n={n} />}
         <CodeSection n={n} />
         <ExportSection n={n} />
       </div>

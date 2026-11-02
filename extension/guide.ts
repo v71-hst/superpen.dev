@@ -79,10 +79,14 @@ canvas to the Sections viewer, which shows one section at a time; tool notes say
 ]
 If any operation is invalid the whole batch is rejected and nothing changes.
 
-## Vector artwork (insert_svg / vectorize_image)
+## Vector artwork (insert_svg / generate_svg / vectorize_image)
 For logos, icons and illustrations, write SVG markup and call insert_svg (frame of editable path nodes, scaled to
 width×height). Keep it clean: a viewBox, flat fills or simple gradients, no text (add text nodes separately).
 Turn artwork you reuse into a component (reusable: true on the frame) instead of inserting copies.
+generate_svg asks the user's AI Pen model (set up in Superpencil) to draw from a prompt; use it for detailed artwork
+(emblems, mascots, illustrations) or when the user asks for AI Pen. Frames it makes keep their prompt (aiPen), and
+generate_svg with refine_id redraws one with your requested change. If it reports no API key, tell the user to run
+"Superpencil: Set AI Pen API Key".
 vectorize_image traces an image fill into paths (good for flat logos, poor for photos).
 Prefer icon nodes for standard UI icons and frames/shapes/gradients for decoration; use SVG for custom artwork.
 
