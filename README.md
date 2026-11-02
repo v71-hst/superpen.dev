@@ -26,6 +26,12 @@ MCP server so Claude or Codex can design alongside you.
   the areas that are off, and a difference image). Put a reference image under an AI Pen box, or attach it in chat.
 - **Screenshots for icons**: Claude can view white artwork on a dark background and preview icons at several sizes
   at once (e.g. 256, 64, 32, 16 px).
+- **Close-up check for drawings**: `check_drawing` finds stroke ends that stop just off the line they meet (they show
+  as bumps when zoomed in), says where to move them and returns magnified close-ups; Claude runs it before finishing a
+  drawing. `compare_to_reference` now also returns close-ups of its worst areas.
+- **Sharp vector art when zoomed in**: the browser rounds every shape's position to a whole design pixel, which zoomed
+  in pulled parts of a drawing up to half a pixel apart (an icon's dot beside its stem, bumps where lines join). Each
+  shape is now shifted back by its rounding error, so drawings line up at any zoom.
 - **Fix**: perfectly vertical or horizontal lines in imported SVGs no longer disappear.
 
 ### 0.2.1

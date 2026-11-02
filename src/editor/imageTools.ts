@@ -335,7 +335,39 @@ export function compare(ref: ImageData, shot: ImageData, tolerance = 48, frameSc
   g.drawImage(sc, pw + 20, 0, pw, ph);
   g.drawImage(toCanvas(diff), pw * 2 + 40, 0, pw, ph);
   const score = 1 - mism / (W * H);
+  // Close-ups of the worst areas, reference beside render, magnified so small differences (a bump, an offset dot,
+  // a wrong curve) are visible.
+  const worstCells = [...bad]
+    .map((n, k) => ({ n, k }))
+    .filter(x => x.n > 0)
+    .sort((a, b) => b.n - a.n)
+    .slice(0, 4);
+  let closeups: string | undefined;
+  if (worstCells.length) {
+    const tile = 260;
+    const cz = document.createElement('canvas');
+    cz.width = tile * 2 + 30;
+    cz.height = worstCells.length * (tile + 24) + 6;
+    const zg = cz.getContext('2d')!;
+    zg.fillStyle = '#111';
+    zg.fillRect(0, 0, cz.width, cz.height);
+    const refC = toCanvas(ref);
+    worstCells.forEach(({ k: cellK }, i) => {
+      const cx = (cellK % cells) * cw, cy = Math.floor(cellK / cells) * ch;
+      const w = Math.min(cw, W - cx), h = Math.min(ch, H - cy);
+      const s = Math.min(tile / w, tile / h);
+      const y0 = 6 + i * (tile + 24) + 18;
+      zg.fillStyle = '#ddd';
+      zg.font = '12px sans-serif';
+      zg.fillText(`ref x${cx}-${cx + w} y${cy}-${cy + h}: reference | render`, 6, y0 - 6);
+      zg.imageSmoothingEnabled = false;
+      zg.drawImage(refC, cx, cy, w, h, 6, y0, w * s, h * s);
+      zg.drawImage(sc, cx, cy, w, h, 24 + tile, y0, w * s, h * s);
+    });
+    closeups = cz.toDataURL('image/png');
+  }
   return {
+    closeups,
     dataUrl: c.toDataURL('image/png'),
     text: [`match ${(score * 100).toFixed(2)}% of pixels (within tolerance ${tolerance}, ignoring 1px anti-aliasing shifts; reference ${W}×${H}, render scaled to match)`, worst.length ? 'worst areas:' : 'no mismatched areas', ...worst, 'image: reference | your render | difference (magenta = mismatch)'].join('\n'),
   };
@@ -400,4 +432,50 @@ export async function presentShot(dataUrl: string, background?: string, sizes?: 
     x += t.width + gap;
   }
   return { dataUrl: c.toDataURL('image/png'), width: c.width, height: c.height };
+}
+
+export type Closeup = { x: number; y: number; half: number; label: string; fix?: { x: number; y: number } };
+
+/**
+ * Magnified tiles of spots in an image (all coordinates in image pixels): the spot is ringed in red and, when given,
+ * the point it should move to is marked green.
+ */
+export function closeupGrid(img: ImageData, spots: Closeup[], tile = 220): string {
+  const src = toCanvas(img);
+  const cols = Math.min(4, spots.length);
+  const rows = Math.ceil(spots.length / cols);
+  const pad = 8, labelH = 16;
+  const c = document.createElement('canvas');
+  c.width = cols * (tile + pad) + pad;
+  c.height = rows * (tile + labelH + pad) + pad;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#111';
+  g.fillRect(0, 0, c.width, c.height);
+  g.imageSmoothingQuality = 'high';
+  spots.forEach((s, i) => {
+    const tx = pad + (i % cols) * (tile + pad);
+    const ty = pad + Math.floor(i / cols) * (tile + labelH + pad);
+    const k = tile / (s.half * 2);
+    g.save();
+    g.beginPath();
+    g.rect(tx, ty + labelH, tile, tile);
+    g.clip();
+    g.fillStyle = '#fff';
+    g.fillRect(tx, ty + labelH, tile, tile);
+    g.drawImage(src, s.x - s.half, s.y - s.half, s.half * 2, s.half * 2, tx, ty + labelH, tile, tile);
+    const mark = (p: { x: number; y: number }, color: string, r: number) => {
+      g.strokeStyle = color;
+      g.lineWidth = 2;
+      g.beginPath();
+      g.arc(tx + (p.x - s.x + s.half) * k, ty + labelH + (p.y - s.y + s.half) * k, r, 0, Math.PI * 2);
+      g.stroke();
+    };
+    mark(s, '#ff2d55', tile * 0.09);
+    if (s.fix) mark(s.fix, '#30d158', 4);
+    g.restore();
+    g.fillStyle = '#ddd';
+    g.font = '12px sans-serif';
+    g.fillText(s.label, tx, ty + 12);
+  });
+  return c.toDataURL('image/png');
 }

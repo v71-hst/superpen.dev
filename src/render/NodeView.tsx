@@ -12,6 +12,7 @@ import { ShaderEffectHost, ShaderFillCanvas } from './ShaderLayer';
 import type { ShapeSpec } from './shaders';
 import { scriptState } from '../editor/scriptHost';
 import { useStore } from '../editor/store';
+import { alignSubpixel } from './subpixel';
 
 export type ParentLayout = 'none' | 'horizontal' | 'vertical';
 
@@ -517,6 +518,8 @@ function ShapeView({ n, p, parentLayout }: ViewProps) {
   const st = boxStyle(n, p, parentLayout);
   const { ref, w, h } = useMeasured(st);
   const uid = useId().replace(/[^a-zA-Z0-9_-]/g, '');
+  const svgRef = useRef<SVGSVGElement>(null);
+  useLayoutEffect(() => alignSubpixel(svgRef.current));
   const open = n.type === 'line' || n.type === 'path';
   let d = '';
   if (n.type === 'ellipse') d = ellipseGeometry(w, h, num(p.innerRadius), num(p.startAngle), p.sweepAngle === undefined ? 360 : num(p.sweepAngle, 360));
@@ -544,7 +547,7 @@ function ShapeView({ n, p, parentLayout }: ViewProps) {
     <div ref={ref} data-k={n.key} style={{ ...st, ...shadowCss(fx, 'filter') }}>
       {/* An <svg> with zero width or height paints nothing, even with overflow visible, so perfectly straight
           vertical/horizontal paths (0 wide) get a 1px minimum; path coordinates don't depend on the element's size. */}
-      <svg width="100%" height="100%" style={{ position: 'absolute', inset: 0, overflow: 'visible', display: 'block', minWidth: 1, minHeight: 1 }}>
+      <svg ref={svgRef} width="100%" height="100%" style={{ position: 'absolute', inset: 0, overflow: 'visible', display: 'block', minWidth: 1, minHeight: 1 }}>
         <defs>
           {fills.map((f, i) => (
             <SvgPaint key={'f' + i} id={`${uid}f${i}`} fill={f} w={w} h={h} resolveUrl={ctx.resolveUrl} />

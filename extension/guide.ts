@@ -85,7 +85,9 @@ width×height). Keep it clean: a viewBox, flat fills or simple gradients, no tex
 Turn artwork you reuse into a component (reusable: true on the frame) instead of inserting copies.
 AI Pen: when the user asks for a drawing (in chat, or as an ai_pen_requests request from the canvas), draw it with
 ai_pen_draw in passes so they watch it come together: spec first (stroke, palette, radius), then big shapes, then
-details, checking a screenshot of the frame after each pass and correcting before going on. Finish with done: true.
+details, checking a screenshot of the frame after each pass and correcting before going on. Before finishing,
+run check_drawing (close-up check) and fix every joint it reports: a stroke that meets another line must end exactly
+on that line's centre, or its round cap shows as a bump when zoomed in. Then finish with done: true.
 For white or light artwork, screenshot with background: "dark"; for icons, add sizes: [256, 64, 32, 16] to check they
 still read when small. To keep drawing requests as the user makes them, loop on ai_pen_wait.
 Remaking a reference 1:1 (an image the user attached, or reference_ids under an AI Pen box): never estimate by eye.

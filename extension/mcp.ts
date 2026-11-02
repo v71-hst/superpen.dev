@@ -137,6 +137,8 @@ function readImage(file: string) {
   return `data:${type};base64,${buf.toString('base64')}`;
 }
 
+const dataOf = (dataUrl: string) => String(dataUrl).slice(String(dataUrl).indexOf(',') + 1);
+
 /** Waiting AI Pen requests in every open design, across all VS Code windows. */
 async function pendingAll(): Promise<{ path: string; name: string; requests: any[] }[]> {
   const bs = await bridges();
@@ -411,7 +413,7 @@ tool(
   [
     'Draw with AI Pen: the user watches each call trace onto the canvas stroke by stroke under an "AI Pen" cursor. Pass request_id for a user request (its box is used), frame_id to keep drawing in an existing frame, or x/y/width/height (+parent) for a new drawing.',
     'svg: SVG elements (<path>, <circle>, <rect>, <g>...) in the frame’s own coordinates, 0..width by 0..height (a full <svg> with its own viewBox also works). No <text> or <image>.',
-    'Draw like a designer, not in one go: (1) decide a spec first (stroke width, line caps, palette, corner radius; match artwork already in the file), (2) one call per pass: big blocking shapes/silhouette, then secondary forms, then details and highlights, (3) after each pass call screenshot on the frame_id and compare it with the request, fixing proportions in the next pass (clear: true redraws the frame, or edit single paths with apply_operations), (4) prefer few, smooth cubic Bézier paths and give shapes ids. Finish with done: true.',
+    'Draw like a designer, not in one go: (1) decide a spec first (stroke width, line caps, palette, corner radius; match artwork already in the file), (2) one call per pass: big blocking shapes/silhouette, then secondary forms, then details and highlights, (3) after each pass call screenshot on the frame_id and compare it with the request, fixing proportions in the next pass (clear: true redraws the frame, or edit single paths with apply_operations), (4) prefer few, smooth cubic Bézier paths and give shapes ids, (5) close-up check: call check_drawing on the frame and fix every joint it reports (a stroke end meeting a line must end exactly on that line’s centre), then finish with done: true.',
     'Requests may list reference_ids (image layers under the box), and the user may attach a reference in chat: measure it with analyze_image and check with compare_to_reference rather than estimating by eye.',
     'Requires the edit lock.',
   ].join(' '),
@@ -498,7 +500,27 @@ tool(
   async ({ id, path: file, reference_id, tolerance }) => {
     if (!file && !reference_id) throw new Error('pass path or reference_id');
     const r = await callEditor('compareReference', { id, reference_id, tolerance, image: file ? readImage(file) : undefined });
-    return { content: [{ type: 'image', data: String(r.dataUrl).slice(String(r.dataUrl).indexOf(',') + 1), mimeType: 'image/png' }, { type: 'text', text: r.text }] };
+    const content: any[] = [{ type: 'image', data: dataOf(r.dataUrl), mimeType: 'image/png' }];
+    if (r.closeups) content.push({ type: 'image', data: dataOf(r.closeups), mimeType: 'image/png' });
+    content.push({ type: 'text', text: r.text + (r.closeups ? '\nSecond image: magnified close-ups of the worst areas, reference beside render.' : '') });
+    return { content };
+  },
+);
+
+tool(
+  'check_drawing',
+  [
+    'Close-up check for vector artwork: finds every stroke end that stops just short of (or just past) the line it meets, which shows as a bump at the join (round/square caps) or a gap, invisible at 1x but obvious zoomed in.',
+    'Returns each problem with the end to move and where to move it (in the drawing\'s own coordinates), plus magnified close-ups (red ring = the stroke end, green dot = the fix).',
+    'regions: also return close-ups of these areas (drawing coordinates) to inspect small details yourself.',
+    'Run it after the last pass of every drawing (ai_pen_draw / insert_svg) and fix what it finds before telling the user it is done.',
+  ].join(' '),
+  { id: z.string(), regions: z.array(z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() })).max(12).optional() },
+  async a => {
+    const r = await callEditor('checkDrawing', a);
+    const content: any[] = [{ type: 'text', text: r.text }];
+    if (r.closeups) content.push({ type: 'image', data: dataOf(r.closeups), mimeType: 'image/png' });
+    return { content };
   },
 );
 

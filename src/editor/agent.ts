@@ -17,7 +17,8 @@ import { lintDesign } from './lint';
 import { exportRoblox } from './roblox';
 import { aiPenDraw, requestsForAgent } from './aipen';
 import { createSection, deleteSection, focusSections, hiddenFrameIds, sectionsOf, updateSection, viewerSections } from './sections';
-import { analyze, compare, loadImageData, presentShot, zoomCrop } from './imageTools';
+import { analyze, closeupGrid, compare, loadImageData, presentShot, zoomCrop, type Closeup } from './imageTools';
+import { checkDrawing } from './drawingCheck';
 
 /** Things the agent should know after any call: review mode, and comments from the user waiting for an answer. */
 function agentNotes(): string[] {
@@ -323,6 +324,29 @@ export async function handleAgentRequest(method: string, params: any): Promise<a
       const img = await imageSource(params);
       const text = analyze(img, params);
       return { text, zoom: params.zoom ? zoomCrop(img, params.zoom) : undefined };
+    }
+    case 'checkDrawing': {
+      const key = String(params.id ?? '');
+      requireNode(key);
+      ensureRendered([key]);
+      await frames(2);
+      const { issues } = checkDrawing(key);
+      const regions: { x: number; y: number; w: number; h: number }[] = Array.isArray(params.regions) ? params.regions : [];
+      if (!issues.length && !regions.length) return { issues, text: 'No problem joints found: every stroke end either sits on the line it meets or is clear of it.' };
+      // Render the drawing large once and cut magnified tiles out of it.
+      const el = elFor(key)!;
+      const k = Math.max(1, Math.min(10, 6000 / Math.max(el.offsetWidth, el.offsetHeight, 1)));
+      const img = await loadImageData((await capture(key, 'png', k, 8192)).dataUrl);
+      const spots: Closeup[] = [
+        ...issues.slice(0, 24).map((x, i) => ({ x: x.at.x * k, y: x.at.y * k, half: Math.max(6, x.off * 6) * k, label: `${i + 1}. ${x.name} (${x.end})`, fix: { x: x.fix.x * k, y: x.fix.y * k } })),
+        ...regions.slice(0, 12).map((r, i) => ({ x: (r.x + r.w / 2) * k, y: (r.y + r.h / 2) * k, half: (Math.max(r.w, r.h) / 2) * k, label: `region ${i + 1}` })),
+      ];
+      const text = issues.length
+        ? `${issues.length} joint problem${issues.length > 1 ? 's' : ''} (coordinates in the drawing's own units, top-left 0,0):\n` +
+          issues.map((x, i) => `${i + 1}. ${x.name} #${x.node}, ${x.end} at (${x.at.x}, ${x.at.y}) meets ${x.meets.name} #${x.meets.node}: ${x.problem}. Move it to (${x.fix.x}, ${x.fix.y}).`).join('\n') +
+          '\nClose-ups: red ring = the stroke end, green dot = where it should be.'
+        : 'No problem joints found. Close-ups of the requested regions:';
+      return { issues, text, closeups: closeupGrid(img, spots) };
     }
     case 'compareReference': {
       const key = String(params.id ?? '');
