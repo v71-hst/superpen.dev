@@ -233,6 +233,17 @@ export class Bridge {
       }
       case 'call':
         return this.call(params.path, params.method, params.params ?? {}, !!params.write, session);
+      case 'aiPenPending': {
+        // AI Pen requests waiting in every loaded design of this window (read-only, no lock needed).
+        const out: { path: string; name: string; requests: any[] }[] = [];
+        for (const e of this.docs.values()) {
+          if (!e.loaded || !e.panels.size) continue;
+          const r: any = await this.call(e.document.uri.fsPath, 'aiPenRequests', {}, false, session).catch(() => null);
+          const requests = (r?.requests ?? []).filter((q: any) => q.status === 'waiting');
+          if (requests.length) out.push({ path: e.document.uri.fsPath, name: path.basename(e.document.uri.fsPath), requests });
+        }
+        return out;
+      }
       case 'save': {
         const e = this.requireDoc(params.path);
         this.assertLock(e, session);

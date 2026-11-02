@@ -15,6 +15,19 @@ MCP server so Claude or Codex can design alongside you.
 
 ## What's new
 
+### 0.3.0
+- **AI Pen** (Shift+P): drag a box, describe a drawing, and your connected AI chat draws it while you watch each
+  stroke trace onto the canvas. No sign-in or API keys (see Features below).
+- **AI Pen requests are never missed**: registering the MCP server with Claude Code also adds a small hook, so any
+  drawing requests waiting on the canvas reach Claude with your next message. Chats can also sit and wait for
+  requests (`ai_pen_wait`), so you can keep dragging out boxes and they get drawn.
+- **Remaking a reference 1:1**: new MCP tools measure a reference image exactly (`analyze_image`: shapes, colours,
+  edges, arcs, zoomed crops with a pixel ruler) and check a drawing against it (`compare_to_reference`: match score,
+  the areas that are off, and a difference image). Put a reference image under an AI Pen box, or attach it in chat.
+- **Screenshots for icons**: Claude can view white artwork on a dark background and preview icons at several sizes
+  at once (e.g. 256, 64, 32, 16 px).
+- **Fix**: perfectly vertical or horizontal lines in imported SVGs no longer disappear.
+
 ### 0.2.1
 - **Sections**: group top-level frames into named sections (ask Claude to "group my frames into sections"). Hide or
   show whole sections from the new **Sections** tab in the left panel; hidden frames aren't drawn at all, which keeps
@@ -84,7 +97,8 @@ The extension includes an MCP server, so Claude Code chats can read and edit you
 
 1. Install [Claude Code](https://claude.com/claude-code) so the `claude` command works in a terminal.
 2. In VS Code: **Ctrl+Shift+P → "Superpencil: Register MCP Server with Claude Code"** (you're also asked once on
-   first start).
+   first start). With Node.js installed this also adds a `UserPromptSubmit` hook to `~/.claude/settings.json`
+   (a `.bak` copy is kept) that tells Claude about AI Pen requests waiting on the canvas.
 3. Start a new Claude chat and ask it to work on one of your open designs.
 
 **Using Codex instead?** Run **Ctrl+Shift+P → "Superpencil: Register MCP Server with Codex"**. It adds a

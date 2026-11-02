@@ -86,6 +86,13 @@ Turn artwork you reuse into a component (reusable: true on the frame) instead of
 AI Pen: when the user asks for a drawing (in chat, or as an ai_pen_requests request from the canvas), draw it with
 ai_pen_draw in passes so they watch it come together: spec first (stroke, palette, radius), then big shapes, then
 details, checking a screenshot of the frame after each pass and correcting before going on. Finish with done: true.
+For white or light artwork, screenshot with background: "dark"; for icons, add sizes: [256, 64, 32, 16] to check they
+still read when small. To keep drawing requests as the user makes them, loop on ai_pen_wait.
+Remaking a reference 1:1 (an image the user attached, or reference_ids under an AI Pen box): never estimate by eye.
+analyze_image gives exact shapes, colours and positions (probes for rows/columns/arcs, zoom for small details);
+draw in the image's own pixel coordinates (an svg viewBox the size of the image; match_aspect: true on the first
+ai_pen_draw keeps its proportions); then compare_to_reference and fix the areas it reports. Do not write your own
+measuring scripts: these tools are the workflow.
 vectorize_image traces an image fill into paths (good for flat logos, poor for photos).
 Prefer icon nodes for standard UI icons and frames/shapes/gradients for decoration; use SVG for custom artwork.
 

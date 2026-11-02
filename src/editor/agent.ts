@@ -17,6 +17,7 @@ import { lintDesign } from './lint';
 import { exportRoblox } from './roblox';
 import { aiPenDraw, requestsForAgent } from './aipen';
 import { createSection, deleteSection, focusSections, hiddenFrameIds, sectionsOf, updateSection, viewerSections } from './sections';
+import { analyze, compare, loadImageData, presentShot, zoomCrop } from './imageTools';
 
 /** Things the agent should know after any call: review mode, and comments from the user waiting for an answer. */
 function agentNotes(): string[] {
@@ -62,6 +63,15 @@ function rootOf(key: string): string {
     p = tree.parent.get(k);
   }
   return k;
+}
+
+/** The image an agent wants to measure: a file the MCP server read (data URL), or a node rendered at `scale`. */
+async function imageSource(params: { image?: string; id?: string; scale?: number }): Promise<ImageData> {
+  if (params.image) return loadImageData(params.image);
+  if (!params.id) throw new Error('pass path (an image file) or id (a node: an image layer or any frame)');
+  requireNode(params.id);
+  const shot = await capture(params.id, 'png', params.scale ?? 1, 4096);
+  return loadImageData(shot.dataUrl);
 }
 
 async function capture(key: string, format: 'png' | 'jpg' | 'svg', scale: number, maxSize: number) {
@@ -303,8 +313,29 @@ export async function handleAgentRequest(method: string, params: any): Promise<a
       const key = params.id ?? s.selection[0];
       if (!key) throw new Error(`pass "id" (or select something in the editor). Top-level frames: ${tree.roots.map(r => `#${r.key} ${JSON.stringify(displayName(r.props))}`).join(', ')}`);
       requireNode(key);
-      const shot = await capture(key, 'png', params.scale ?? 1, params.max_size ?? 1280);
-      return { ...shot, dataUrl: shot.dataUrl };
+      const sizes: number[] | undefined = Array.isArray(params.sizes) && params.sizes.length ? params.sizes.map(Number).filter((n: number) => n >= 8 && n <= 1024) : undefined;
+      // Icon previews render once at twice the largest size, then scale down like a game engine would.
+      const shot = sizes ? await capture(key, 'png', 8, Math.max(...sizes) * 2) : await capture(key, 'png', params.scale ?? 1, params.max_size ?? 1280);
+      if (!params.background && !sizes) return shot;
+      return presentShot(shot.dataUrl, params.background, sizes);
+    }
+    case 'analyzeImage': {
+      const img = await imageSource(params);
+      const text = analyze(img, params);
+      return { text, zoom: params.zoom ? zoomCrop(img, params.zoom) : undefined };
+    }
+    case 'compareReference': {
+      const key = String(params.id ?? '');
+      requireNode(key);
+      const ref = await imageSource({ image: params.image, id: params.reference_id });
+      ensureRendered([key]);
+      await frames(2);
+      const el = elFor(key);
+      if (!el) throw new Error(`node "${key}" is not rendered`);
+      // Render at the reference's pixel size so the two line up pixel for pixel.
+      const k = ref.width / Math.max(1, el.offsetWidth);
+      const shot = await capture(key, 'png', k, 8192);
+      return compare(ref, await loadImageData(shot.dataUrl), params.tolerance ?? 48, k);
     }
     case 'checkLayout':
       return checkLayout(params.id);

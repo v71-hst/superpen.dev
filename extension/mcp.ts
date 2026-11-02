@@ -124,6 +124,26 @@ function requireSelected() {
   return selected;
 }
 
+const IMAGE_TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif', '.bmp': 'image/bmp', '.svg': 'image/svg+xml' };
+
+/** Reads an image file (absolute, or relative to the selected design) as a data URL for the editor to measure. */
+function readImage(file: string) {
+  const full = path.isAbsolute(file) ? file : path.resolve(path.dirname(requireSelected().path), file);
+  const type = IMAGE_TYPES[path.extname(full).toLowerCase()];
+  if (!type) throw new Error(`not an image file: ${file} (png, jpg, webp, gif, bmp or svg)`);
+  if (!fs.existsSync(full)) throw new Error(`file not found: ${full}`);
+  const buf = fs.readFileSync(full);
+  if (buf.length > 40 * 1024 * 1024) throw new Error('image is larger than 40 MB');
+  return `data:${type};base64,${buf.toString('base64')}`;
+}
+
+/** Waiting AI Pen requests in every open design, across all VS Code windows. */
+async function pendingAll(): Promise<{ path: string; name: string; requests: any[] }[]> {
+  const bs = await bridges();
+  const lists = await Promise.all(bs.map(b => rpc(b, 'aiPenPending', {}, 10_000).catch(() => [])));
+  return lists.flat();
+}
+
 async function callEditor(method: string, params: any = {}, write = false) {
   const s = requireSelected();
   if (write && s.readOnly) throw new Error(`${path.basename(s.path)} is selected read-only because another chat holds the lock. Call select_file with force: true to take over (ask the user first).`);
@@ -342,8 +362,15 @@ tool(
 server.registerTool(
   'screenshot',
   {
-    description: 'Render a node (default: the user\'s selection) to a PNG image so you can check the result visually. max_size caps the longest side in pixels (default 1280).',
-    inputSchema: { id: z.string().optional(), scale: z.number().min(0.1).max(4).optional(), max_size: z.number().int().min(64).max(4096).optional() },
+    description:
+      'Render a node (default: the user\'s selection) to a PNG image so you can check the result visually. max_size caps the longest side in pixels (default 1280). background puts transparent artwork on "dark", "light", "checker" or a #hex colour (white line art is invisible without it). sizes renders an icon preview at several pixel sizes side by side (e.g. [256, 64, 32, 16]) to check it still reads when small.',
+    inputSchema: {
+      id: z.string().optional(),
+      scale: z.number().min(0.1).max(4).optional(),
+      max_size: z.number().int().min(64).max(4096).optional(),
+      background: z.string().optional().describe('"dark" | "light" | "checker" | "#RRGGBB"'),
+      sizes: z.array(z.number().int().min(8).max(1024)).max(8).optional(),
+    },
   },
   (async (a: any) => {
     try {
@@ -385,6 +412,7 @@ tool(
     'Draw with AI Pen: the user watches each call trace onto the canvas stroke by stroke under an "AI Pen" cursor. Pass request_id for a user request (its box is used), frame_id to keep drawing in an existing frame, or x/y/width/height (+parent) for a new drawing.',
     'svg: SVG elements (<path>, <circle>, <rect>, <g>...) in the frame’s own coordinates, 0..width by 0..height (a full <svg> with its own viewBox also works). No <text> or <image>.',
     'Draw like a designer, not in one go: (1) decide a spec first (stroke width, line caps, palette, corner radius; match artwork already in the file), (2) one call per pass: big blocking shapes/silhouette, then secondary forms, then details and highlights, (3) after each pass call screenshot on the frame_id and compare it with the request, fixing proportions in the next pass (clear: true redraws the frame, or edit single paths with apply_operations), (4) prefer few, smooth cubic Bézier paths and give shapes ids. Finish with done: true.',
+    'Requests may list reference_ids (image layers under the box), and the user may attach a reference in chat: measure it with analyze_image and check with compare_to_reference rather than estimating by eye.',
     'Requires the edit lock.',
   ].join(' '),
   {
@@ -400,8 +428,78 @@ tool(
     prompt: z.string().optional().describe('What this drawing is (stored on the frame) when there is no request'),
     clear: z.boolean().optional().describe('Remove everything in the frame before this pass'),
     done: z.boolean().optional().describe('Last pass: completes the request'),
+    match_aspect: z
+      .boolean()
+      .optional()
+      .describe('First pass only: the new frame keeps the box width and takes its height from the svg viewBox, so a reference drawn in its own pixel coordinates fills the frame exactly (otherwise the art is fitted inside the box)'),
   },
   async a => json(await callEditor('aiPenDraw', a, true)),
+);
+
+tool(
+  'ai_pen_wait',
+  'Wait for the user to ask AI Pen for a drawing (they press Shift+P on the canvas, drag a box and describe it). Returns as soon as a request is waiting in any open design, with the file to select_file; returns empty after timeout_seconds. Use it when the user wants you to keep drawing their AI Pen requests: draw each one, then call ai_pen_wait again.',
+  { timeout_seconds: z.number().int().min(1).max(600).optional() },
+  async ({ timeout_seconds }) => {
+    const until = Date.now() + (timeout_seconds ?? 240) * 1000;
+    for (;;) {
+      const pending = await pendingAll();
+      if (pending.length) return json({ waiting: pending, next: 'select_file on the file (if not already selected), then draw each request with ai_pen_draw (request_id).' });
+      if (Date.now() >= until) return text('No AI Pen requests arrived. Call ai_pen_wait again to keep waiting.');
+      await new Promise(r => setTimeout(r, 1500));
+    }
+  },
+);
+
+tool(
+  'analyze_image',
+  [
+    'Measure a reference image exactly instead of guessing: size, background and palette, every separate shape (bounding box, area, fill ratio, mean colour, centre, a hint like bar/disc/triangle/outline), and optional probes: colour runs along rows (probes.rows), columns (probes.cols) and circles (probes.rings: angles of arcs around a centre).',
+    'zoom returns a pixel-exact enlarged crop with a ruler in image pixels, for reading small details like lettering or icon parts.',
+    'Source: path (an image file, e.g. one the user attached; absolute or relative to the design file) or id (a node: an image layer, or any frame rendered at scale).',
+    'For 1:1 remakes: analyze_image, build the SVG from the numbers (a viewBox the size of the image keeps coordinates identical), draw it with ai_pen_draw or insert_svg, then compare_to_reference and fix what it reports.',
+  ].join(' '),
+  {
+    path: z.string().optional(),
+    id: z.string().optional(),
+    scale: z.number().min(0.1).max(8).optional().describe('Render scale when measuring a node (default 1)'),
+    region: z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() }).optional().describe('Only list shapes inside this area'),
+    threshold: z.number().min(1).max(441).optional().describe('Colour distance from the background that counts as a shape (default 40)'),
+    max_shapes: z.number().int().min(1).max(1000).optional(),
+    min_area: z.number().int().min(1).optional(),
+    probes: z
+      .object({
+        rows: z.array(z.number()).max(40).optional(),
+        cols: z.array(z.number()).max(40).optional(),
+        rings: z.array(z.object({ cx: z.number(), cy: z.number(), r: z.number() })).max(20).optional(),
+        threshold: z.number().min(1).max(441).optional().describe("Lower (e.g. 8) to see faint background bands"),
+      })
+      .optional(),
+    zoom: z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number(), scale: z.number().min(1).max(32).optional() }).optional(),
+  },
+  async a => {
+    const { path: file, ...rest } = a;
+    const r = await callEditor('analyzeImage', { ...rest, image: file ? readImage(file) : undefined });
+    const content: any[] = [{ type: 'text', text: r.text }];
+    if (r.zoom) content.push({ type: 'image', data: String(r.zoom).slice(String(r.zoom).indexOf(',') + 1), mimeType: 'image/png' });
+    return { content };
+  },
+);
+
+tool(
+  'compare_to_reference',
+  'Check a drawing against the reference it copies: renders node id at the reference\'s pixel size and returns the match score, the worst areas (in reference and frame coordinates) and an image of reference | render | difference. Reference: path (image file) or reference_id (an image layer in the file). Use it after each pass of a 1:1 remake and fix the areas it lists.',
+  {
+    id: z.string(),
+    path: z.string().optional(),
+    reference_id: z.string().optional(),
+    tolerance: z.number().min(0).max(255).optional().describe('Per-channel difference still counted as a match (default 48)'),
+  },
+  async ({ id, path: file, reference_id, tolerance }) => {
+    if (!file && !reference_id) throw new Error('pass path or reference_id');
+    const r = await callEditor('compareReference', { id, reference_id, tolerance, image: file ? readImage(file) : undefined });
+    return { content: [{ type: 'image', data: String(r.dataUrl).slice(String(r.dataUrl).indexOf(',') + 1), mimeType: 'image/png' }, { type: 'text', text: r.text }] };
+  },
 );
 
 tool(
@@ -458,8 +556,30 @@ tool('save_file', 'Save the selected file to disk (requires the edit lock).', {}
   return text(r.saved ? `Saved ${path.basename(s.path)}.` : 'Save was not completed.');
 });
 
+/**
+ * `node mcp.cjs --ai-pen-hook`: run by a Claude Code UserPromptSubmit hook. Prints waiting AI Pen requests (which
+ * Claude Code adds to the prompt as context) so a chat never misses one; prints nothing when there are none.
+ */
+const HOOK = process.argv.includes('--ai-pen-hook');
+if (HOOK) {
+  pendingAll()
+    .then(list => {
+      const n = list.reduce((a, f) => a + f.requests.length, 0);
+      if (!n) return;
+      const lines = list.flatMap(f =>
+        f.requests.map((r: any) => `- ${f.name}: "${r.prompt}" (request ${r.request_id}, box ${Math.round(r.box.width)}×${Math.round(r.box.height)}${r.reference_ids ? `, reference image layers ${r.reference_ids.join(', ')}` : ''})`),
+      );
+      process.stdout.write(
+        `Superpencil AI Pen: the user is waiting for ${n} drawing request${n > 1 ? 's' : ''} on the canvas:\n${lines.join('\n')}\nUnless the user's message is about something else, select_file that design, then draw each with ai_pen_draw (see ai_pen_requests).\n`,
+      );
+    })
+    .catch(() => undefined)
+    .finally(() => process.exit(0));
+}
+
 // Keep locks alive while this chat is running; release them when it ends.
 const heartbeat = setInterval(async () => {
+  if (HOOK) return;
   for (const b of await bridges().catch(() => [])) rpc(b, 'heartbeat', {}, 5000).catch(() => undefined);
 }, 15_000);
 
@@ -471,14 +591,15 @@ async function shutdown() {
   await Promise.all((await bridges().catch(() => [])).map(b => rpc(b, 'release', {}, 2000).catch(() => undefined)));
   process.exit(0);
 }
-process.stdin.on('close', shutdown);
+if (!HOOK) process.stdin.on('close', shutdown);
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
 server.server.oninitialized = () => {
   if (!labelSet) session.label = clientLabel(server.server.getClientVersion()?.name);
 };
-server.connect(new StdioServerTransport()).catch(e => {
-  console.error('[pen-editor mcp] failed to start', e);
-  process.exit(1);
-});
+if (!HOOK)
+  server.connect(new StdioServerTransport()).catch(e => {
+    console.error('[pen-editor mcp] failed to start', e);
+    process.exit(1);
+  });

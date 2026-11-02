@@ -88,10 +88,39 @@ async function registerMcp(context: vscode.ExtensionContext, interactive: boolea
   const r = await run(cmd);
   if (r.ok) {
     await context.globalState.update('mcpRegistered', true);
-    vscode.window.showInformationMessage(`Superpencil MCP server registered with Claude Code as "${MCP_NAME}". Start a new Claude chat (or run /mcp) to use it.`);
+    const hook = command === 'node' ? installAiPenHook() : 'Install Node.js to also get AI Pen requests delivered to Claude automatically.';
+    vscode.window.showInformationMessage(`Superpencil MCP server registered with Claude Code as "${MCP_NAME}". Start a new Claude chat (or run /mcp) to use it. ${hook}`);
   } else {
     await vscode.env.clipboard.writeText(cmd);
     vscode.window.showErrorMessage(`Registering the MCP server failed: ${r.out.slice(0, 300)} — the command was copied to your clipboard.`);
+  }
+}
+
+/**
+ * Adds a UserPromptSubmit hook to ~/.claude/settings.json that runs the MCP script in hook mode: whenever the user
+ * sends Claude a message, waiting AI Pen requests are added to it, so a chat never misses one. Existing settings are
+ * kept (a .bak copy is written) and the entry is never duplicated.
+ */
+function installAiPenHook(): string {
+  const file = path.join(os.homedir(), '.claude', 'settings.json');
+  const command = `node "${MCP_SCRIPT.replace(/\\/g, '/')}" --ai-pen-hook`;
+  try {
+    let settings: any = {};
+    if (fs.existsSync(file)) {
+      const raw = fs.readFileSync(file, 'utf8');
+      settings = raw.trim() ? JSON.parse(raw) : {};
+      fs.writeFileSync(file + '.bak', raw);
+    }
+    const list: any[] = ((settings.hooks ??= {}).UserPromptSubmit ??= []);
+    const has = list.some(m => (m?.hooks ?? []).some((h: any) => typeof h?.command === 'string' && h.command.includes('--ai-pen-hook')));
+    if (has) {
+      for (const m of list) for (const h of m?.hooks ?? []) if (typeof h?.command === 'string' && h.command.includes('--ai-pen-hook')) h.command = command;
+    } else list.push({ hooks: [{ type: 'command', command, timeout: 15 }] });
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(settings, null, 2) + '\n');
+    return 'AI Pen requests are now passed to Claude with each message you send.';
+  } catch (e) {
+    return `Could not add the AI Pen hook to ${file} (${e instanceof Error ? e.message : e}).`;
   }
 }
 

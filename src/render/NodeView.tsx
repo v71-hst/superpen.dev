@@ -542,7 +542,9 @@ function ShapeView({ n, p, parentLayout }: ViewProps) {
   });
   return (
     <div ref={ref} data-k={n.key} style={{ ...st, ...shadowCss(fx, 'filter') }}>
-      <svg width="100%" height="100%" style={{ position: 'absolute', inset: 0, overflow: 'visible', display: 'block' }}>
+      {/* An <svg> with zero width or height paints nothing, even with overflow visible, so perfectly straight
+          vertical/horizontal paths (0 wide) get a 1px minimum; path coordinates don't depend on the element's size. */}
+      <svg width="100%" height="100%" style={{ position: 'absolute', inset: 0, overflow: 'visible', display: 'block', minWidth: 1, minHeight: 1 }}>
         <defs>
           {fills.map((f, i) => (
             <SvgPaint key={'f' + i} id={`${uid}f${i}`} fill={f} w={w} h={h} resolveUrl={ctx.resolveUrl} />

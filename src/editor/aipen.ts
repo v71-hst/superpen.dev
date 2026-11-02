@@ -7,6 +7,7 @@ import { worldRectOf } from './ops';
 import { allIds, cloneWithNewIds, locate, newId } from '../model/doc';
 import { svgToNodes } from '../model/svgImport';
 import type { PenNode } from '../model/types';
+import { fillList } from '../render/paint';
 
 /** Stored on frames AI Pen draws, so later requests know what they were for. */
 export type AiPenMeta = { prompt: string };
@@ -57,11 +58,27 @@ export function requestsForAgent() {
       prompt: r.prompt,
       ...(r.refine ? { frame_id: r.refine, original_prompt: meta?.prompt } : {}),
       ...(r.frame && !r.refine ? { frame_id: r.frame } : {}),
+      ...(r.refine ? {} : referencesIn(r.box)),
       status: r.status,
       box: { x: r.box.x, y: r.box.y, width: r.box.width, height: r.box.height, parent: r.box.parent },
       waiting_seconds: Math.round((Date.now() - r.t) / 1000),
     };
   });
+}
+
+/** Image layers under a request's box: the user placed a reference picture there to draw from. */
+function referencesIn(box: AiPenBox) {
+  const tree = currentTree();
+  if (!tree) return {};
+  const ids: string[] = [];
+  for (const [key, n] of tree.byKey) {
+    if (ids.length >= 5) break;
+    if (!fillList(n.props.fill).some((f: any) => f && typeof f === 'object' && f.type === 'image' && f.enabled !== false)) continue;
+    const r = worldRectOf(key);
+    if (!r || r.x > box.wx + box.width || r.x + r.w < box.wx || r.y > box.wy + box.height || r.y + r.h < box.wy) continue;
+    ids.push(key);
+  }
+  return ids.length ? { reference_ids: ids } : {};
 }
 
 /** Removes scripts, event handlers and external references before agent markup is shown in the editor. */
@@ -87,6 +104,8 @@ export type AiPenDrawParams = {
   svg?: string;
   clear?: boolean;
   done?: boolean;
+  /** New frames take the svg viewBox's proportions (keeping the box width) instead of fitting inside the box. */
+  match_aspect?: boolean;
 };
 
 /**
@@ -110,6 +129,10 @@ export function aiPenDraw(p: AiPenDrawParams): { frame_id: string; added: number
     if (typeof fp?.height === 'number') height = fp.height;
   }
   if (!width || !height) throw new Error('width and height are required for a new drawing (or pass request_id / frame_id)');
+  if (p.match_aspect && !frameId) {
+    const vb = p.svg?.match(/<svg[^>]*\bviewBox\s*=\s*["']([^"']+)["']/i)?.[1].split(/[\s,]+/).map(Number);
+    if (vb?.length === 4 && vb[2] > 0 && vb[3] > 0) height = Math.round(width * (vb[3] / vb[2]) * 100) / 100;
+  }
 
   let markup = '';
   let nodes: PenNode[] = [];
