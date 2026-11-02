@@ -110,33 +110,59 @@ export function checkDrawing(key: string): { issues: DrawingIssue[]; origin: { x
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) out.push(...(grid.get(`${cx + dx},${cy + dy}`) ?? []));
     return out;
   };
+  /** Nearest point on another stroke's centre line, and how far `pt` lies outside that stroke (negative = covered). */
+  const nearest = (pt: { x: number; y: number }, a: Seg) => {
+    let best: { d: number; p: { x: number; y: number }; seg: Seg } | null = null;
+    let excess = Infinity;
+    for (const { i, seg: b } of near(pt)) {
+      if (b === a) continue;
+      // Exact distance to the centre line: project onto the polyline pieces either side of the sample.
+      for (const j of [i - 1, i]) {
+        const p0 = b.pts[j], p1 = b.pts[j + 1];
+        if (!p0 || !p1) continue;
+        const vx = p1.x - p0.x, vy = p1.y - p0.y;
+        const l2 = vx * vx + vy * vy;
+        const t = l2 ? Math.max(0, Math.min(1, ((pt.x - p0.x) * vx + (pt.y - p0.y) * vy) / l2)) : 0;
+        const q = { x: p0.x + t * vx, y: p0.y + t * vy };
+        const d = Math.hypot(q.x - pt.x, q.y - pt.y);
+        if (!best || d < best.d) best = { d, p: q, seg: b };
+        excess = Math.min(excess, d - b.width / 2);
+      }
+    }
+    return { best, excess };
+  };
   for (const a of segs) {
     if (a.closed || a.pts.length < 2) continue;
-    const ends: [string, { x: number; y: number }][] = [
-      ['start', a.pts[0]],
-      ['end', a.pts[a.pts.length - 1]],
+    const n = a.pts.length;
+    const ends: [string, { x: number; y: number }, { x: number; y: number }][] = [
+      ['start', a.pts[0], a.pts.find(p => p !== a.pts[0] && Math.hypot(p.x - a.pts[0].x, p.y - a.pts[0].y) > 0.01) ?? a.pts[1]],
+      ['end', a.pts[n - 1], [...a.pts].reverse().find(p => Math.hypot(p.x - a.pts[n - 1].x, p.y - a.pts[n - 1].y) > 0.01) ?? a.pts[n - 2]],
     ];
-    for (const [which, e] of ends) {
-      let best: { d: number; p: { x: number; y: number }; seg: Seg } | null = null;
-      for (const { i, seg: b } of near(e)) {
-        if (b === a) continue;
-        // Exact distance to the centre line: project onto the polyline pieces either side of the sample.
-        for (const j of [i - 1, i]) {
-          const p0 = b.pts[j], p1 = b.pts[j + 1];
-          if (!p0 || !p1) continue;
-          const vx = p1.x - p0.x, vy = p1.y - p0.y;
-          const l2 = vx * vx + vy * vy;
-          const t = l2 ? Math.max(0, Math.min(1, ((e.x - p0.x) * vx + (e.y - p0.y) * vy) / l2)) : 0;
-          const q = { x: p0.x + t * vx, y: p0.y + t * vy };
-          const d = Math.hypot(q.x - e.x, q.y - e.y);
-          if (!best || d < best.d) best = { d, p: q, seg: b };
-        }
-      }
+    for (const [which, e, prev] of ends) {
+      const { best } = nearest(e, a);
       if (!best) continue;
       const reach = (a.width + best.seg.width) / 2;
       const tol = Math.max(0.12, 0.05 * Math.min(a.width, best.seg.width));
-      // Ends meant to join another stroke: close enough that the two strokes merge, but not on its centre line.
+      // Only ends that touch another stroke and aren't on its centre line.
       if (best.d <= tol || best.d >= reach) continue;
+      // Trace round the end's cap: fully inside the stroke it meets means hidden, fully clear of it a deliberate stub or
+      // notch (calendar rings, a trash lid's overhang); partly inside and partly out is a bump or notch at the join.
+      const len = Math.hypot(e.x - prev.x, e.y - prev.y) || 1;
+      const tx = (e.x - prev.x) / len, ty = (e.y - prev.y) / len;
+      const r = a.width / 2;
+      const capPts: { x: number; y: number }[] = [];
+      if (a.cap === 'round') for (let deg = -75; deg <= 75; deg += 15) {
+        const th = (deg * Math.PI) / 180;
+        capPts.push({ x: e.x + r * (Math.cos(th) * tx - Math.sin(th) * ty), y: e.y + r * (Math.cos(th) * ty + Math.sin(th) * tx) });
+      }
+      else {
+        const ext = a.cap === 'square' ? r : 0;
+        for (const k of [-0.9, -0.45, 0, 0.45, 0.9]) capPts.push({ x: e.x + ext * tx - k * r * ty, y: e.y + ext * ty + k * r * tx });
+      }
+      const excess = capPts.map(p => nearest(p, a).excess);
+      const covered = excess.filter(x => x <= 0.05).length;
+      const out = excess.filter(x => x > 0.12).length;
+      if (!covered || !out) continue;
       const capped = a.cap === 'round' || a.cap === 'square';
       issues.push({
         node: a.key,
