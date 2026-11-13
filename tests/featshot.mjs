@@ -1,0 +1,20 @@
+import puppeteer from 'puppeteer-core';
+import { launchOptions } from './browser.mjs';
+const browser = await puppeteer.launch(launchOptions({ headless: true }));
+const page = await browser.newPage();
+await page.setViewport({ width: 1500, height: 820 });
+await page.goto(process.argv[2], { waitUntil: 'domcontentloaded' });
+await page.waitForSelector('#pen-world [data-k]');
+await new Promise(r => setTimeout(r, 1500));
+await page.evaluate(() => {
+  const s = window.__penStore;
+  s.getState().setView({ x: 120, y: 160, zoom: 1.2 });
+  s.getState().edit(d => { d.comments = [{ id: 'c1', node: 'boxA', dx: 50, dy: 4, x: 0, y: 0, messages: [{ author: 'user', text: 'Make this blue', t: Date.now() }] }]; });
+  s.setState({ selection: ['btn'], stateView: { comp: 'btn', state: 'hover' } });
+});
+await new Promise(r => setTimeout(r, 500));
+await page.screenshot({ path: process.argv[3] + '-states.png' });
+await page.evaluate(() => window.__penStore.setState({ selection: ['inst'], stateView: null, openComment: 'c1' }));
+await new Promise(r => setTimeout(r, 500));
+await page.screenshot({ path: process.argv[3] + '-proto.png' });
+await browser.close();

@@ -1,0 +1,12 @@
+{
+  "name": "superpen-tests",
+  "version": "1.0.0",
+  "description": "Browser-driven checks for the Superpencil editor (see docs/SKIA_REWORK.md and tests/README.md).",
+  "private": true,
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "pngjs": "^7.0.0",
+    "puppeteer-core": "^23.11.1"
+  }
+}

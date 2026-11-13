@@ -137,7 +137,7 @@ export function Canvas() {
   const resolveUrl: UrlResolver = useMemo(() => {
     const base = makeUrlResolver(file?.path ?? null);
     // On the canvas, image fills are drawn from copies sized for the current zoom (see imageLod.ts).
-    // Diagnostic switch (set in localStorage) to compare against full-size pictures; dev/harness/images.mjs uses it.
+    // Diagnostic switch (set in localStorage) to compare against full-size pictures; tests/images.mjs uses it.
     if (localStorage.getItem('pen.debug.noImageLod')) return base;
     return (u, box) => (box ? pickImageUrl(base(u), box) : base(u));
   }, [file?.path]);
