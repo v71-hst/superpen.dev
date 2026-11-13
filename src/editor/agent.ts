@@ -19,6 +19,8 @@ import { aiPenDraw, requestsForAgent } from './aipen';
 import { createSection, deleteSection, focusSections, hiddenFrameIds, sectionsOf, updateSection, viewerSections } from './sections';
 import { analyze, closeupGrid, compare, loadImageData, presentShot, zoomCrop, type Closeup } from './imageTools';
 import { checkDrawing } from './drawingCheck';
+import { imageLodStats } from '../render/imageLod';
+import { nextFrames } from '../render/frames';
 
 /** Things the agent should know after any call: review mode, and comments from the user waiting for an answer. */
 function agentNotes(): string[] {
@@ -47,7 +49,7 @@ function agentNotes(): string[] {
   return notes;
 }
 
-const frames = (n = 2) => new Promise<void>(r => { const step = (k: number) => (k <= 0 ? r() : requestAnimationFrame(() => step(k - 1))); step(n); });
+const frames = nextFrames;
 
 function requireNode(key: string): RNode {
   const n = currentTree()?.byKey.get(key);
@@ -401,7 +403,7 @@ export async function handleAgentRequest(method: string, params: any): Promise<a
       return r;
     }
     case 'diagnose':
-      return { ui: uiSnapshot(), canvas: await canvasSnapshot(), lod: lodStats(), log: recentLog() };
+      return { ui: uiSnapshot(), performanceMode: useStore.getState().perfMode, canvas: await canvasSnapshot(), lod: lodStats(), images: imageLodStats(), log: recentLog() };
     case 'root':
       return rootOf(params.id);
     default:

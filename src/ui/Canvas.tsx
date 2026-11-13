@@ -9,12 +9,13 @@ import { makeUrlResolver } from '../editor/fileio';
 import { allIds, displayName, locate, newId } from '../model/doc';
 import type { PenNode, RNode } from '../model/types';
 import { fmt } from './common';
-import { onViewChanged, pointerTarget, rootWorldRect, scheduleCull } from '../editor/culling';
+import { nearRoots, onViewChanged, pointerTarget, rootWorldRect, scheduleCull } from '../editor/culling';
 import { AiPenLayer } from './AiPen';
 import { canvasHiddenIds } from '../editor/sections';
 import { LOD_ZOOM, bitmapUrl, getBitmap, hasFixedSize, lodEligible, lodInteraction, requestBitmap, type Bitmap } from '../editor/lod';
 import { deepResolve, isGeneratedKey } from '../model/resolve';
-import { fillList, fillsToBackground, primaryColor } from '../render/paint';
+import { fillList, fillsToBackground, primaryColor, type UrlResolver } from '../render/paint';
+import { pickImageUrl, useImageEpoch } from '../render/imageLod';
 import { ErrorBoundary, NodeErrorBox } from './ErrorBoundary';
 import { snapMove, type Guides } from '../editor/snapping';
 import { addComment } from '../editor/comments';
@@ -133,7 +134,13 @@ export function Canvas() {
   const [penPoints, setPenPoints] = useState<{ x: number; y: number }[]>([]);
   const [penHover, setPenHover] = useState<{ x: number; y: number } | null>(null);
 
-  const resolveUrl = useMemo(() => makeUrlResolver(file?.path ?? null), [file?.path]);
+  const resolveUrl: UrlResolver = useMemo(() => {
+    const base = makeUrlResolver(file?.path ?? null);
+    // On the canvas, image fills are drawn from copies sized for the current zoom (see imageLod.ts).
+    // Diagnostic switch (set in localStorage) to compare against full-size pictures; dev/harness/images.mjs uses it.
+    if (localStorage.getItem('pen.debug.noImageLod')) return base;
+    return (u, box) => (box ? pickImageUrl(base(u), box) : base(u));
+  }, [file?.path]);
   const onTextCommit = useCallback((key: string, text: string | null) => {
     const s = useStore.getState();
     if (s.editingKey !== key) return;
@@ -1023,6 +1030,11 @@ function Roots({ tree }: { tree: Tree }) {
   const viewer = useStore(s => s.viewer);
   const viewerSection = useStore(s => s.viewerSection);
   const hidden = canvasHiddenIds({ doc, viewer, viewerSection });
+  // Performance mode: frames away from the viewport are unloaded, and all of them while the tab is in the background.
+  useStore(s => s.nearVersion);
+  const perfMode = useStore(s => s.perfMode);
+  const asleep = useStore(s => s.asleep);
+  const near = perfMode ? nearRoots() : null;
   const mounted = useRef(new Set<string>());
   const [, setTick] = useState(0);
 
@@ -1073,8 +1085,13 @@ function Roots({ tree }: { tree: Tree }) {
     // Frames in hidden sections (or outside the current section in the Sections viewer) aren't rendered unless
     // selected, edited or pinned by an agent.
     if (hidden.has(n.key) && !active.has(n.key)) continue;
+    if (asleep && !active.has(n.key)) continue;
     const eligible = lodEligible(n);
     const bm = eligible ? getBitmap(n.key) : undefined;
+    if (near && !near.has(n.key) && !active.has(n.key) && hasFixedSize(n)) {
+      byKey.set(n.key, bm ? <BitmapRoot key={n.key} n={n} bm={bm} zoom={zoom} /> : <PlaceholderRoot key={n.key} n={n} />);
+      continue;
+    }
     if (!lodOn || active.has(n.key) || !eligible) {
       byKey.set(n.key, live(n, bm));
       continue;
@@ -1131,6 +1148,7 @@ function PlaceholderRoot({ n }: { n: RNode }) {
   const p = n.props;
   const vars = useStore(s => s.doc?.variables);
   const { resolveUrl } = useContext(RenderCtx);
+  useImageEpoch();
   const fills = fillList(deepResolve({ variables: vars } as any, p.fill, n.theme));
   const bg = fillsToBackground(fills, p.width, p.height, resolveUrl);
   const painted = bg.backgroundImage || bg.backgroundColor || bg.background;

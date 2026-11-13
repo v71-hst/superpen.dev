@@ -11,12 +11,13 @@ import { NodeView, RenderCtx } from '../render/NodeView';
 import { makeUrlResolver } from './fileio';
 import { log } from './diagnostics';
 import type { RNode } from '../model/types';
+import { perfLimits } from './perfLimits';
+import { nextFrames } from '../render/frames';
 
 /** Below this zoom, big frames may be drawn from bitmaps. */
 export const LOD_ZOOM = 1 / 3;
 /** Frames with fewer nodes than this (labels, single shapes) are cheap enough to always render live. */
 const MIN_NODES = 8;
-const MAX_BITMAP_SIDE = 2048;
 /** Mip levels stop once the longest side would drop below this many pixels. */
 const MIN_LEVEL_SIDE = 48;
 
@@ -76,8 +77,9 @@ export function hasFixedSize(n: RNode) {
 }
 
 function bitmapRatio(w: number, h: number): number {
-  const dpr = devicePixelRatio || 1;
-  return Math.min(LOD_ZOOM * dpr, MAX_BITMAP_SIDE / Math.max(w, h, 1));
+  const lim = perfLimits();
+  const dpr = Math.min(devicePixelRatio || 1, lim.bitmapDpr);
+  return Math.min(LOD_ZOOM * dpr, lim.bitmapSide / Math.max(w, h, 1));
 }
 
 export function getBitmap(key: string): Bitmap | undefined {
@@ -297,7 +299,7 @@ async function stage(n: RNode): Promise<HTMLElement | null> {
   const ctx = { doc: { variables: s.doc?.variables }, resolveUrl: makeUrlResolver(s.file?.path ?? null) };
   const placed: RNode = { ...n, props: { ...n.props, x: 0, y: 0 } };
   staging.root.render(React.createElement(RenderCtx.Provider, { value: ctx }, React.createElement(NodeView, { n: placed, parentLayout: 'none' })));
-  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  await nextFrames(2);
   await document.fonts.ready;
   return staging.host.querySelector<HTMLElement>('[data-k]');
 }

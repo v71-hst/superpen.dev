@@ -5,7 +5,8 @@ import * as Lucide from 'lucide-react';
 import feather from 'feather-icons';
 import type { PenDoc, RNode } from '../model/types';
 import { deepResolve } from '../model/resolve';
-import { colorCss, effectList, fillList, fillsToBackground, isEnabled, linearEndpoints, normalizeStroke, primaryColor, type StrokeInfo } from './paint';
+import { colorCss, effectList, fillList, fillsToBackground, isEnabled, linearEndpoints, normalizeStroke, primaryColor, type StrokeInfo, type UrlResolver } from './paint';
+import { imageFillUrls, useImageEpoch, useImageVisibility } from './imageLod';
 import { ellipseGeometry, pathGeometry, polygonGeometry } from './geometry';
 import { ensureFont, ensureIconFont, weightNum } from './fonts';
 import { ShaderEffectHost, ShaderFillCanvas } from './ShaderLayer';
@@ -18,7 +19,7 @@ export type ParentLayout = 'none' | 'horizontal' | 'vertical';
 
 export type RenderContextValue = {
   doc: Pick<PenDoc, 'variables'>;
-  resolveUrl: (u: string) => string;
+  resolveUrl: UrlResolver;
   editingKey?: string | null;
   onTextCommit?: (key: string, text: string | null) => void;
 };
@@ -195,6 +196,11 @@ function boxStroke(stroke: StrokeInfo | null, resolveUrl: (u: string) => string,
 export const NodeView = memo(function NodeView({ n, parentLayout }: { n: RNode; parentLayout: ParentLayout }) {
   const ctx = useContext(RenderCtx);
   const p = useMemo(() => resolveProps(ctx.doc, n.props, n.theme), [n, ctx.doc]);
+  // Image fills are drawn from copies sized for the zoom: re-render when a better-fitting copy is ready, and let
+  // them sharpen only while this node is near the viewport.
+  const imageUrls = useMemo(() => imageFillUrls(p).map(u => ctx.resolveUrl(u)), [p, ctx.resolveUrl]);
+  useImageEpoch(imageUrls);
+  useImageVisibility(n.key, imageUrls);
   if (p.enabled === false) return null;
   const view = renderView(n, p, parentLayout);
   if (hasShaderEffect(p)) return <ShaderEffectHost nodeKey={n.key} props={p}>{view}</ShaderEffectHost>;
@@ -242,7 +248,7 @@ const isShaderFill = (f: any) => f && typeof f === 'object' && f.type === 'shade
  * Fill layers for a box: plain fills become CSS backgrounds; shader fills become canvas layers stacked in order
  * (the first plain group stays on the element itself so the common case adds no extra DOM).
  */
-function FillLayers({ n, fills, w, h, radius, resolveUrl }: { n: RNode; fills: any[]; w: number; h: number; radius: string | undefined; resolveUrl: (u: string) => string }) {
+function FillLayers({ n, fills, w, h, radius, resolveUrl }: { n: RNode; fills: any[]; w: number; h: number; radius: string | undefined; resolveUrl: UrlResolver }) {
   const out: React.ReactNode[] = [];
   const shape: ShapeSpec = { kind: 'rect', radius: radiusArray(n.props.cornerRadius) };
   let i = fills.findIndex(isShaderFill);
@@ -466,7 +472,7 @@ function useMeasured(st: CSSProperties) {
   return { ref, w: fixed ? (st.width as number) : size[0], h: fixed ? (st.height as number) : size[1] };
 }
 
-function SvgPaint({ id, fill, w, h, resolveUrl }: { id: string; fill: any; w: number; h: number; resolveUrl: (u: string) => string }) {
+function SvgPaint({ id, fill, w, h, resolveUrl }: { id: string; fill: any; w: number; h: number; resolveUrl: UrlResolver }) {
   if (typeof fill === 'string' || fill.type === 'color') return null;
   const op = num(fill.opacity, 1);
   const stops = (fill.colors ?? [])
@@ -497,7 +503,7 @@ function SvgPaint({ id, fill, w, h, resolveUrl }: { id: string; fill: any; w: nu
     const mode = fill.mode ?? 'cover';
     return (
       <pattern id={id} patternUnits="userSpaceOnUse" width={w} height={h}>
-        <image href={resolveUrl(fill.url)} width={w} height={h} opacity={op} preserveAspectRatio={mode === 'stretch' ? 'none' : mode === 'contain' ? 'xMidYMid meet' : 'xMidYMid slice'} />
+        <image href={resolveUrl(fill.url, { w, h, mode })} width={w} height={h} opacity={op} preserveAspectRatio={mode === 'stretch' ? 'none' : mode === 'contain' ? 'xMidYMid meet' : 'xMidYMid slice'} />
       </pattern>
     );
   }

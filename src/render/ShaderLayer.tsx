@@ -10,7 +10,8 @@ import { onAssetsChanged } from './scripts';
 /** Render scale for shader output, quantized so zooming doesn't re-render on every wheel tick. */
 function useShaderScale() {
   const zoom = useStore(s => Math.pow(2, Math.round(Math.log2(Math.max(0.05, s.view.zoom)) * 2) / 2));
-  return Math.max(0.25, Math.min(2, zoom * (devicePixelRatio || 1)));
+  const max = useStore(s => (s.perfMode ? 1 : 2));
+  return Math.max(0.25, Math.min(max, zoom * (devicePixelRatio || 1)));
 }
 
 function useAssetEpoch() {

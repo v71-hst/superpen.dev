@@ -290,6 +290,8 @@ class PenEditorProvider implements vscode.CustomTextEditorProvider {
         fileName: path.basename(document.uri.fsPath),
         baseUri: panel.webview.asWebviewUri(docDir).toString() + '/',
         theme: themeKind(),
+        // The editor starts in performance mode on machines with little memory (until the user chooses).
+        memoryGb: os.totalmem() / 2 ** 30,
       });
 
     bridge.register(document, panel);

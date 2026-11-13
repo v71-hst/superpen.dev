@@ -32,6 +32,16 @@ MCP server so Claude or Codex can design alongside you.
 - **Sharp vector art when zoomed in**: the browser rounds every shape's position to a whole design pixel, which zoomed
   in pulled parts of a drawing up to half a pixel apart (an icon's dot beside its stem, bumps where lines join). Each
   shape is now shifted back by its rounding error, so drawings line up at any zoom.
+- **Pictures no longer bog down zooming**: large image fills are drawn from copies sized for the current zoom (the
+  original is used only when you zoom in far enough to need it, and always for exports). On a file with 15 large
+  pictures, graphics memory while zooming fell from about 1.9 GB to 0.65 GB and picture decoding from 1.6 s to 0.1 s.
+- **Smoother zooming out**: the canvas is redrawn each time the zoom halves instead of only when you stop, so a long
+  zoom-out no longer asks the GPU for a huge area at full detail.
+- **Performance mode** (lightning button next to the zoom control): for PCs with little memory or a weak GPU.
+  Frames away from the viewport are unloaded, pictures and zoomed-out previews use half the resolution, shader
+  animation runs slower, and designs in background tabs let go of their frames. It turns on by itself the first time
+  on PCs with 16 GB of memory or less; the button switches it at any time.
+- **Fix**: an AI chat's screenshot of a design in a background tab no longer hangs until you switch to that tab.
 - **Fix**: perfectly vertical or horizontal lines in imported SVGs no longer disappear.
 
 ### 0.2.1

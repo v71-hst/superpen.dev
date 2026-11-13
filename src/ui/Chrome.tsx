@@ -14,6 +14,7 @@ import {
   ImagePlus,
   Keyboard,
   LayoutGrid,
+  Zap,
   ListChecks,
   Lock,
   MessageSquare,
@@ -37,7 +38,8 @@ import {
   Pipette,
 } from 'lucide-react';
 import { useStore, isDirty, type Tool } from '../editor/store';
-import { useTree } from '../editor/tree';
+
+import { setPerfMode } from '../editor/perf';import { useTree } from '../editor/tree';
 import { setZoom, zoomBy, zoomToFit, zoomToKeys, clientToWorld, insertSvg } from '../editor/ops';
 import { openLocalFile, reloadFromDisk, saveDoc, saveDocAs, saveCopyAs, newDocument } from '../editor/fileio';
 import { allIds, displayName, newId } from '../model/doc';
@@ -304,9 +306,20 @@ export function ZoomControl() {
   const zoom = useStore(s => s.view.zoom);
   const hasRight = useStore(s => s.selection.length > 0 && s.rightOpen);
   const viewer = useStore(s => s.viewer);
+  const perfMode = useStore(s => s.perfMode);
   const menu = useMenu();
   return (
     <div className={'island zoom-ctl' + (hasRight ? '' : ' no-right')}>
+      <button
+        className={'zbtn' + (perfMode ? ' on' : '')}
+        title={perfMode ? 'Performance mode is on (uses less memory; pictures and zoomed-out previews are less sharp). Click to turn off' : 'Performance mode: use less memory and GPU on big or image-heavy files'}
+        onClick={() => {
+          setPerfMode(!perfMode);
+          useStore.getState().notify(perfMode ? 'Performance mode off' : 'Performance mode on: off-screen frames are unloaded and previews are less sharp');
+        }}
+      >
+        <Zap strokeWidth={1.75} />
+      </button>
       <button
         className={'zbtn' + (viewer === 'sections' ? ' on' : '')}
         title={viewer === 'sections' ? 'Sections viewer (one section at a time): switch to Classic' : 'Classic viewer: switch to Sections (one section at a time)'}

@@ -1,5 +1,6 @@
 // Bridge to the VS Code extension host when running inside a webview (no-op in the standalone build).
 import { useStore } from './store';
+import { applyDefaultPerfMode } from './perf';
 import { parsePen, serialize } from './fileio';
 import { handleAgentRequest } from './agent';
 import { invalidateAssets } from '../render/scripts';
@@ -56,6 +57,7 @@ export function installVsCodeBridge() {
       case 'load': {
         baseUri = m.baseUri ?? '';
         if (m.theme) useStore.setState({ uiTheme: m.theme });
+        if (applyDefaultPerfMode(m.memoryGb)) setTimeout(() => useStore.getState().notify(`Performance mode is on (this PC has ${Math.round(m.memoryGb)} GB of memory). Turn it off with the lightning button by the zoom control.`), 1200);
         try {
           const doc = parsePen(m.text);
           lastSentText = m.text;

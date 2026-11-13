@@ -1,6 +1,8 @@
 ﻿// Renders a canvas node to PNG/JPEG/SVG. Nodes are drawn with inline styles only, so a plain DOM clone inside an
 // SVG <foreignObject> reproduces them; fonts and images are inlined because SVG images cannot load external resources.
 
+import { imagesBusy, imagesIdle, originalOf } from './imageLod';
+
 const dataUrlCache = new Map<string, Promise<string>>();
 
 function toDataUrl(url: string): Promise<string> {
@@ -24,9 +26,31 @@ function toDataUrl(url: string): Promise<string> {
 
 const fontCssCache = new Map<string, Promise<string>>();
 
-/** @font-face rules (latin subsets) for every Google Fonts stylesheet on the page, with font files inlined. */
-async function embeddedFontCss(): Promise<string> {
-  const hrefs = [...document.querySelectorAll<HTMLLinkElement>('link[rel=stylesheet][href*="fonts.googleapis.com"]')].map(l => l.href);
+/** The font families (lower case) named in the inline styles under `root`. */
+function usedFamilies(root: HTMLElement): Set<string> {
+  const out = new Set<string>();
+  for (const el of [root, ...root.querySelectorAll<HTMLElement>('*')]) {
+    const f = el.style?.fontFamily;
+    if (f) for (const name of f.split(',')) out.add(name.trim().replace(/^["']|["']$/g, '').toLowerCase());
+  }
+  return out;
+}
+
+/**
+ * @font-face rules (latin subsets) for the Google Fonts stylesheets on the page, with font files inlined. Only the
+ * families in `used` are included: a snapshot that embedded every loaded font carried over a megabyte of them.
+ */
+async function embeddedFontCss(used: Set<string>): Promise<string> {
+  const hrefs = [...document.querySelectorAll<HTMLLinkElement>('link[rel=stylesheet][href*="fonts.googleapis.com"]')]
+    .map(l => l.href)
+    .filter(href => {
+      try {
+        const family = new URL(href).searchParams.get('family')?.split(':')[0].toLowerCase();
+        return !family || used.has(family);
+      } catch {
+        return true;
+      }
+    });
   const parts = await Promise.all(
     hrefs.map(href => {
       let p = fontCssCache.get(href);
@@ -99,7 +123,9 @@ export class ImagesUnavailableError extends Error {}
 async function inlineImages(root: HTMLElement, maxSide?: number): Promise<number> {
   const jobs: Promise<void>[] = [];
   let missing = 0;
-  const inline = async (url: string) => {
+  const inline = async (shown: string) => {
+    // The canvas shows zoom-sized copies of pictures; a capture is made from the picture itself.
+    const url = originalOf(shown) ?? shown;
     const d = await (maxSide ? toScaledDataUrl(url, maxSide) : toDataUrl(url));
     if (!d.startsWith('data:')) missing++;
     return d;
@@ -182,6 +208,11 @@ export async function rasterizeToCanvas(el: HTMLElement, opts: Omit<RasterOption
 }
 
 async function buildSvg(el: HTMLElement, opts: Omit<RasterOptions, 'format'>) {
+  // Pictures still loading are drawn blank: wait for them, and for the element to re-render with them.
+  if (imagesBusy()) {
+    await imagesIdle();
+    await new Promise(r => setTimeout(r, 60));
+  }
   const bw = Math.max(1, Math.ceil(el.offsetWidth || el.getBoundingClientRect().width));
   const bh = Math.max(1, Math.ceil(el.offsetHeight || el.getBoundingClientRect().height));
   const m = opts.margin ?? 0;
@@ -212,7 +243,7 @@ async function buildSvg(el: HTMLElement, opts: Omit<RasterOptions, 'format'>) {
   wrapper.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
   wrapper.style.cssText = `position:relative;width:${w}px;height:${h}px;overflow:hidden;${opts.background ? `background:${opts.background};` : ''}`;
   const style = document.createElement('style');
-  style.textContent = await embeddedFontCss();
+  style.textContent = await embeddedFontCss(usedFamilies(clone));
   wrapper.appendChild(style);
   wrapper.appendChild(clone);
   const xhtml = new XMLSerializer().serializeToString(wrapper);
@@ -240,4 +271,5 @@ export async function rasterize(el: HTMLElement, opts: RasterOptions): Promise<{
   g.drawImage(img, 0, 0, w, h);
   return { dataUrl: canvas.toDataURL(opts.format === 'jpg' ? 'image/jpeg' : 'image/png', 0.92), width: canvas.width, height: canvas.height };
 }
+
 

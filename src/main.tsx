@@ -10,6 +10,9 @@ async function boot() {
     (window as any).__penAgent = (await import('./editor/agent')).handleAgentRequest;
     (window as any).__penRaster = await import('./render/rasterize');
     (window as any).__penSvg = await import('./model/svgImport');
+    // Lets a test drive the page from inside (dev/harness/memory.mjs): an attached debugger distorts memory use.
+    const harness = new URLSearchParams(location.search).get('penHarness');
+    if (harness) void import(/* @vite-ignore */ harness);
   }
   createRoot(document.getElementById('root')!).render(<App />);
 }

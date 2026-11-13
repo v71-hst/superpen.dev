@@ -75,6 +75,12 @@ type State = {
   stateView: { comp: string; state: string } | null;
   /** When on, agent edits are held as a pending change set until the user accepts or rejects them. */
   reviewMode: boolean;
+  /** Performance mode: lower memory and GPU use at some cost in sharpness and smoothness (see perf.ts). */
+  perfMode: boolean;
+  /** Performance mode, tab in the background for a while: frames are unloaded until it is shown again. */
+  asleep: boolean;
+  /** Bumped when the set of frames near the viewport changes (performance mode unloads the others). */
+  nearVersion: number;
   pending: PendingReview | null;
   /** Comment pin being opened/edited on the canvas. */
   openComment: string | null;
@@ -134,6 +140,9 @@ export const useStore = create<State & Actions>((set, get) => ({
   assetVersion: 0,
   stateView: null,
   reviewMode: localStorage.getItem('pen.reviewMode') === '1',
+  perfMode: localStorage.getItem('pen.perfMode') === '1',
+  asleep: false,
+  nearVersion: 0,
   pending: null,
   openComment: null,
   pickColor: null,

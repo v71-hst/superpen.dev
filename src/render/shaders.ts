@@ -4,6 +4,7 @@ import { loadText } from './scripts';
 import { parseColor } from './paint';
 import { log } from '../editor/diagnostics';
 import { useStore } from '../editor/store';
+import { perfLimits } from '../editor/perfLimits';
 
 // ---------- parsing ----------
 
@@ -441,8 +442,6 @@ const animated = new Set<ShaderRunner>();
 let rafId = 0;
 const t0 = performance.now();
 /** Animation runs at most this often; the canvas keeps the last frame in between. */
-const FRAME_MS = 1000 / 30;
-const MAX_ANIM_PIXELS = 420_000;
 /** Pan/zoom gestures get the whole frame budget: animation pauses until the view has been still this long. */
 const SETTLE_MS = 140;
 let lastFrame = 0;
@@ -461,7 +460,7 @@ function loop(now: number) {
     setTimeout(() => !rafId && animated.size && (rafId = requestAnimationFrame(loop)), 500);
     return;
   }
-  if (now - lastFrame >= FRAME_MS - 2 && now - viewMovedAt >= SETTLE_MS) {
+  if (now - lastFrame >= perfLimits().shaderFrameMs - 2 && now - viewMovedAt >= SETTLE_MS) {
     lastFrame = now;
     for (const r of animated) r.frame();
   }
@@ -613,7 +612,7 @@ export class ShaderRunner {
     const fullH = cfg.height + cfg.margin * 2;
     let scale = Math.max(0.05, Math.min(cfg.scale, 2048 / Math.max(fullW, fullH)));
     // Animated output is redrawn and copied every frame, so cap its pixel count (it is upscaled smoothly).
-    if (this.needsAnim) scale = Math.min(scale, Math.sqrt(MAX_ANIM_PIXELS / (fullW * fullH)));
+    if (this.needsAnim) scale = Math.min(scale, Math.sqrt(perfLimits().shaderMaxPixels / (fullW * fullH)));
     // Too small on screen to see: keep the last image instead of re-rendering.
     if (this.needsAnim && this.canvas.width > 1 && Math.max(fullW, fullH) * useStore.getState().view.zoom < 16) return;
     const pxW = Math.max(1, Math.round(fullW * scale));

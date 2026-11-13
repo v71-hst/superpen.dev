@@ -138,7 +138,10 @@ function meshCss(f: any): string {
 
 export type CssLayer = { image: string; size?: string; position?: string; repeat?: string; blend?: string };
 
-export function fillToLayers(f: Fill, w: number, h: number, resolveUrl: (u: string) => string): CssLayer[] {
+/** Turns a fill's url into something loadable; given the box an image fill covers, it may return a copy sized for it. */
+export type UrlResolver = (u: string, box?: { w: number; h: number; mode?: string }) => string;
+
+export function fillToLayers(f: Fill, w: number, h: number, resolveUrl: UrlResolver): CssLayer[] {
   if (!isEnabled(f)) return [];
   if (typeof f === 'string') {
     const c = colorCss(f);
@@ -159,7 +162,7 @@ export function fillToLayers(f: Fill, w: number, h: number, resolveUrl: (u: stri
       if (!f.url) return [];
       const mode = f.mode ?? 'cover';
       const size = mode === 'stretch' ? '100% 100%' : mode;
-      return [{ image: `url("${resolveUrl(f.url)}")`, size, position: 'center', repeat: 'no-repeat', blend }];
+      return [{ image: `url("${resolveUrl(f.url, { w, h, mode })}")`, size, position: 'center', repeat: 'no-repeat', blend }];
     }
     case 'mesh_gradient':
       return meshCss(f)
@@ -170,7 +173,7 @@ export function fillToLayers(f: Fill, w: number, h: number, resolveUrl: (u: stri
   }
 }
 
-export function fillsToBackground(fills: Fill[], w: number, h: number, resolveUrl: (u: string) => string, opacityMul = 1): CSSProperties {
+export function fillsToBackground(fills: Fill[], w: number, h: number, resolveUrl: UrlResolver, opacityMul = 1): CSSProperties {
   const layers: CssLayer[] = [];
   for (const f of fills) layers.push(...fillToLayers(f, w, h, resolveUrl));
   if (!layers.length) return {};

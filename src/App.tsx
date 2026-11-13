@@ -15,6 +15,8 @@ import { inVsCode, installVsCodeBridge, post } from './editor/host';
 import { ErrorBoundary } from './ui/ErrorBoundary';
 import { installDiagnostics } from './editor/diagnostics';
 import { resetLod } from './editor/lod';
+import { resetImages } from './render/imageLod';
+import { installPerf } from './editor/perf';
 
 function EditorCrashed({ error, reset }: { error: Error; reset: () => void }) {
   return (
@@ -50,6 +52,8 @@ export function App() {
     document.documentElement.className = uiTheme;
   }, [uiTheme]);
 
+  useEffect(() => installPerf(), []);
+
   // Open ?file=… on startup.
   useEffect(() => {
     const f = new URLSearchParams(location.search).get('file');
@@ -59,6 +63,7 @@ export function App() {
   // Fit the document whenever a new file is opened.
   useEffect(() => {
     resetLod();
+    resetImages();
     if (!doc) return;
     // Skip the initial fit if the user already started panning/zooming.
     const before = useStore.getState().view;

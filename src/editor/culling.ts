@@ -22,9 +22,50 @@ function rootElements(): HTMLElement[] {
   return w ? (Array.from(w.children) as HTMLElement[]).filter(el => el.dataset.k) : [];
 }
 
+let near: Set<string> | null = null;
+
+/**
+ * Performance mode: the top-level frames near the viewport. The others are unloaded (their snapshot or background
+ * stands in) instead of only being skipped when painting. A frame comes in a third of a viewport before it shows and
+ * leaves a full viewport after it is gone, so panning back and forth doesn't reload it. null: every frame is loaded.
+ */
+export function nearRoots(): Set<string> | null {
+  if (!useStore.getState().perfMode) return null;
+  // Called while rendering: the first answer is worked out without announcing a change.
+  return near ?? updateNear(false);
+}
+
+function updateNear(announce = true): Set<string> {
+  const { view } = useStore.getState();
+  const c = document.getElementById('pen-canvas')?.getBoundingClientRect();
+  const z = view.zoom;
+  const vw = (c?.width || innerWidth) / z;
+  const vh = (c?.height || innerHeight) / z;
+  const vx = -view.x / z;
+  const vy = -view.y / z;
+  const within = (r: Rect, m: number) => r.x < vx + vw + vw * m && r.x + r.w > vx - vw * m && r.y < vy + vh + vh * m && r.y + r.h > vy - vh * m;
+  const next = new Set<string>();
+  for (const n of currentTree()?.roots ?? []) {
+    const p = n.props;
+    const fixed = typeof p.x === 'number' && typeof p.y === 'number' && typeof p.width === 'number' && typeof p.height === 'number' && !p.rotation;
+    const r = fixed ? { x: p.x, y: p.y, w: p.width, h: p.height } : worldRects.get(n.key);
+    // Frames whose size only the DOM knows have to be loaded to be measured.
+    if (!r || within(r, near?.has(n.key) ? 1 : 0.35)) next.add(n.key);
+  }
+  const changed = !near || next.size !== near.size || [...next].some(k => !near!.has(k));
+  near = next;
+  if (changed && announce) useStore.setState(s => ({ nearVersion: s.nearVersion + 1 }));
+  return next;
+}
+
 /** Hides frames that are well outside the viewport (content-visibility skips their layout and paint). */
 export function cull() {
   raf = 0;
+  if (useStore.getState().perfMode) updateNear();
+  else if (near) {
+    near = null;
+    useStore.setState(s => ({ nearVersion: s.nearVersion + 1 }));
+  }
   const w = world();
   const canvas = document.getElementById('pen-canvas');
   if (!w || !canvas) return;
@@ -99,20 +140,49 @@ export function pointerTarget(e: { target: EventTarget | null; clientX: number; 
 export function onViewChanged() {
   lodInteraction();
   const w = world();
-  if (w && w.style.willChange !== 'transform') w.style.willChange = 'transform';
+  const zoom = useStore.getState().view.zoom;
+  if (w && !rerastering) {
+    if (w.style.willChange !== 'transform') w.style.willChange = 'transform';
+    // The layer keeps the scale it was drawn at while it moves. Zooming out, that scale is too detailed for an
+    // ever larger visible area (from 800% to 6% it asks for over a gigabyte of tiles and stalls for a second), so
+    // it is redrawn each time the zoom has halved instead of only when zooming stops.
+    if (!rasterZoom) rasterZoom = zoom;
+    else if (zoom < rasterZoom / 2 && !noHalving) reraster(w, zoom);
+  }
   setHitTesting(false);
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
     setHitTesting(true);
     cull();
-    const zoom = useStore.getState().view.zoom;
+    const z = useStore.getState().view.zoom;
     const ww = world();
-    if (!ww || zoom === rasterZoom) return;
-    rasterZoom = zoom;
-    ww.style.willChange = 'auto';
-    requestAnimationFrame(() => requestAnimationFrame(() => (ww.style.willChange = 'transform')));
+    if (!ww || z === rasterZoom) return;
+    reraster(ww, z);
   }, 220);
   scheduleCull();
+}
+
+/** Diagnostic switch (set in localStorage) to compare against redrawing only when zooming stops. */
+const noHalving = !!localStorage.getItem('pen.debug.noHalving');
+let rerastering = false;
+/** Redraws the canvas layer at the current zoom: dropping the layer hint for two frames makes the browser start over. */
+function reraster(w: HTMLElement, zoom: number) {
+  rasterZoom = zoom;
+  rerastering = true;
+  w.style.willChange = 'auto';
+  let left = 2;
+  const done = () => {
+    if (--left > 0) return void requestAnimationFrame(done);
+    rerastering = false;
+    w.style.willChange = 'transform';
+  };
+  requestAnimationFrame(done);
+  // A hidden tab gets no frames; don't leave the flag stuck.
+  setTimeout(() => {
+    if (!rerastering) return;
+    rerastering = false;
+    w.style.willChange = 'transform';
+  }, 400);
 }
 
 /**
