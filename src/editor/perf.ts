@@ -33,7 +33,11 @@ export function applyDefaultPerfMode(memoryGb: number | undefined): boolean {
 
 let installed = false;
 let sleepTimer: ReturnType<typeof setTimeout> | undefined;
-/** Background tabs let go of their frames after a while (performance mode only); other tabs' toggles are followed. */
+/**
+ * A design whose tab is in the background lets go of its frames after a while (20 seconds in performance mode, five
+ * minutes otherwise) and loads them again when shown: several open designs otherwise all hold their memory and GPU
+ * resources at once. Toggles made in other tabs are followed.
+ */
 export function installPerf() {
   if (installed) return;
   installed = true;
@@ -43,9 +47,12 @@ export function installPerf() {
       if (useStore.getState().asleep) useStore.setState({ asleep: false });
       return;
     }
-    sleepTimer = setTimeout(() => {
-      if (document.hidden && useStore.getState().perfMode) useStore.setState({ asleep: true });
-    }, 20_000);
+    sleepTimer = setTimeout(
+      () => {
+        if (document.hidden) useStore.setState({ asleep: true });
+      },
+      useStore.getState().perfMode ? 20_000 : 300_000,
+    );
   });
   window.addEventListener('storage', e => {
     if (e.key === KEY && e.newValue !== null) setPerfMode(e.newValue === '1', false);

@@ -92,7 +92,24 @@ export function takeViewSource() {
   return s;
 }
 
+/**
+ * A GPU-backed canvas kept only to hear about the graphics process: it gets `contextlost` when that process restarts
+ * or runs out of memory. Those moments are the prime suspect when frames or pictures go missing, so they are logged.
+ */
+function watchGraphics() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 320;
+  const g = c.getContext('2d');
+  if (!g) return;
+  g.fillRect(0, 0, 1, 1);
+  c.addEventListener('contextlost', () => log('warn', 'graphics context lost (the GPU process restarted or ran out of memory)'));
+  c.addEventListener('contextrestored', () => log('warn', 'graphics context restored'));
+  // Kept reachable so it is not collected.
+  (window as any).__penGraphicsSentinel = c;
+}
+
 export function installDiagnostics() {
+  watchGraphics();
   window.addEventListener('error', e => log('error', `uncaught: ${e.message}`, e.error ?? `${e.filename}:${e.lineno}`));
   window.addEventListener('unhandledrejection', e => log('error', 'unhandled rejection', e.reason));
   // Page-level pinch-zoom or a window/display-scale change shifts the whole canvas without the view changing.

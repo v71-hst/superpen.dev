@@ -15,6 +15,15 @@ MCP server so Claude or Codex can design alongside you.
 
 ## What's new
 
+### 0.3.1
+- **Fix: frames going invisible when zoomed far out.** The small copies used for the zoomed-out view could come out
+  blank after a graphics hiccup (more likely with several designs open), leaving a frame's label with nothing under
+  it until a reload. Those copies are now made in a way a graphics hiccup can't blank, every snapshot and copy is
+  checked before it is used, and a frame whose snapshot can't be made stays live instead of disappearing.
+- Designs in background tabs let go of their frames after five minutes (20 seconds in performance mode) and load them
+  again when shown, so several open designs no longer hold all their memory at once.
+- `diagnose_editor` reports blank snapshots and logs when the graphics process is lost.
+
 ### 0.3.0
 - **AI Pen** (Shift+P): drag a box, describe a drawing, and your connected AI chat draws it while you watch each
   stroke trace onto the canvas. No sign-in or API keys (see Features below).

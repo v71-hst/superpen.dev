@@ -77,7 +77,7 @@ type State = {
   reviewMode: boolean;
   /** Performance mode: lower memory and GPU use at some cost in sharpness and smoothness (see perf.ts). */
   perfMode: boolean;
-  /** Performance mode, tab in the background for a while: frames are unloaded until it is shown again. */
+  /** The tab has been in the background for a while: frames are unloaded until it is shown again (see perf.ts). */
   asleep: boolean;
   /** Bumped when the set of frames near the viewport changes (performance mode unloads the others). */
   nearVersion: number;

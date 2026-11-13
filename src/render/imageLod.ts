@@ -8,6 +8,7 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { useStore } from '../editor/store';
 import { onAssetsChanged } from './scripts';
+import { SOFT, isBlank } from './pixels';
 
 export type ImageBox = { w: number; h: number; mode?: string };
 
@@ -254,6 +255,8 @@ function load(url: string): Entry {
   return e;
 }
 
+/** Pictures whose levels could not be made (shown as-is). */
+let failed = 0;
 const queue: (() => Promise<void>)[] = [];
 let running = 0;
 /** Decoding a large picture takes tens of megabytes for a moment, so only two are worked on at once. */
@@ -302,11 +305,13 @@ function make(e: Entry, side: number) {
       for (const s of sides) {
         const k = s / long;
         const cv = new OffscreenCanvas(Math.max(1, Math.round(e.w * k)), Math.max(1, Math.round(e.h * k)));
-        const g = cv.getContext('2d')!;
+        const g = cv.getContext('2d', SOFT) as OffscreenCanvasRenderingContext2D;
         g.imageSmoothingQuality = 'high';
         g.drawImage(prev, 0, 0, cv.width, cv.height);
         if (prev instanceof ImageBitmap) prev.close();
         prev = cv;
+        // A copy with nothing in it would make the picture vanish: give up on levels for this picture.
+        if (isBlank(cv)) throw new Error('blank level');
         const url = URL.createObjectURL(await cv.convertToBlob({ type: 'image/png' }));
         const img = await decoded(url);
         if (entries.get(e.url) !== e) return URL.revokeObjectURL(url);
@@ -316,8 +321,11 @@ function make(e: Entry, side: number) {
         bump(e);
       }
     } catch {
-      // Could not be decoded or scaled here: show the picture itself from now on.
-      if (entries.get(e.url) === e && !e.ready.has(FULL)) e.ready.set(FULL, e.src);
+      // Could not be decoded or scaled here (or the copy came out blank): show the picture itself from now on.
+      if (entries.get(e.url) === e) {
+        e.state = 'plain';
+        failed++;
+      }
     } finally {
       for (const s of sides) e.making.delete(s);
       bump(e);
@@ -415,5 +423,5 @@ export function imageLodStats() {
     levels += [...e.ready.keys()].filter(s => s !== FULL).length;
     if (Math.max(e.w, e.h) > MIN_SIDE) large++;
   }
-  return { images: entries.size, scalable: large, levels, loading: pending, zoomScale: scale, quality };
+  return { images: entries.size, scalable: large, levels, failed, loading: pending, zoomScale: scale, quality };
 }

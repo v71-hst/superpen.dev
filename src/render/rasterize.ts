@@ -2,6 +2,7 @@
 // SVG <foreignObject> reproduces them; fonts and images are inlined because SVG images cannot load external resources.
 
 import { imagesBusy, imagesIdle, originalOf } from './imageLod';
+import { SOFT } from './pixels';
 
 const dataUrlCache = new Map<string, Promise<string>>();
 
@@ -99,7 +100,7 @@ function toScaledDataUrl(url: string, maxSide: number): Promise<string> {
         const rh = Math.max(1, Math.round(h * k));
         const img = await createImageBitmap(blob, { resizeWidth: rw, resizeHeight: rh, resizeQuality: 'high' });
         const cv = new OffscreenCanvas(rw, rh);
-        cv.getContext('2d')!.drawImage(img, 0, 0);
+        (cv.getContext('2d', SOFT) as OffscreenCanvasRenderingContext2D).drawImage(img, 0, 0);
         img.close();
         const out = await cv.convertToBlob({ type: 'image/webp', quality: 0.9 });
         return await new Promise<string>(res => {
@@ -262,7 +263,8 @@ export async function rasterize(el: HTMLElement, opts: RasterOptions): Promise<{
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(w * opts.pixelRatio));
   canvas.height = Math.max(1, Math.round(h * opts.pixelRatio));
-  const g = canvas.getContext('2d')!;
+  // Read straight back as a data URL: kept on the CPU so a graphics hiccup can't blank it (see pixels.ts).
+  const g = canvas.getContext('2d', SOFT)!;
   if (opts.background || opts.format === 'jpg') {
     g.fillStyle = opts.background ?? '#ffffff';
     g.fillRect(0, 0, canvas.width, canvas.height);

@@ -13,6 +13,8 @@ import { log } from './diagnostics';
 import type { RNode } from '../model/types';
 import { perfLimits } from './perfLimits';
 import { nextFrames } from '../render/frames';
+import { SOFT, isBlank } from '../render/pixels';
+import { fillList, isEnabled } from '../render/paint';
 
 /** Below this zoom, big frames may be drawn from bitmaps. */
 export const LOD_ZOOM = 1 / 3;
@@ -22,10 +24,28 @@ const MIN_NODES = 8;
 const MIN_LEVEL_SIDE = 48;
 
 /** `levels[i]` is the bitmap at `ratio / 2^i` (filled in on demand); `levels[0] === url`. */
-export type Bitmap = { url: string; node: RNode; ratio: number; w: number; h: number; levels: (string | undefined)[] };
+export type Bitmap = {
+  url: string;
+  node: RNode;
+  ratio: number;
+  w: number;
+  h: number;
+  levels: (string | undefined)[];
+  /** The frame has a fill of its own, so no correct snapshot or level of it can be completely transparent. */
+  solid: boolean;
+  /** Smaller levels came out blank: stop asking for them and show the snapshot itself. */
+  noLevels?: boolean;
+};
 
 const bitmaps = new Map<string, Bitmap>();
-const stats = { renderFailures: 0, levelFailures: 0, liveOnly: 0 };
+const stats = { renderFailures: 0, levelFailures: 0, liveOnly: 0, blankSnapshots: 0, blankLevels: 0 };
+/** How often a frame's snapshot came out blank although the frame has a fill; after a few tries it stays live. */
+const blankTries = new WeakMap<RNode, number>();
+
+/** Whether the frame paints its whole box (a visible fill of its own). */
+function hasOwnFill(n: RNode): boolean {
+  return fillList(n.props.fill).some(f => isEnabled(f) && !(typeof f === 'string' && /^#[0-9a-f]{6}00$/i.test(f)));
+}
 
 /** For diagnose_editor: how many bitmaps and mip levels exist, what is queued, and failures so far. */
 export function lodStats() {
@@ -101,7 +121,7 @@ function wantedLevel(bm: Bitmap, zoom: number): number {
 
 /** Image URL to show for a bitmap at this zoom; if the right level isn't made yet, uses the next sharper one and queues it. */
 export function bitmapUrl(bm: Bitmap, zoom: number): string {
-  const want = wantedLevel(bm, zoom);
+  const want = bm.noLevels ? 0 : wantedLevel(bm, zoom);
   for (let i = want; i > 0; i--) {
     if (bm.levels[i]) return bm.levels[i]!;
     if (i === want) requestLevel(bm.node.key, want);
@@ -134,15 +154,22 @@ async function workLevels() {
     for (const [key, want] of levelQueue) {
       levelQueue.delete(key);
       const bm = bitmaps.get(key);
-      if (!bm) continue;
+      if (!bm || bm.noLevels) continue;
       // Halve one level at a time from the sharpest one below `want`: a single big downscale would alias.
       let from = want;
       while (from > 0 && !bm.levels[from]) from--;
       for (let i = from + 1; i <= want; i++) {
         const { w, h } = levelSize(bm, i);
-        const url = await downscale(bm.levels[i - 1]!, w, h);
+        const url = await downscale(bm.levels[i - 1]!, w, h, bm.solid);
         if (bitmaps.get(key) !== bm) {
-          URL.revokeObjectURL(url);
+          if (url) URL.revokeObjectURL(url);
+          break;
+        }
+        if (!url) {
+          // A blank copy of a frame that has a fill: showing it would make the frame vanish when zoomed out.
+          stats.blankLevels++;
+          bm.noLevels = true;
+          log('warn', `zoomed-out level ${i} of frame ${key} came out blank; using its snapshot instead`);
           break;
         }
         bm.levels[i] = url;
@@ -159,12 +186,14 @@ async function workLevels() {
   }
 }
 
-async function downscale(src: string, w: number, h: number): Promise<string> {
+/** Half-size copy of a level; null if it came out blank although the frame is `solid`. */
+async function downscale(src: string, w: number, h: number, solid: boolean): Promise<string | null> {
   const blob = await (await fetch(src)).blob();
   const img = await createImageBitmap(blob, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' });
   const cv = new OffscreenCanvas(w, h);
-  cv.getContext('2d')!.drawImage(img, 0, 0);
+  (cv.getContext('2d', SOFT) as OffscreenCanvasRenderingContext2D).drawImage(img, 0, 0);
   img.close();
+  if (solid && isBlank(cv)) return null;
   const url = URL.createObjectURL(await cv.convertToBlob({ type: 'image/png' }));
   await predecode(url);
   return url;
@@ -280,11 +309,29 @@ async function renderBitmap(n: RNode) {
   // The frame may have changed while rendering; only keep the bitmap if it is still current.
   if (currentTree()?.byKey.get(n.key) !== n) return requestBitmap(n.key);
   const blob = await (await fetch(shot.dataUrl)).blob();
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  img.src = url;
+  await img.decode().catch(() => {});
+  const solid = hasOwnFill(n);
+  if (solid && isBlank(img)) {
+    // The frame has a fill, so this snapshot is wrong. Keep what is shown now and try again; a frame that keeps
+    // failing stays live rather than turning invisible.
+    URL.revokeObjectURL(url);
+    stats.blankSnapshots++;
+    const tries = (blankTries.get(n) ?? 0) + 1;
+    blankTries.set(n, tries);
+    log('warn', `snapshot of frame ${n.key} came out blank (try ${tries})`);
+    if (tries >= 3) {
+      liveOnly.add(n);
+      stats.liveOnly++;
+      bump();
+    } else setTimeout(() => requestBitmap(n.key), 1500);
+    return;
+  }
   const old = bitmaps.get(n.key);
   if (old) revoke(old);
-  const url = URL.createObjectURL(blob);
-  await predecode(url);
-  bitmaps.set(n.key, { url, node: n, ratio, w, h, levels: [url] });
+  bitmaps.set(n.key, { url, node: n, ratio, w, h, levels: [url], solid });
   bump();
 }
 
@@ -306,6 +353,22 @@ async function stage(n: RNode): Promise<HTMLElement | null> {
 
 function unstage() {
   staging?.root.render(null);
+}
+
+/**
+ * For diagnose_editor: snapshots on the canvas whose image has no visible pixel although their frame has a fill
+ * (they would show as missing frames), checked on the level in use.
+ */
+export function blankBitmapsOnCanvas() {
+  const keys: string[] = [];
+  let checked = 0;
+  for (const img of document.querySelectorAll<HTMLImageElement>('#pen-world > img[data-bitmap]')) {
+    const bm = bitmaps.get(img.dataset.k ?? '');
+    if (!bm?.solid || !img.complete || !img.naturalWidth) continue;
+    if (++checked > 400) break;
+    if (isBlank(img)) keys.push(img.dataset.k!);
+  }
+  return { checked, blank: keys.length, sample: keys.slice(0, 8) };
 }
 
 /** Drop all bitmaps (new file opened). */

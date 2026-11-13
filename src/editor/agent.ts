@@ -2,7 +2,7 @@
 import { useStore } from './store';
 import { rasterize } from '../render/rasterize';
 import { canvasSnapshot, recentLog, uiSnapshot } from './diagnostics';
-import { lodStats } from './lod';
+import { blankBitmapsOnCanvas, lodStats } from './lod';
 import { currentTree } from './tree';
 import { clientToWorld, elFor, insertSvg, vectorizeNode, worldRectOf, zoomToKeys } from './ops';
 import { ensureRendered } from './culling';
@@ -403,7 +403,7 @@ export async function handleAgentRequest(method: string, params: any): Promise<a
       return r;
     }
     case 'diagnose':
-      return { ui: uiSnapshot(), performanceMode: useStore.getState().perfMode, canvas: await canvasSnapshot(), lod: lodStats(), images: imageLodStats(), log: recentLog() };
+      return { ui: uiSnapshot(), performanceMode: useStore.getState().perfMode, canvas: await canvasSnapshot(), blankSnapshots: blankBitmapsOnCanvas(), lod: lodStats(), images: imageLodStats(), log: recentLog() };
     case 'root':
       return rootOf(params.id);
     default:
