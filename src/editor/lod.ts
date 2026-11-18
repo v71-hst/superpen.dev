@@ -15,6 +15,7 @@ import { perfLimits } from './perfLimits';
 import { nextFrames } from '../render/frames';
 import { SOFT, isBlank } from '../render/pixels';
 import { fillList, isEnabled } from '../render/paint';
+import { forgetSnapshot, overviewOn } from '../skia/scene';
 
 /** Below this zoom, big frames may be drawn from bitmaps. */
 export const LOD_ZOOM = 1 / 3;
@@ -121,6 +122,8 @@ function wantedLevel(bm: Bitmap, zoom: number): number {
 
 /** Image URL to show for a bitmap at this zoom; if the right level isn't made yet, uses the next sharper one and queues it. */
 export function bitmapUrl(bm: Bitmap, zoom: number): string {
+  // With the Skia overview, mipmaps on the GPU replace the scaled copies.
+  if (overviewOn()) return bm.url;
   const want = bm.noLevels ? 0 : wantedLevel(bm, zoom);
   for (let i = want; i > 0; i--) {
     if (bm.levels[i]) return bm.levels[i]!;
@@ -207,6 +210,7 @@ function predecode(url: string) {
 }
 
 function revoke(bm: Bitmap) {
+  forgetSnapshot(bm.url);
   for (const u of bm.levels) if (u) URL.revokeObjectURL(u);
 }
 

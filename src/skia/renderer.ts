@@ -9,6 +9,12 @@ const KEY = 'pen.renderer';
 const MODES: RendererMode[] = ['dom', 'overview', 'full'];
 
 function readMode(): RendererMode {
+  // Test builds only (dev server or PEN_PROD=1): `?renderer=overview` in the URL, so every suite in tests/ can run in
+  // any mode without touching storage. The extension build ignores it.
+  if (import.meta.env.DEV || import.meta.env.VITE_PEN_HOOKS) {
+    const q = new URLSearchParams(location.search).get('renderer') as RendererMode | null;
+    if (q && MODES.includes(q)) return q;
+  }
   try {
     const v = localStorage.getItem(KEY) as RendererMode | null;
     return v && MODES.includes(v) ? v : 'dom';
