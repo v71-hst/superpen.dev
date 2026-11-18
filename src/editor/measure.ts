@@ -90,6 +90,42 @@ const dom = {
 
 const backend = dom;
 
+/**
+ * Stage 4 (`pen.renderer=full`): top-level frames drawn by Skia have no elements inside them, so their geometry comes
+ * from the layout tree. src/skia registers these hooks at runtime (this module must not import it: import cycles).
+ */
+export type SkiaGeometry = {
+  /** Whether Skia draws this top-level frame (no DOM inside it). */
+  drawn(rootKey: string): boolean;
+  /** Top-level frame a node belongs to. */
+  rootOf(key: string): string | null;
+  worldRect(key: string): WorldRect | null;
+  size(key: string): { w: number; h: number } | null;
+  /** Node chain under a world point among Skia-drawn frames (topmost first by draw order), or null if none. */
+  chainAt(wx: number, wy: number): string[] | null;
+};
+let skia: SkiaGeometry | null = null;
+export function setSkiaGeometry(g: SkiaGeometry | null) {
+  skia = g;
+}
+const skiaOwns = (key: string) => {
+  if (!skia) return false;
+  const r = skia.rootOf(key);
+  return !!r && skia.drawn(r);
+};
+function worldToScreen(r: WorldRect): DOMRect {
+  const { view } = useStore.getState();
+  const c = canvasRect();
+  return new DOMRect(c.left + view.x + r.x * view.zoom, c.top + view.y + r.y * view.zoom, r.w * view.zoom, r.h * view.zoom);
+}
+function screenRect(key: string): DOMRect | null {
+  if (skiaOwns(key)) {
+    const r = skia!.worldRect(key);
+    return r ? worldToScreen(r) : null;
+  }
+  return backend.screenRect(key);
+}
+
 /** The element rendering a node (DOM renderer only). Prefer the measuring functions below for geometry. */
 export function nodeEl(key: string): HTMLElement | null {
   return dom.el(key);
@@ -97,7 +133,7 @@ export function nodeEl(key: string): HTMLElement | null {
 
 /** Whether a node is currently drawn on the canvas (live, or as a zoomed-out snapshot or placeholder). */
 export function isRendered(key: string): boolean {
-  return !!dom.el(key);
+  return !!dom.el(key) || skiaOwns(key);
 }
 
 /**
@@ -105,12 +141,13 @@ export function isRendered(key: string): boolean {
  * group element's own box.
  */
 export function nodeScreenRect(key: string, opts: { ownBox?: boolean } = {}): DOMRect | null {
-  if (opts.ownBox) return dom.el(key)?.getBoundingClientRect() ?? null;
-  return backend.screenRect(key);
+  if (opts.ownBox && !skiaOwns(key)) return dom.el(key)?.getBoundingClientRect() ?? null;
+  return screenRect(key);
 }
 
 /** A node's box in world (design) coordinates. */
 export function nodeRect(key: string): WorldRect | null {
+  if (skiaOwns(key)) return skia!.worldRect(key);
   const r = backend.screenRect(key);
   if (!r) return null;
   const p = clientToWorld(r.left, r.top);
@@ -120,6 +157,7 @@ export function nodeRect(key: string): WorldRect | null {
 
 /** A node's own size in design pixels (no zoom, no rotation); 0 when it has no box of its own (groups). */
 export function nodeSize(key: string): { w: number; h: number } | null {
+  if (skiaOwns(key)) return skia!.size(key);
   return backend.size(key);
 }
 
@@ -160,7 +198,25 @@ export function elementsAtPoint(clientX: number, clientY: number): Element[] {
 
 /** Node keys from the outermost to the innermost node under a point. */
 export function nodeChainAtPoint(clientX: number, clientY: number): string[] {
-  return backend.chainOf(backend.elementAt(clientX, clientY));
+  return nodeChainAtEvent({ clientX, clientY }, backend.elementAt(clientX, clientY));
+}
+
+/**
+ * Node chain under the pointer, given the element the browser found there. Elements of DOM-drawn frames and the
+ * overlays sit above the Skia canvas and win; a point over a Skia-drawn frame is answered from the layout tree.
+ */
+export function nodeChainAtEvent(e: { clientX: number; clientY: number }, target: Element | null): string[] {
+  if (skia && target) {
+    const inWorld = !!target.closest('#pen-world');
+    const root = inWorld ? target.closest<HTMLElement>('#pen-world > [data-k]')?.dataset.k : null;
+    const overSkia = (inWorld && root && skia.drawn(root)) || target.id === 'pen-canvas' || target.id === 'pen-skia' || target.id === 'pen-world';
+    if (overSkia) {
+      const w = clientToWorld(e.clientX, e.clientY);
+      const chain = skia.chainAt(w.x, w.y);
+      if (chain) return chain;
+    }
+  }
+  return backend.chainOf(target);
 }
 
 /** Elements of the top-level frames currently on the canvas (live, snapshot or placeholder). */
@@ -186,7 +242,7 @@ export function topLevelNodeElOf(el: Element): HTMLElement | null {
 export function nodesInScreenRect(r: { left: number; top: number; width: number; height: number }, candidates: string[]): string[] {
   const hits: string[] = [];
   for (const key of candidates) {
-    const sr = backend.screenRect(key);
+    const sr = screenRect(key);
     if (!sr) continue;
     if (sr.left < r.left + r.width && sr.left + sr.width > r.left && sr.top < r.top + r.height && sr.top + sr.height > r.top) hits.push(key);
   }

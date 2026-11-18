@@ -3,7 +3,7 @@ import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, us
 import { NodeView, RenderCtx, type RenderContextValue } from '../render/NodeView';
 import { SkiaLayer } from '../skia/SkiaLayer';
 import { useActiveRenderer } from '../skia/renderer';
-import { elementsAtPoint, nodeChainOf as chainFromElement, nodeKeyOf, nodesInScreenRect } from '../editor/measure';
+import { elementsAtPoint, nodeChainAtEvent, nodeChainOf as chainFromElement, nodeKeyOf, nodesInScreenRect } from '../editor/measure';
 import { pickAt, colorFromChain } from '../editor/eyedropper';
 import { useStore, keySource, applyProps } from '../editor/store';
 import { useTree, ancestry, currentTree, type Tree } from '../editor/tree';
@@ -79,7 +79,7 @@ function containerAt(clientX: number, clientY: number, exclude: Set<string>): st
   const tree = currentTree();
   for (const el of els) {
     if (!(el as HTMLElement).dataset) continue;
-    const chain = chainFromElement(el);
+    const chain = nodeChainAtEvent({ clientX, clientY }, el);
     for (let i = chain.length - 1; i >= 0; i--) {
       const k = chain[i];
       if (k.includes('/')) continue;
@@ -328,13 +328,13 @@ export function Canvas() {
     }
 
     if (tool === 'eyedropper') {
-      pickAt(chainFromElement(target), e.shiftKey);
+      pickAt(nodeChainAtEvent(e, target), e.shiftKey);
       return;
     }
 
     if (tool === 'comment') {
       // Pin to the deepest real node under the pointer so the comment follows it.
-      const chain = chainFromElement(target).filter(k => keySource(k).kind === 'real');
+      const chain = nodeChainAtEvent(e, target).filter(k => keySource(k).kind === 'real');
       const id = addComment(clientToWorld(e.clientX, e.clientY), chain[chain.length - 1] ?? null);
       useStore.setState({ openComment: id, tool: 'select' });
       return;
@@ -366,7 +366,7 @@ export function Canvas() {
       return;
     }
 
-    const chain = chainFromElement(target);
+    const chain = nodeChainAtEvent(e, target);
     if (!chain.length) {
       drag.current = { kind: 'marquee', sx: e.clientX, sy: e.clientY, scope: null, base: e.shiftKey ? s.selection : [] };
       if (!e.shiftKey) s.select([]);
@@ -488,13 +488,13 @@ export function Canvas() {
     if (!d) {
       if (tool === 'pen') setPenHover(clientToWorld(e.clientX, e.clientY));
       if (tool === 'eyedropper' && !panning) {
-        const k = colorFromChain(chainFromElement(pointerTarget(e)))?.key ?? null;
+        const k = colorFromChain(nodeChainAtEvent(e, pointerTarget(e)))?.key ?? null;
         if (k !== s.hover) s.set({ hover: k });
       }
       if ((tool === 'select' || tool === 'scale') && !panning && tree) {
         const t = pointerTarget(e);
         const lk = t.closest<HTMLElement>('[data-label-k]')?.dataset.labelK;
-        const chain = chainFromElement(t);
+        const chain = nodeChainAtEvent(e, t);
         const k = lk ?? (chain.length ? pickFromChain(chain, s.selection, tree, e.ctrlKey || e.metaKey) : null);
         if (k !== s.hover) s.set({ hover: k });
       }
