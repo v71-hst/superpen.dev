@@ -14,7 +14,13 @@ type FamilyState = { status: 'loading' | 'ready' | 'failed'; aliases: string[]; 
 let provider: TypefaceFontProvider | null = null;
 let ck: CanvasKit | null = null;
 const families = new Map<string, FamilyState>(); // key: family|weight|italic
-const aliasesByFamily = new Map<string, Set<string>>(); // family -> registered aliases (all weights)
+/**
+ * Registered aliases per family and per style (`family|weight|italic`), latin subset first. Each weight gets its own
+ * alias because Google's static instances can all report the same weight, which would make Skia pick any of them.
+ */
+const aliasesByFamily = new Map<string, Map<string, string[]>>();
+/** Font file URLs already registered: variable fonts come back as the same file for every weight. */
+const registeredFiles = new Map<string, Promise<void>>();
 let bundled: Promise<void> | null = null;
 let epoch = 0;
 const listeners = new Set<() => void>();
@@ -51,22 +57,29 @@ function register(buf: ArrayBuffer, alias: string) {
 export function loadBundledFonts(kit: CanvasKit): Promise<void> {
   fontProvider(kit);
   bundled ??= (async () => {
-    const files = await Promise.all([
-      import('@fontsource/inter/files/inter-latin-400-normal.woff2?url'),
-      import('@fontsource/inter/files/inter-latin-500-normal.woff2?url'),
-      import('@fontsource/inter/files/inter-latin-600-normal.woff2?url'),
-      import('@fontsource/inter/files/inter-latin-700-normal.woff2?url'),
-      import('@fontsource/inter/files/inter-latin-800-normal.woff2?url'),
-      import('@fontsource/inter/files/inter-latin-400-italic.woff2?url'),
-    ]);
-    const bufs = await Promise.all(files.map(f => fetch(f.default).then(r => r.arrayBuffer())));
-    for (const b of bufs) register(b, BUNDLED_PREFIX);
+    const files: [number, boolean, Promise<{ default: string }>][] = [
+      [400, false, import('@fontsource/inter/files/inter-latin-400-normal.woff2?url')],
+      [500, false, import('@fontsource/inter/files/inter-latin-500-normal.woff2?url')],
+      [600, false, import('@fontsource/inter/files/inter-latin-600-normal.woff2?url')],
+      [700, false, import('@fontsource/inter/files/inter-latin-700-normal.woff2?url')],
+      [800, false, import('@fontsource/inter/files/inter-latin-800-normal.woff2?url')],
+      [400, true, import('@fontsource/inter/files/inter-latin-400-italic.woff2?url')],
+    ];
+    await Promise.all(
+      files.map(async ([w, italic, mod]) => {
+        const buf = await fetch((await mod).default).then(r => r.arrayBuffer());
+        register(buf, bundledAlias(w, italic));
+        bundledStyles.push([w, italic]);
+      }),
+    );
     changed();
   })();
   return bundled;
 }
 
 const key = (family: string, weight: number, italic: boolean) => `${family.toLowerCase()}|${weight}|${italic ? 1 : 0}`;
+const bundledAlias = (w: number, italic: boolean) => `${BUNDLED_PREFIX} ${w}${italic ? 'i' : ''}`;
+const bundledStyles: [number, boolean][] = [];
 
 /**
  * Starts loading a Google Fonts family/weight/style (no-op if loaded or loading). Returns its current state:
@@ -86,21 +99,30 @@ export function requestFont(family: string, weight: any = 400, italic = false): 
     const css = await fetch(url).then(r => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`))));
     // One @font-face per unicode subset; register each under its own alias so missing glyphs fall through.
     const blocks = css.split('@font-face').slice(1);
-    const known = aliasesByFamily.get(family.toLowerCase()) ?? new Set<string>();
-    aliasesByFamily.set(family.toLowerCase(), known);
+    const styles = aliasesByFamily.get(family.toLowerCase()) ?? new Map<string, string[]>();
+    aliasesByFamily.set(family.toLowerCase(), styles);
+    const known: { alias: string; order: number }[] = [];
     await Promise.all(
       blocks.map(async (b, i) => {
         const src = b.match(/url\((https:[^)]+)\)/)?.[1];
         if (!src) return;
-        const buf = await fetch(src).then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`HTTP ${r.status}`))));
         const subset = b.match(/\/\*\s*([\w-]+)\s*\*\//)?.[1];
         // Latin first: it is what most text needs, and the order of aliases is the fallback order.
-        const alias = subset === 'latin' ? family : `${family} (${subset ?? i})`;
-        register(buf, alias);
-        known.add(alias);
+        const alias = `${family} ${w}${italic ? 'i' : ''}${subset === 'latin' ? '' : ` (${subset ?? i})`}`;
+        let done = registeredFiles.get(src);
+        if (!done) {
+          done = fetch(src)
+            .then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`HTTP ${r.status}`))))
+            .then(buf => void register(buf, alias));
+          registeredFiles.set(src, done);
+          done.catch(() => registeredFiles.delete(src));
+        }
+        await done;
+        known.push({ alias, order: subset === 'latin' ? 0 : subset === 'latin-ext' ? 1 : 2 + i });
       }),
     );
-    if (!known.size) throw new Error('no font files in the stylesheet');
+    if (!known.length) throw new Error('no font files in the stylesheet');
+    styles.set(k, known.sort((a, b) => a.order - b.order).map(x => x.alias));
     state.status = 'ready';
     changed();
   })().catch(e => {
@@ -111,16 +133,35 @@ export function requestFont(family: string, weight: any = 400, italic = false): 
   return 'loading';
 }
 
-/** Family list for a paragraph: the family (and its subsets), then the bundled Inter. */
-export function familyList(family: string): string[] {
-  const list: string[] = [];
-  const subs = aliasesByFamily.get(family.toLowerCase());
-  if (subs) list.push(family, ...[...subs].filter(a => a !== family).sort((a, b) => (a.includes('latin-ext') ? -1 : b.includes('latin-ext') ? 1 : 0)));
-  if (family.toLowerCase() !== DEFAULT_FAMILY.toLowerCase()) {
-    const inter = aliasesByFamily.get(DEFAULT_FAMILY.toLowerCase());
-    if (inter) list.push(DEFAULT_FAMILY, ...[...inter].filter(a => a !== DEFAULT_FAMILY));
-  }
-  list.push(BUNDLED_PREFIX);
+/** Aliases of a family for a style: the exact weight/italic, or (`others`) the remaining loaded styles, nearest first. */
+function styleAliases(family: string, w: number, italic: boolean, others = false): string[] {
+  const styles = aliasesByFamily.get(family.toLowerCase());
+  if (!styles) return [];
+  const exact = key(family, w, italic);
+  if (!others) return styles.get(exact) ?? [];
+  return [...styles.entries()]
+    .filter(([k]) => k !== exact)
+    .map(([k, aliases]) => {
+      const [, kw, ki] = k.split('|');
+      return { aliases, d: Math.abs(Number(kw) - w) + (Number(ki) === (italic ? 1 : 0) ? 0 : 1000) };
+    })
+    .sort((a, b) => a.d - b.d)
+    .flatMap(r => r.aliases);
+}
+
+/**
+ * Family list for a paragraph: the exact style of the family, then of Inter, then the bundled Inter at the nearest
+ * weight; other weights come last so they only supply glyphs nothing else has (never the weight of normal text).
+ */
+export function familyList(family: string, weight: any = 400, italic = false): string[] {
+  const w = weightNum(weight);
+  const isInter = family.toLowerCase() === DEFAULT_FAMILY.toLowerCase();
+  const list = styleAliases(family, w, italic);
+  if (!isInter) list.push(...styleAliases(DEFAULT_FAMILY, w, italic));
+  const near = [...bundledStyles].sort((a, b) => Math.abs(a[0] - w) + (a[1] === italic ? 0 : 1000) - (Math.abs(b[0] - w) + (b[1] === italic ? 0 : 1000)));
+  list.push(...near.map(([bw, bi]) => bundledAlias(bw, bi)));
+  list.push(...styleAliases(family, w, italic, true));
+  if (!isInter) list.push(...styleAliases(DEFAULT_FAMILY, w, italic, true));
   return list;
 }
 

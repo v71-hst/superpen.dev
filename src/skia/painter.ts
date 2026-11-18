@@ -439,9 +439,12 @@ export function textParagraph(ck: CanvasKit, p: any, maxWidth: number | null, fo
     .map((e: any) => ({ color: color(ck, e.color ?? '#00000040'), offset: [num(e.offset?.x), num(e.offset?.y)], blurRadius: Math.max(0, (sigma(num(e.blur)) - 0.5) / 0.57735) }));
   const textStyle: any = {
     color: col,
-    fontFamilies: familyList(family),
+    fontFamilies: familyList(family, p.fontWeight, p.fontStyle === 'italic'),
     fontSize: size,
     fontStyle: { weight: { value: weightNum(p.fontWeight) }, slant: p.fontStyle === 'italic' ? ck.FontSlant.Italic : ck.FontSlant.Upright },
+    // Google serves variable fonts (one file for every weight): set the weight axis too, or the first copy registered
+    // decides the weight. Static fonts ignore it.
+    fontVariations: [{ axis: 'wght', value: weightNum(p.fontWeight) }],
     letterSpacing: num(p.letterSpacing),
     decoration,
     decorationColor: col,
