@@ -138,7 +138,7 @@ function styleAliases(family: string, w: number, italic: boolean, others = false
   const styles = aliasesByFamily.get(family.toLowerCase());
   if (!styles) return [];
   const exact = key(family, w, italic);
-  if (!others) return styles.get(exact) ?? [];
+  if (!others) return [...(styles.get(exact) ?? [])];
   return [...styles.entries()]
     .filter(([k]) => k !== exact)
     .map(([k, aliases]) => {

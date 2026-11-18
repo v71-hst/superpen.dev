@@ -426,6 +426,31 @@ function boxStroke(r: Rec, s: StrokeInfo | null, w: number, h: number, rad: numb
 
 const ALIGN: Record<string, string> = { left: 'Left', center: 'Center', right: 'Right', justify: 'Justify' };
 
+const normalCache = new Map<string, number>();
+
+/**
+ * CSS line-height: normal as Chrome computes it: the font's ascent and descent, each rounded to a whole pixel (Skia's
+ * own default leaves them fractional, so lines drift by a fraction of a pixel each).
+ */
+function normalLineHeight(ck: CanvasKit, textStyle: any): number {
+  const k = `${textStyle.fontFamilies[0]}|${textStyle.fontStyle.weight.value}|${textStyle.fontStyle.slant}|${textStyle.fontSize}`;
+  let v = normalCache.get(k);
+  if (v === undefined) {
+    const style = new ck.ParagraphStyle({ textStyle: { ...textStyle, heightMultiplier: undefined, halfLeading: undefined, shadows: [], decoration: 0 }, applyRoundingHack: false });
+    const b = ck.ParagraphBuilder.MakeFromFontProvider(style, fontProvider(ck));
+    b.addText('Hg');
+    const para = b.build();
+    b.delete();
+    para.layout(1e6);
+    const m = para.getLineMetrics()[0];
+    v = m ? Math.round(m.ascent) + Math.round(m.descent) : textStyle.fontSize * 1.2;
+    para.delete();
+    // Keyed by the first font in the list, which changes when the real font replaces the bundled fallback.
+    normalCache.set(k, v);
+  }
+  return v;
+}
+
 /** A laid-out paragraph for a text node's props; maxWidth null = no wrapping (textGrowth auto). Caller deletes it. */
 export function textParagraph(ck: CanvasKit, p: any, maxWidth: number | null, foreground?: Paint): Paragraph {
   const family = typeof p.fontFamily === 'string' && p.fontFamily ? p.fontFamily : 'Inter';
@@ -451,11 +476,14 @@ export function textParagraph(ck: CanvasKit, p: any, maxWidth: number | null, fo
     decorationThickness: 1,
     shadows,
   };
-  if (lh) Object.assign(textStyle, { heightMultiplier: lh, halfLeading: true });
+  // line-height: a multiplier with CSS half-leading; 'normal' is the browser's rounded ascent + descent.
+  const lineHeight = lh || normalLineHeight(ck, textStyle) / size;
+  Object.assign(textStyle, { heightMultiplier: lineHeight, halfLeading: true });
   const style = new ck.ParagraphStyle({
     textStyle,
     textAlign: (ck.TextAlign as any)[ALIGN[p.textAlign] ?? 'Left'],
-    ...(lh ? { strutStyle: { strutEnabled: false } } : {}),
+    // Skia rounds line heights to whole pixels by default; browsers don't.
+    applyRoundingHack: false,
   });
   const builder = ck.ParagraphBuilder.MakeFromFontProvider(style, fontProvider(ck));
   if (foreground) builder.pushPaintStyle({ ...textStyle, color: undefined } as any, foreground, foreground);
@@ -481,7 +509,9 @@ export function skiaMeasureText(ctx: PaintContext) {
     let v = m.get(k);
     if (!v) {
       const para = textParagraph(ctx.ck, p, maxWidth);
-      v = { w: maxWidth === null ? para.getMaxIntrinsicWidth() : maxWidth, h: para.getHeight() };
+      // The layout engine's contract (src/layout/layout.ts MeasureText): shrink-to-fit width at maxWidth.
+      const max = para.getMaxIntrinsicWidth();
+      v = { w: maxWidth === null ? max : Math.min(max, Math.max(para.getMinIntrinsicWidth(), maxWidth)), h: para.getHeight() };
       para.delete();
       m.set(k, v);
     }

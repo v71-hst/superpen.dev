@@ -6,9 +6,12 @@ import { currentTree } from '../editor/tree';
 import { makeUrlResolver } from '../editor/fileio';
 import type { RNode } from '../model/types';
 import { loadKit } from './kit';
-import { loadBundledFonts } from './fonts';
+import { fontStats, loadBundledFonts } from './fonts';
+import { imageStats } from './images';
 import { free } from './lifetime';
-import { recordPicture, skiaEligible, type Mat, type PaintContext, type PaintNode } from './painter';
+import { recordPicture, skiaEligible, skiaMeasureText, type Mat, type PaintContext, type PaintNode } from './painter';
+import { layoutTree } from '../layout/layout';
+import { kitIfLoaded } from './kit';
 
 const ID: Mat = [1, 0, 0, 1, 0, 0];
 function mul(m: Mat, n: Mat): Mat {
@@ -55,7 +58,8 @@ export async function renderFrameForTest(key: string, opts: { scale?: number; la
   if (!root) throw new Error(`no node ${key}`);
   let reason = skiaEligible(ctx, root);
   const until = performance.now() + (opts.waitMs ?? 15000);
-  while (reason && /loading/.test(reason) && performance.now() < until) {
+  // Wait for every font and picture the frame asked for, not only for its first blocking reason.
+  while ((/loading/.test(reason ?? '') || fontStats().loading || imageStats().loading) && performance.now() < until) {
     await new Promise(r => setTimeout(r, 100));
     reason = skiaEligible(ctx, root);
   }
@@ -87,4 +91,12 @@ export async function renderFrameForTest(key: string, opts: { scale?: number; la
     free(pic);
     surface.delete();
   }
+}
+
+/** Layout-engine boxes for a top-level frame, text measured with Skia paragraphs (paint-diff layout=engine). */
+export function engineLayout(root: RNode): PaintNode | null {
+  const ck = kitIfLoaded();
+  if (!ck) return null;
+  const ctx = paintContext(ck);
+  return layoutTree(root, skiaMeasureText(ctx), { doc: ctx.doc });
 }
