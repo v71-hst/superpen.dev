@@ -9,6 +9,7 @@ import { log } from '../editor/diagnostics';
 import { loadKit } from './kit';
 import { failRenderer } from './renderer';
 import { liveObjects } from './lifetime';
+import { drawScene, resetScene, sceneStats, setDrawHooks, setSurfaceReady } from './scene';
 
 /** How long a lost context may take to come back before Skia gives up for this session. */
 const RESTORE_TIMEOUT_MS = 5000;
@@ -31,7 +32,7 @@ let requestDraw: () => void = () => {};
 let readPixel: (x: number, y: number) => number[] | null = () => null;
 
 export function skiaStatus() {
-  return { ...state, debugRects: debugRects.length, liveObjects: liveObjects() };
+  return { ...state, debugRects: debugRects.length, liveObjects: liveObjects(), overview: sceneStats() };
 }
 
 export function setDebugRects(rects: DebugRect[]) {
@@ -58,6 +59,7 @@ export function SkiaLayer() {
     const giveUp = (reason: string) => {
       if (disposed) return;
       state.surface = 'failed';
+      setSurfaceReady(false);
       log('warn', `Skia renderer off, using the DOM renderer: ${reason}`);
       useStore.getState().notify('GPU canvas unavailable, switched back to the standard renderer');
       failRenderer(reason);
@@ -78,6 +80,7 @@ export function SkiaLayer() {
       surface = ck.MakeWebGLCanvasSurface(canvas, ck.ColorSpace.SRGB, { antialias: 0 });
       if (!surface) return giveUp('could not create a WebGL surface');
       state.surface = 'ready';
+      setSurfaceReady(true);
     };
 
     const fitCanvas = () => {
@@ -103,6 +106,7 @@ export function SkiaLayer() {
       c.scale(state.dpr, state.dpr);
       c.translate(x, y);
       c.scale(zoom, zoom);
+      drawScene(c, ck, { x: -x / zoom, y: -y / zoom, w: canvas.clientWidth / zoom, h: canvas.clientHeight / zoom });
       if (debugRects.length) {
         const paint = new ck.Paint();
         for (const r of debugRects) {
@@ -120,6 +124,12 @@ export function SkiaLayer() {
     requestDraw = () => {
       if (!frame && !disposed) frame = requestAnimationFrame(draw);
     };
+    const drawNow = () => {
+      if (disposed) return;
+      if (frame) cancelAnimationFrame(frame);
+      draw();
+    };
+    setDrawHooks({ requestDraw, drawNow });
     readPixel = (px, py) => {
       if (!ck || !surface || state.surface !== 'ready') return null;
       // Draw now so the read sees the current scene even if no animation frame has run (background tab).
@@ -133,6 +143,7 @@ export function SkiaLayer() {
     const onLost = (e: Event) => {
       e.preventDefault(); // allows webglcontextrestored
       state.surface = 'lost';
+      setSurfaceReady(false);
       state.contextLosses++;
       log('warn', 'Skia canvas lost its graphics context');
       dropSurface();
@@ -156,7 +167,8 @@ export function SkiaLayer() {
     const unsub = useStore.subscribe(s => {
       if (s.view !== lastView) {
         lastView = s.view;
-        requestDraw();
+        // Synchronously, so the canvas moves in the same frame as the DOM frames above it.
+        drawNow();
       }
     });
 
@@ -180,6 +192,9 @@ export function SkiaLayer() {
       canvas.removeEventListener('webglcontextlost', onLost);
       canvas.removeEventListener('webglcontextrestored', onRestored);
       unsub();
+      setDrawHooks(null);
+      setSurfaceReady(false);
+      resetScene();
       dropSurface();
       requestDraw = () => {};
       readPixel = () => null;

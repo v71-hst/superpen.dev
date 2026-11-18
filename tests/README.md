@@ -12,6 +12,11 @@ node tests/<script>.mjs "http://127.0.0.1:5178/?file=<name>.pen" [more arguments
 Always work on copies: several scripts edit the file they open. `browser.mjs` picks the browser (Edge or Chrome if
 installed, or the executable named in `PEN_BROWSER`).
 
+**Renderer modes.** Add `&renderer=overview` (or `full`) to any test URL to run a suite with the Skia renderer
+(docs/SKIA_REWORK.md); without it the editor uses `localStorage['pen.renderer']`, `dom` by default. Only test builds
+(the dev server, or `PEN_PROD=1`) read the URL parameter. On Linux `browser.mjs` turns on software WebGL
+(SwiftShader), so the Skia canvas and shaders also run in containers without a GPU.
+
 `features.mjs` and `aipen.mjs` import `/src` modules and need the dev server. The memory and trace scripts are
 closer to the real extension with `PEN_PROD=1 node start.mjs <folder>` (a production build with test hooks).
 
@@ -30,6 +35,7 @@ closer to the real extension with `PEN_PROD=1 node start.mjs <folder>` (a produc
 | `imagetools.mjs <url> <shot dir>` | `analyze_image` / `compare_to_reference` | copy of `fixtures/features.pen`; needs two reference files that are not in the repo | 16 PASS |
 | `skia-smoke.mjs <url>` | Skia layer (`pen.renderer=overview`): draws and reads back, survives a lost graphics context, falls back to the DOM renderer when it never returns; switch off loads no CanvasKit | copy of `fixtures/features.pen` | 11 PASS |
 | `layout-diff.mjs <url> [more urls]` | `src/layout/layout.ts` against the DOM: every node's world box, text sizes from the browser (0.5px tolerance); also reports how close the canvas text measurer gets and `layoutAll` time | copies of `fixtures/features.pen`, `fixtures/layout.pen`, `examples/showcase.spen`, a `make-big.mjs` file | PASS, 0 offenders each |
+| `overview.mjs <url> <shot dir>` | Skia overview (stage 1): zoomed-out snapshot frames drawn by Skia, all visible, no `<img>` for them, a moved frame follows, zooming in goes live, a lost context puts the snapshot images back | a `make-big.mjs` file | 12 PASS |
 | `stress.mjs <url> [steps] [seed]` | Random pan, zoom, select, drag and MCP actions | a big file | 0 page errors, 0 view jumps, 0 unexpected view changes |
 
 ## Measuring and looking

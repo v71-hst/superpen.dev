@@ -4,6 +4,7 @@ import { NodeView, RenderCtx, type RenderContextValue } from '../render/NodeView
 import { SkiaLayer } from '../skia/SkiaLayer';
 import { useActiveRenderer } from '../skia/renderer';
 import { elementsAtPoint, nodeChainAtEvent, nodeChainOf as chainFromElement, nodeKeyOf, nodesInScreenRect } from '../editor/measure';
+import { canDraw, overviewOn, setSceneFrames, useSceneVersion, type SceneFrame } from '../skia/scene';
 import { pickAt, colorFromChain } from '../editor/eyedropper';
 import { useStore, keySource, applyProps } from '../editor/store';
 import { useTree, ancestry, currentTree, type Tree } from '../editor/tree';
@@ -1023,6 +1024,7 @@ function Roots({ tree }: { tree: Tree }) {
   const near = perfMode ? nearRoots() : null;
   const mounted = useRef(new Set<string>());
   const [, setTick] = useState(0);
+  useSceneVersion();
 
   const active = new Set<string>();
   const now = Date.now();
@@ -1053,11 +1055,26 @@ function Roots({ tree }: { tree: Tree }) {
     (p.x ?? 0) * zoom + vx < innerWidth && ((p.x ?? 0) + (p.width ?? 0)) * zoom + vx > 0 && (p.y ?? 0) * zoom + vy < innerHeight && ((p.y ?? 0) + (p.height ?? 0)) * zoom + vy > 0;
   let budget = LIVE_MOUNTS_PER_FRAME;
   let deferred = false;
+  // Skia overview (pen.renderer=overview): snapshots whose texture is ready are drawn on the Skia canvas, with an
+  // empty element keeping the frame's place for selection, labels and lookups; the rest keep their <img>.
+  const overview = overviewOn();
+  const skiaFrames: SceneFrame[] = [];
+  let imageFallbacks = 0;
+  const bitmapRoot = (n: RNode, bm: Bitmap) => {
+    if (overview) {
+      if (canDraw(bm.url)) {
+        skiaFrames.push({ key: n.key, url: bm.url, x: n.props.x ?? 0, y: n.props.y ?? 0, w: bm.w, h: bm.h });
+        return <SkiaRoot key={n.key} n={n} bm={bm} />;
+      }
+      imageFallbacks++;
+    }
+    return <BitmapRoot key={n.key} n={n} bm={bm} zoom={zoom} />;
+  };
   const live = (n: RNode, bm: Bitmap | undefined) => {
     if (bm && !mounted.current.has(n.key) && !active.has(n.key)) {
       if (budget <= 0 || (budget < LIVE_MOUNTS_PER_FRAME && !onScreen(n.props))) {
         deferred = true;
-        return <BitmapRoot key={n.key} n={n} bm={bm} zoom={zoom} />;
+        return bitmapRoot(n, bm);
       }
       budget--;
     }
@@ -1075,7 +1092,7 @@ function Roots({ tree }: { tree: Tree }) {
     const eligible = lodEligible(n);
     const bm = eligible ? getBitmap(n.key) : undefined;
     if (near && !near.has(n.key) && !active.has(n.key) && hasFixedSize(n)) {
-      byKey.set(n.key, bm ? <BitmapRoot key={n.key} n={n} bm={bm} zoom={zoom} /> : <PlaceholderRoot key={n.key} n={n} />);
+      byKey.set(n.key, bm ? bitmapRoot(n, bm) : <PlaceholderRoot key={n.key} n={n} />);
       continue;
     }
     if (!lodOn || active.has(n.key) || !eligible) {
@@ -1084,7 +1101,7 @@ function Roots({ tree }: { tree: Tree }) {
     }
     if (bm && bm.node !== n) want.push(n.key);
     if (bm && zoom * dpr <= bm.ratio * 1.15) {
-      byKey.set(n.key, <BitmapRoot key={n.key} n={n} bm={bm} zoom={zoom} />);
+      byKey.set(n.key, bitmapRoot(n, bm));
       continue;
     }
     if (!bm) want.push(n.key);
@@ -1097,6 +1114,9 @@ function Roots({ tree }: { tree: Tree }) {
   // Document order is kept so stacking doesn't change while frames switch.
   const out = tree.roots.map(n => byKey.get(n.key) ?? null);
   mounted.current = nextMounted;
+  const docIndex = new Map(tree.roots.map((n, i) => [n.key, i]));
+  skiaFrames.sort((a, b) => docIndex.get(a.key)! - docIndex.get(b.key)!);
+  useLayoutEffect(() => setSceneFrames(skiaFrames, imageFallbacks));
   useEffect(() => {
     for (const k of want) requestBitmap(k);
     if (!deferred) return;
@@ -1127,6 +1147,12 @@ function BitmapRoot({ n, bm, zoom }: { n: RNode; bm: Bitmap; zoom: number }) {
       style={{ position: 'absolute', left: p.x, top: p.y, width: bm.w, height: bm.h, display: 'block', userSelect: 'none' }}
     />
   );
+}
+
+/** A zoomed-out frame drawn on the Skia canvas: an empty box that keeps its place for selection and lookups. */
+function SkiaRoot({ n, bm }: { n: RNode; bm: Bitmap }) {
+  const p = n.props;
+  return <div data-k={n.key} data-bitmap data-skia style={{ position: 'absolute', left: p.x, top: p.y, width: bm.w, height: bm.h }} />;
 }
 
 /** Stand-in until a frame's bitmap is ready: its own fills (background images included), so it doesn't flash grey. */

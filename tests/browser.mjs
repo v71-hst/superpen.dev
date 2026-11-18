@@ -17,6 +17,7 @@ if (!BROWSER) throw new Error('No browser found for the tests. Set PEN_BROWSER t
 
 /** Options for puppeteer.launch: the browser above, plus what a Linux container needs to start it. */
 export function launchOptions(opts = {}) {
-  const extra = process.platform === 'linux' ? ['--no-sandbox', '--disable-dev-shm-usage'] : [];
+  // Linux containers have no GPU: software WebGL (SwiftShader) so shaders and the Skia renderer can run at all.
+  const extra = process.platform === 'linux' ? ['--no-sandbox', '--disable-dev-shm-usage', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] : [];
   return { executablePath: BROWSER, ...opts, args: [...(opts.args ?? []), ...extra] };
 }

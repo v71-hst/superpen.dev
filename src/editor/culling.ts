@@ -3,6 +3,7 @@ import { useStore } from './store';
 import { currentTree } from './tree';
 import { lodInteraction } from './lod';
 import { canvasRect, elementAtPoint, nodeKeyOf, topLevelNodeEls } from './measure';
+import { overviewOn } from '../skia/scene';
 import type { RNode } from '../model/types';
 
 type Rect = { x: number; y: number; w: number; h: number };
@@ -147,7 +148,8 @@ export function onViewChanged() {
     // ever larger visible area (from 800% to 6% it asks for over a gigabyte of tiles and stalls for a second), so
     // it is redrawn each time the zoom has halved instead of only when zooming stops.
     if (!rasterZoom) rasterZoom = zoom;
-    else if (zoom < rasterZoom / 2 && !noHalving) reraster(w, zoom);
+    // With the Skia overview the far frames are not in this layer (the Skia canvas draws them), so it stays small.
+    else if (zoom < rasterZoom / 2 && !noHalving && !overviewOn()) reraster(w, zoom);
   }
   setHitTesting(false);
   clearTimeout(idleTimer);

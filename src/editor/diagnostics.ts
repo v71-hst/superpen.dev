@@ -47,12 +47,13 @@ export async function canvasSnapshot() {
   const world = document.getElementById('pen-world');
   const c = document.getElementById('pen-canvas')?.getBoundingClientRect();
   if (!world || !c) return null;
-  const all = { bitmap: 0, placeholder: 0, live: 0 };
-  const onScreen = { bitmap: 0, placeholder: 0, live: 0, culled: 0 };
+  const all = { bitmap: 0, skia: 0, placeholder: 0, live: 0 };
+  const onScreen = { bitmap: 0, skia: 0, placeholder: 0, live: 0, culled: 0 };
   const imgs: HTMLImageElement[] = [];
   for (const el of Array.from(world.children) as HTMLElement[]) {
     if (!el.dataset.k) continue;
-    const kind = el.dataset.bitmap !== undefined ? 'bitmap' : el.dataset.placeholder !== undefined ? 'placeholder' : 'live';
+    // `skia`: a zoomed-out frame drawn on the Skia canvas (an empty box in the DOM).
+    const kind = el.dataset.skia !== undefined ? 'skia' : el.dataset.bitmap !== undefined ? 'bitmap' : el.dataset.placeholder !== undefined ? 'placeholder' : 'live';
     all[kind]++;
     const r = el.getBoundingClientRect();
     if (r.right < c.left || r.left > c.right || r.bottom < c.top || r.top > c.bottom) continue;
