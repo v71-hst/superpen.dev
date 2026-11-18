@@ -8,6 +8,7 @@ import type { RNode } from '../model/types';
 import { NodeView, RenderCtx, type RenderContextValue } from '../render/NodeView';
 import { makeUrlResolver } from '../editor/fileio';
 import { moveNode, toggleComponent, zoomToKeys, clientToWorld, worldRectOf } from '../editor/ops';
+import { elementAtPoint } from '../editor/measure';
 import { layerIconFor } from './common';
 import { printSlides } from './Present';
 import { sectionsOf, setAllSectionsHidden, setSectionHidden } from '../editor/sections';
@@ -445,7 +446,7 @@ function ComponentsTab({ tree }: { tree: Tree }) {
                   zoomToKeys([c.key]);
                 }}
                 onDragEnd={e => {
-                  const el = document.elementFromPoint(e.clientX, e.clientY);
+                  const el = elementAtPoint(e.clientX, e.clientY);
                   if (el?.closest('#pen-canvas') && !el.closest('.island')) placeInstance(c, e.clientX, e.clientY);
                 }}
               >
