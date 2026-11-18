@@ -318,3 +318,61 @@ to run, what to look at. The owner builds and installs with `npm run package` an
 | Date | Stage | State | Notes |
 |---|---|---|---|
 | 2026-11-13 | Plan | Written | Nothing built. `main` is at 0.3.1. Tests moved from the owner's PC into `tests/`. Next: stage 0. |
+| 2026-11-18 | 0 | Done (cloud) | See the stage 0 notes below. Next: stage 1 (and the owner's `dom` baseline benchmark, below). |
+
+### 2026-11-18, stage 0 notes
+
+Built on `skia-rework`:
+
+- `canvaskit-wasm` 0.42.0 (exact). Default build: has the paragraph (text) API and WebGL surfaces. The wasm is a
+  separate Vite asset (7.0 MB raw); `canvaskit.js` is its own 120 KB chunk. **vsix 0.56 MB → 3.4 MB**
+  (558,747 → 3,563,140 bytes). The main bundle grew by about 7 KB. The build prints two harmless warnings: Vite
+  externalises `fs` and `path`, which `canvaskit.js` only uses under Node.
+- `src/skia/renderer.ts` (switch: `localStorage['pen.renderer']` = `dom` | `overview` | `full`, failure → `dom`
+  for the session), `kit.ts` (lazy loader), `lifetime.ts` (`own` / `free` / `Scope`, live count),
+  `SkiaLayer.tsx` (canvas first child of `#pen-canvas`, under `#pen-world` and the overlays; device-pixel sized;
+  draws only on view change or `requestDraw`; context loss → surface rebuilt on restore, or after 5 s without a
+  restore: fallback to `dom`, one log line, one toast). Today it draws nothing but test rectangles
+  (`setDebugRects`).
+- `diagnose_editor` → `renderer: { requested, active, failure, skia: { surface, size, dpr, draws, lastDrawMs,
+  contextLosses, restores, liveObjects } }`.
+- `src/editor/benchmark.ts` + `benchmark` MCP tool (read-only; refuses in a background tab; stops by 45 s for the
+  bridge's 60 s limit; restores the view).
+- Tests: `tests/skia-smoke.mjs` (new), `tests/make-big.mjs` (320 frames → 40,384 nodes, seeded, deterministic).
+- `src/editor/ops.ts`: `propsRect` is now exported (benchmark uses it).
+
+Tests in the cloud (Chromium 1243 headless, software graphics, `PEN_BROWSER=/opt/pw-browsers/chromium`):
+
+| Suite | Before (main) | After (switch off) |
+|---|---|---|
+| errs | 0 errors | 0 errors |
+| features | 20/20 | 20/20 |
+| aipen | 16/16 | 16/16 |
+| drawcheck | 7/7 | 7/7 |
+| subpixel | 1/1 | 1/1 |
+| hiddentab (features.pen) | not run | 6/6 |
+| blank (make-big file) | 6/7 | 6/7, same failure |
+| stress (make-big file, 80 steps) | not run | 0 page errors, 0 unexpected view changes |
+| skia-smoke (new) | | 11/11 |
+
+- `blank` check "pictures fall back to the original" fails on `main` too with the make-big file: at 5% zoom every
+  frame is a snapshot, so no live picture fill is on screen to fall back. It needs a file whose frames stay live
+  zoomed out (e.g. remote pictures). Not a regression; `make-big` can't produce that yet.
+- The benchmark ran in both `dom` and `overview` on the make-big file: view restored, no unexpected view changes, no
+  page errors. Its numbers in the container are software rendering and mean nothing; none are recorded here.
+- Gotcha: editing `src/` while the dev server runs makes Vite import modules with `?t=` timestamps, so a test's own
+  `import('/src/editor/store.ts')` gets a second store and `features` fails "edits while a state is shown go to the
+  state" (19/20). Restart `start.mjs` before running suites after editing.
+- Seen once, not investigated: an MCP `screenshot` of a frame taken while the view was at 4% zoom came back without
+  its picture fills (the same frame live at 100% shows them). Existing renderer behaviour, container only so far.
+
+For the owner (no gate yet; this records the `dom` baseline gate 1 will compare against):
+
+1. `git fetch && git checkout skia-rework`, `npm install`, `npm run package`,
+   `code --install-extension release\superpen.vsix --force`, Reload Window. (Don't commit the rebuilt vsix.)
+2. Open a **copy** of the big real file, select it in a Claude Code chat, keep the editor tab visible and ask:
+   "run the benchmark". Do it with performance mode off and on. Keep the numbers (paste them into this log).
+3. Optional check that Skia starts on the real GPU: in the webview devtools console,
+   `localStorage.setItem('pen.renderer','overview')`, Reload Window, then ask Claude for `diagnose_editor`:
+   `renderer.skia.surface` should be `ready`. Nothing looks different yet. Set it back with
+   `localStorage.removeItem('pen.renderer')`.

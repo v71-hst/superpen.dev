@@ -2,14 +2,16 @@
 // Seeded, so the same arguments always give the same file: N phone-sized top-level frames of nested auto layout with
 // text, shapes, icons, gradients, shadows and picture fills, plus generated PNGs in images/ next to it.
 // The defaults (320 frames) give about 41,000 nodes, like the owner's biggest file.
-// Usage: node make-big.mjs <out.spen> [frames=320] [seed=1] [pictures=24]
+// Usage: node make-big.mjs <out.spen> [frames=320] [seed=1] [pictures=24] [pictureSize=512]
 import fs from 'node:fs';
 import path from 'node:path';
 import { PNG } from 'pngjs';
 
-const [, , out = 'big.spen', framesArg = '320', seedArg = '1', picsArg = '24'] = process.argv;
+const [, , out = 'big.spen', framesArg = '320', seedArg = '1', picsArg = '24', sizeArg = '512'] = process.argv;
 const FRAMES = Number(framesArg);
 const PICS = Number(picsArg);
+// Side of each generated picture in pixels.
+const SIZE = Number(sizeArg);
 let seed = Number(seedArg) >>> 0 || 1;
 // mulberry32
 const rand = () => {
@@ -104,13 +106,13 @@ const doc = {
 const dir = path.dirname(path.resolve(out));
 fs.mkdirSync(path.join(dir, 'images'), { recursive: true });
 for (let p = 0; p < PICS; p++) {
-  const png = new PNG({ width: 512, height: 512 });
-  const [a, b, c] = [rand() * 0.05, rand() * 0.05, rand() * 6];
+  const png = new PNG({ width: SIZE, height: SIZE });
+  const [a, b, c] = [(rand() * 0.05 * 512) / SIZE, (rand() * 0.05 * 512) / SIZE, rand() * 6];
   const base = [int(0, 255), int(0, 255), int(0, 255)];
-  for (let y = 0; y < 512; y++)
-    for (let x = 0; x < 512; x++) {
+  for (let y = 0; y < SIZE; y++)
+    for (let x = 0; x < SIZE; x++) {
       const v = Math.sin(x * a + c) * Math.cos(y * b) * 0.5 + 0.5;
-      const k = (y * 512 + x) * 4;
+      const k = (y * SIZE + x) * 4;
       png.data[k] = base[0] * v + 40 * (1 - v);
       png.data[k + 1] = base[1] * (1 - v) + 30;
       png.data[k + 2] = base[2] * v;
@@ -119,4 +121,4 @@ for (let p = 0; p < PICS; p++) {
   fs.writeFileSync(path.join(dir, 'images', `pic-${p}.png`), PNG.sync.write(png));
 }
 fs.writeFileSync(out, JSON.stringify(doc));
-console.log(`${out}: ${FRAMES} top-level frames, ${count} nodes, ${PICS} pictures in ${path.join(dir, 'images')}`);
+console.log(`${out}: ${FRAMES} top-level frames, ${count} nodes, ${PICS} pictures of ${SIZE}px in ${path.join(dir, 'images')}`);
