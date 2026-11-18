@@ -52,11 +52,10 @@ const dom = {
     return new DOMRect(x0, y0, x1 - x0, y1 - y0);
   },
 
-  /** Layout size in design pixels, ignoring the view's zoom and any rotation. */
+  /** Layout size in design pixels, ignoring the view's zoom and any rotation (0 for elements without a box). */
   size(key: string): { w: number; h: number } | null {
     const el = dom.el(key);
-    if (!el) return null;
-    return { w: el.offsetWidth || el.getBoundingClientRect().width, h: el.offsetHeight || el.getBoundingClientRect().height };
+    return el ? { w: el.offsetWidth, h: el.offsetHeight } : null;
   },
 
   canvasRect(): DOMRect {
@@ -119,7 +118,7 @@ export function nodeRect(key: string): WorldRect | null {
   return { x: p.x, y: p.y, w: r.width / z, h: r.height / z };
 }
 
-/** A node's own size in design pixels (no zoom, no rotation). */
+/** A node's own size in design pixels (no zoom, no rotation); 0 when it has no box of its own (groups). */
 export function nodeSize(key: string): { w: number; h: number } | null {
   return backend.size(key);
 }

@@ -9,6 +9,7 @@ import { useEffect, useSyncExternalStore } from 'react';
 import { useStore } from '../editor/store';
 import { onAssetsChanged } from './scripts';
 import { SOFT, isBlank } from './pixels';
+import { nodeEl } from '../editor/measure';
 
 export type ImageBox = { w: number; h: number; mode?: string };
 
@@ -113,7 +114,7 @@ export function useImageVisibility(key: string, urls: readonly string[]) {
   const id = urls.join(' ');
   useEffect(() => {
     if (!urls.length) return;
-    const el = document.querySelector(`#pen-world [data-k="${CSS.escape(key)}"]`);
+    const el = nodeEl(key);
     if (!el) return;
     io ??= new IntersectionObserver(
       list => {

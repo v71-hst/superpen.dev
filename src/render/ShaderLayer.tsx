@@ -6,6 +6,7 @@ import { colorCss, isEnabled, linearEndpoints } from './paint';
 import { RenderCtx } from './NodeView';
 import { useStore } from '../editor/store';
 import { onAssetsChanged } from './scripts';
+import { topLevelNodeElOf } from '../editor/measure';
 
 /** Render scale for shader output, quantized so zooming doesn't re-render on every wheel tick. */
 function useShaderScale() {
@@ -56,7 +57,7 @@ function paintFills(fills: any[], w: number, h: number, scale: number, shape: Sh
 
 /** Captures what is rendered behind a node (inside its top-level frame) for @backdrop, extended by a margin. */
 async function captureBackdrop(el: HTMLElement, key: string, margin: number, scale: number): Promise<HTMLCanvasElement | null> {
-  const root = el.closest<HTMLElement>('#pen-world > [data-k]');
+  const root = topLevelNodeElOf(el);
   if (!root) return null;
   const z = useStore.getState().view.zoom;
   const rr = root.getBoundingClientRect();

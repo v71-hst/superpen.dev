@@ -3,7 +3,7 @@
 // auto-layout comes out exactly; vector shapes and images become ImageLabel placeholders to upload.
 import { useStore } from './store';
 import { currentTree } from './tree';
-import { elFor } from './ops';
+import { nodeScreenRect } from './measure';
 import { ensureRendered } from './culling';
 import { deepResolve } from '../model/resolve';
 import { displayName } from '../model/doc';
@@ -51,9 +51,8 @@ export async function exportRoblox(key: string, opts: RobloxOptions = {}): Promi
   const units = opts.units ?? 'offset';
 
   const box = (n: RNode) => {
-    const el = elFor(n.key);
-    if (!el) return null;
-    const b = el.getBoundingClientRect();
+    const b = nodeScreenRect(n.key, { ownBox: true });
+    if (!b) return null;
     return { x: b.left / zoom, y: b.top / zoom, w: b.width / zoom, h: b.height / zoom };
   };
 
