@@ -28,7 +28,7 @@ export const RenderCtx = createContext<RenderContextValue>({ doc: {}, resolveUrl
 
 const SKIP_RESOLVE = new Set(['children', 'descendants', 'id', 'type', 'ref', 'name', 'context', 'metadata']);
 
-function resolveProps(doc: Pick<PenDoc, 'variables'>, props: any, theme: any) {
+export function resolveProps(doc: Pick<PenDoc, 'variables'>, props: any, theme: any) {
   const out: any = {};
   for (const k of Object.keys(props)) out[k] = SKIP_RESOLVE.has(k) ? props[k] : deepResolve(doc as PenDoc, props[k], theme);
   return out;
