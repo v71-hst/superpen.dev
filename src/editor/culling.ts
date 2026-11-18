@@ -2,6 +2,7 @@
 import { useStore } from './store';
 import { currentTree } from './tree';
 import { lodInteraction } from './lod';
+import { canvasRect, elementAtPoint, nodeKeyOf, topLevelNodeEls } from './measure';
 import type { RNode } from '../model/types';
 
 type Rect = { x: number; y: number; w: number; h: number };
@@ -18,8 +19,7 @@ function world() {
 }
 
 function rootElements(): HTMLElement[] {
-  const w = world();
-  return w ? (Array.from(w.children) as HTMLElement[]).filter(el => el.dataset.k) : [];
+  return topLevelNodeEls();
 }
 
 let near: Set<string> | null = null;
@@ -37,7 +37,7 @@ export function nearRoots(): Set<string> | null {
 
 function updateNear(announce = true): Set<string> {
   const { view } = useStore.getState();
-  const c = document.getElementById('pen-canvas')?.getBoundingClientRect();
+  const c = document.getElementById('pen-canvas') ? canvasRect() : null;
   const z = view.zoom;
   const vw = (c?.width || innerWidth) / z;
   const vh = (c?.height || innerHeight) / z;
@@ -70,7 +70,7 @@ export function cull() {
   const canvas = document.getElementById('pen-canvas');
   if (!w || !canvas) return;
   const { view } = useStore.getState();
-  const c = canvas.getBoundingClientRect();
+  const c = canvasRect();
   const z = view.zoom;
   const vw = c.width / z;
   const vh = c.height / z;
@@ -82,7 +82,7 @@ export function cull() {
   const now = performance.now();
   const tree = currentTree();
   for (const el of rootElements()) {
-    const key = el.dataset.k!;
+    const key = nodeKeyOf(el)!;
     const hidden = el.style.contentVisibility === 'hidden';
     let r = worldRects.get(key);
     // Positions come from the document; the DOM is only measured for sizes it can't give (hugging frames, text),
@@ -130,7 +130,7 @@ function setHitTesting(on: boolean) {
 export function pointerTarget(e: { target: EventTarget | null; clientX: number; clientY: number }): HTMLElement {
   if (!hitTestingOff) return e.target as HTMLElement;
   setHitTesting(true);
-  return (document.elementFromPoint(e.clientX, e.clientY) ?? e.target) as HTMLElement;
+  return (elementAtPoint(e.clientX, e.clientY) ?? e.target) as HTMLElement;
 }
 
 /**
@@ -209,7 +209,7 @@ export function ensureRendered(keys: string[], ms = 4000) {
     return { pinnedRoots: next };
   });
   for (const el of rootElements()) {
-    const k = el.dataset.k!;
+    const k = nodeKeyOf(el)!;
     if (roots.has(k)) {
       pinned.set(k, until);
       el.style.contentVisibility = '';

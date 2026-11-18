@@ -169,6 +169,15 @@ export function topLevelNodeEls(): HTMLElement[] {
   return backend.topLevelEls();
 }
 
+/** A top-level frame's element; `live` skips zoomed-out snapshots and placeholders. */
+export function topLevelNodeEl(key: string, opts: { live?: boolean } = {}): HTMLElement | null {
+  for (const el of backend.topLevelEls()) {
+    if (el.dataset.k !== key) continue;
+    if (!opts.live || (!('bitmap' in el.dataset) && !('placeholder' in el.dataset))) return el;
+  }
+  return null;
+}
+
 /** The top-level frame element an element is part of. */
 export function topLevelNodeElOf(el: Element): HTMLElement | null {
   return el.closest<HTMLElement>('#pen-world > [data-k]');
