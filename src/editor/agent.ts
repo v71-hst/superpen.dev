@@ -5,6 +5,7 @@ import { canvasSnapshot, recentLog, uiSnapshot } from './diagnostics';
 import { blankBitmapsOnCanvas, lodStats } from './lod';
 import { currentTree } from './tree';
 import { clientToWorld, elFor, insertSvg, vectorizeNode, worldRectOf, zoomToKeys } from './ops';
+import { isRendered, nodeScreenRect, nodeSize, ownerNodeKey } from './measure';
 import { ensureRendered } from './culling';
 import { flushEdits } from './host';
 import { applyOperations, describe, nodeJson, outline, searchNodes, type Operation } from '../model/operations';
@@ -86,8 +87,9 @@ async function capture(key: string, format: 'png' | 'jpg' | 'svg', scale: number
   await document.fonts.ready;
   const el = elFor(key);
   if (!el) throw new Error(`node "${key}" is not rendered (it may be hidden: enabled false)`);
-  const w = el.offsetWidth || el.getBoundingClientRect().width;
-  const h = el.offsetHeight || el.getBoundingClientRect().height;
+  const size = nodeSize(key)!;
+  const w = size.w || nodeScreenRect(key, { ownBox: true })!.width;
+  const h = size.h || nodeScreenRect(key, { ownBox: true })!.height;
   const ratio = Math.max(0.05, Math.min(scale, maxSize / Math.max(w, h, 1)));
   return rasterize(el, { format, pixelRatio: ratio });
 }
@@ -136,7 +138,7 @@ export async function checkLayout(rootKey?: string): Promise<string[]> {
     if (typeof p.fontFamily === 'string' && !p.fontFamily.startsWith('$')) fontsUsed.add(p.fontFamily);
     const el = elFor(n.key);
     if (el) {
-      const r = el.getBoundingClientRect();
+      const r = nodeScreenRect(n.key, { ownBox: true })!;
       if (n.type === 'text' && p.textGrowth === 'fixed-width-height' && el.scrollHeight > el.clientHeight + 1) issues.push(`warning: ${label(n)} text overflows its fixed-height box (${el.scrollHeight}px of content in ${el.clientHeight}px)`);
       if (n.type === 'text' && p.textGrowth === 'fixed-width' && el.scrollWidth > el.clientWidth + 1) issues.push(`warning: ${label(n)} has a word wider than its fixed width`);
       if ((n.type === 'icon' || n.type === 'icon_font') && el.querySelector('[data-missing]')) issues.push(`error: ${label(n)} icon "${p.icon ?? p.iconFontName}" not found in library "${p.library ?? p.iconFontFamily ?? 'lucide'}"`);
@@ -144,7 +146,7 @@ export async function checkLayout(rootKey?: string): Promise<string[]> {
       if (p.clip === true && n.children.length) {
         for (const c of n.children) {
           if (c.props.enabled === false) continue;
-          const cr = elFor(c.key)?.getBoundingClientRect();
+          const cr = nodeScreenRect(c.key, { ownBox: true });
           if (!cr || (!cr.width && !cr.height)) continue;
           const outside = cr.left < r.left - 0.5 || cr.top < r.top - 0.5 || cr.right > r.right + 0.5 || cr.bottom > r.bottom + 0.5;
           const fully = cr.right <= r.left || cr.left >= r.right || cr.bottom <= r.top || cr.top >= r.bottom;
@@ -154,7 +156,7 @@ export async function checkLayout(rootKey?: string): Promise<string[]> {
       }
       // Overlapping text in freeform (layout: none) containers is usually a mistake.
       if (n.type === 'frame' && p.layout === 'none') {
-        const texts = n.children.filter(c => c.type === 'text' && c.props.enabled !== false).map(c => ({ c, r: elFor(c.key)?.getBoundingClientRect() })).filter(x => x.r && x.r.width && x.r.height);
+        const texts = n.children.filter(c => c.type === 'text' && c.props.enabled !== false).map(c => ({ c, r: nodeScreenRect(c.key, { ownBox: true }) })).filter(x => x.r && x.r.width && x.r.height);
         for (let a = 0; a < texts.length; a++)
           for (let b = a + 1; b < texts.length; b++) {
             const A = texts[a].r!, B = texts[b].r!;
@@ -170,8 +172,7 @@ export async function checkLayout(rootKey?: string): Promise<string[]> {
   // Script and shader errors are rendered as markers inside the affected node.
   for (const r of roots) {
     elFor(r.key)?.querySelectorAll<HTMLElement>('[data-asset-error]').forEach(m => {
-      const owner = m.parentElement?.closest<HTMLElement>('[data-k]');
-      const k = owner?.dataset.k ?? r.key;
+      const k = ownerNodeKey(m.parentElement) ?? r.key;
       const n = tree.byKey.get(k);
       issues.push(`error: ${n ? label(n) : '#' + k}: ${m.dataset.assetError}`);
     });
@@ -339,8 +340,8 @@ export async function handleAgentRequest(method: string, params: any): Promise<a
       const regions: { x: number; y: number; w: number; h: number }[] = Array.isArray(params.regions) ? params.regions : [];
       if (!issues.length && !regions.length) return { issues, text: 'No problem joints found: every stroke end either sits on the line it meets or is clear of it.' };
       // Render the drawing large once and cut magnified tiles out of it.
-      const el = elFor(key)!;
-      const k = Math.max(1, Math.min(10, 6000 / Math.max(el.offsetWidth, el.offsetHeight, 1)));
+      const size = nodeSize(key)!;
+      const k = Math.max(1, Math.min(10, 6000 / Math.max(size.w, size.h, 1)));
       const img = await loadImageData((await capture(key, 'png', k, 8192)).dataUrl);
       const spots: Closeup[] = [
         ...issues.slice(0, 24).map((x, i) => ({ x: x.at.x * k, y: x.at.y * k, half: Math.max(6, x.off * 6) * k, label: `${i + 1}. ${x.name} (${x.end})`, fix: { x: x.fix.x * k, y: x.fix.y * k } })),
@@ -359,10 +360,9 @@ export async function handleAgentRequest(method: string, params: any): Promise<a
       const ref = await imageSource({ image: params.image, id: params.reference_id });
       ensureRendered([key]);
       await frames(2);
-      const el = elFor(key);
-      if (!el) throw new Error(`node "${key}" is not rendered`);
+      if (!isRendered(key)) throw new Error(`node "${key}" is not rendered`);
       // Render at the reference's pixel size so the two line up pixel for pixel.
-      const k = ref.width / Math.max(1, el.offsetWidth);
+      const k = ref.width / Math.max(1, nodeSize(key)!.w);
       const shot = await capture(key, 'png', k, 8192);
       return compare(ref, await loadImageData(shot.dataUrl), params.tolerance ?? 48, k);
     }

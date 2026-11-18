@@ -15,6 +15,7 @@ import { perfLimits } from './perfLimits';
 import { nextFrames } from '../render/frames';
 import { SOFT, isBlank } from '../render/pixels';
 import { fillList, isEnabled } from '../render/paint';
+import { canvasRect, nodeKeyOf, topLevelNodeEl, topLevelNodeEls } from './measure';
 
 /** Below this zoom, big frames may be drawn from bitmaps. */
 export const LOD_ZOOM = 1 / 3;
@@ -243,7 +244,7 @@ function pickNext(): string | null {
   const tree = currentTree();
   if (!tree) return null;
   const { view } = useStore.getState();
-  const canvas = document.getElementById('pen-canvas')?.getBoundingClientRect();
+  const canvas = document.getElementById('pen-canvas') ? canvasRect() : null;
   const cx = canvas ? (canvas.width / 2 - view.x) / view.zoom : 0;
   const cy = canvas ? (canvas.height / 2 - view.y) / view.zoom : 0;
   let best: string | null = null;
@@ -285,7 +286,7 @@ async function work() {
 
 async function renderBitmap(n: RNode) {
   // Prefer the live element when it is mounted and current; otherwise render it in an off-screen staging root.
-  const live = document.querySelector<HTMLElement>(`#pen-world > [data-k="${CSS.escape(n.key)}"]:not([data-bitmap]):not([data-placeholder])`);
+  const live = topLevelNodeEl(n.key, { live: true });
   let el: HTMLElement | null = live && live.style.contentVisibility !== 'hidden' ? live : null;
   if (!el) el = await stage(n);
   if (!el) return;
@@ -362,11 +363,11 @@ function unstage() {
 export function blankBitmapsOnCanvas() {
   const keys: string[] = [];
   let checked = 0;
-  for (const img of document.querySelectorAll<HTMLImageElement>('#pen-world > img[data-bitmap]')) {
-    const bm = bitmaps.get(img.dataset.k ?? '');
+  for (const img of topLevelNodeEls().filter((el): el is HTMLImageElement => el instanceof HTMLImageElement && 'bitmap' in el.dataset)) {
+    const bm = bitmaps.get(nodeKeyOf(img) ?? '');
     if (!bm?.solid || !img.complete || !img.naturalWidth) continue;
     if (++checked > 400) break;
-    if (isBlank(img)) keys.push(img.dataset.k!);
+    if (isBlank(img)) keys.push(nodeKeyOf(img)!);
   }
   return { checked, blank: keys.length, sample: keys.slice(0, 8) };
 }
