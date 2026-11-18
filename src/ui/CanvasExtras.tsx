@@ -4,7 +4,7 @@ import React, { useLayoutEffect, useState } from 'react';
 import { Check, Trash2, Undo2 } from 'lucide-react';
 import { useStore } from '../editor/store';
 import type { Tree } from '../editor/tree';
-import { worldRectOf, zoomToKeys } from '../editor/ops';
+import { canvasRect, worldRectOf, zoomToKeys } from '../editor/ops';
 import { displayName } from '../model/doc';
 import type { Guides } from '../editor/snapping';
 import { commentPos, commentsOf, deleteComment, dropIfEmpty, postMessage, setResolved, type PenComment } from '../editor/comments';
@@ -68,7 +68,7 @@ function GuideLines({ guides, toScreen }: { guides: Guides; toScreen: (x: number
 }
 
 function GapLabel({ value, x, y }: { value: number; x: number; y: number }) {
-  const c = document.getElementById('pen-canvas')!.getBoundingClientRect();
+  const c = canvasRect();
   return (
     <div className="gap-label" style={{ left: x - c.left, top: y - c.top - 18 }}>
       gap {value}
