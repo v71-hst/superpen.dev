@@ -3,6 +3,7 @@ import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, us
 import { NodeView, RenderCtx, type RenderContextValue } from '../render/NodeView';
 import { SkiaLayer } from '../skia/SkiaLayer';
 import { useActiveRenderer } from '../skia/renderer';
+import { elementsAtPoint, nodeChainOf as chainFromElement, nodeKeyOf, nodesInScreenRect } from '../editor/measure';
 import { pickAt, colorFromChain } from '../editor/eyedropper';
 import { useStore, keySource, applyProps } from '../editor/store';
 import { useTree, ancestry, currentTree, type Tree } from '../editor/tree';
@@ -15,7 +16,7 @@ import { nearRoots, onViewChanged, pointerTarget, rootWorldRect, scheduleCull } 
 import { AiPenLayer } from './AiPen';
 import { canvasHiddenIds } from '../editor/sections';
 import { LOD_ZOOM, bitmapUrl, getBitmap, hasFixedSize, lodEligible, lodInteraction, requestBitmap, type Bitmap } from '../editor/lod';
-import { deepResolve, isGeneratedKey } from '../model/resolve';
+import { deepResolve } from '../model/resolve';
 import { fillList, fillsToBackground, primaryColor, type UrlResolver } from '../render/paint';
 import { pickImageUrl, useImageEpoch } from '../render/imageLod';
 import { ErrorBoundary, NodeErrorBox } from './ErrorBoundary';
@@ -53,18 +54,6 @@ type Drag =
 
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 
-/** Ancestor chain of render keys for a DOM element inside the world. */
-function chainFromElement(el: Element | null): string[] {
-  const out: string[] = [];
-  while (el && el.id !== 'pen-world') {
-    const k = (el as HTMLElement).dataset?.k;
-    // Script output isn't selectable on its own; clicks land on the script node.
-    if (k && !isGeneratedKey(k)) out.unshift(k);
-    el = el.parentElement;
-  }
-  return out;
-}
-
 /** Figma-style target picking: stay at the depth of the current selection, else the first level inside top frames. */
 export function pickFromChain(chain: string[], selection: string[], tree: Tree, deep: boolean): string | null {
   if (!chain.length) return null;
@@ -86,7 +75,7 @@ export function pickFromChain(chain: string[], selection: string[], tree: Tree, 
 }
 
 function containerAt(clientX: number, clientY: number, exclude: Set<string>): string | null {
-  const els = document.elementsFromPoint(clientX, clientY);
+  const els = elementsAtPoint(clientX, clientY);
   const tree = currentTree();
   for (const el of els) {
     if (!(el as HTMLElement).dataset) continue;
@@ -267,7 +256,7 @@ export function Canvas() {
       e.preventDefault();
       if (el.contains(e.target as Node) && !(e.target as HTMLElement).closest('.island, .menu, .popover')) return; // canvas handler zooms
       const factor = Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0035));
-      const c = el.getBoundingClientRect();
+      const c = canvasRect();
       const x = Math.min(Math.max(e.clientX, c.left), c.right);
       const y = Math.min(Math.max(e.clientY, c.top), c.bottom);
       zoomBy(Math.min(4, Math.max(0.25, factor)), x, y);
@@ -370,7 +359,7 @@ export function Canvas() {
 
     // Zoomed-out bitmap/placeholder frames: select the frame (it then renders live for detailed editing).
     if (target.dataset.bitmap !== undefined || target.dataset.placeholder !== undefined) {
-      const k = target.dataset.k!;
+      const k = nodeKeyOf(target)!;
       if (e.shiftKey) s.select(s.selection.includes(k) ? s.selection.filter(x => x !== k) : [...s.selection, k]);
       else if (!s.selection.includes(k)) s.select([k]);
       startMove(e, true);
@@ -522,14 +511,7 @@ export function Canvas() {
       const r = { x: Math.min(d.sx, e.clientX) - c.left, y: Math.min(d.sy, e.clientY) - c.top, w: Math.abs(e.clientX - d.sx), h: Math.abs(e.clientY - d.sy) };
       setDraft({ marquee: r });
       const candidates = d.scope ? (tree?.byKey.get(d.scope)?.children ?? []) : (tree?.roots ?? []);
-      const hits: string[] = [];
-      for (const n of candidates) {
-        const sr = screenRectOf(n.key);
-        if (!sr) continue;
-        const x = sr.left - c.left;
-        const y = sr.top - c.top;
-        if (x < r.x + r.w && x + sr.width > r.x && y < r.y + r.h && y + sr.height > r.y) hits.push(n.key);
-      }
+      const hits = nodesInScreenRect({ left: r.x + c.left, top: r.y + c.top, width: r.w, height: r.h }, candidates.map(n => n.key));
       const next = [...new Set([...d.base, ...hits])];
       if (next.join() !== s.selection.join()) s.select(next);
       return;
@@ -901,7 +883,7 @@ function Overlay({ tree, onResizeStart, draft }: { tree: Tree; onResizeStart: (e
       .map(n => {
         const w = rootWorldRect(n);
         if (w) return { key: n.key, r: { x: view.x + w.x * view.zoom, y: view.y + w.y * view.zoom, w: w.w * view.zoom, h: w.h * view.zoom } as Rect | null };
-        const b = elFor(n.key)?.getBoundingClientRect();
+        const b = screenRectOf(n.key, { ownBox: true });
         return { key: n.key, r: b ? toLocal(b) : null };
       })
       .filter((x): x is { key: string; r: Rect } => !!x.r && x.r.x + x.r.w > 0 && x.r.x < c.width && x.r.y + x.r.h > -24 && x.r.y - 24 < c.height);

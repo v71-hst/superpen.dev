@@ -101,8 +101,12 @@ export function isRendered(key: string): boolean {
   return !!dom.el(key);
 }
 
-/** A node's box in client (screen) coordinates; groups get the union of their children. */
-export function nodeScreenRect(key: string): DOMRect | null {
+/**
+ * A node's box in client (screen) coordinates; groups get the union of their children unless `ownBox` asks for the
+ * group element's own box.
+ */
+export function nodeScreenRect(key: string, opts: { ownBox?: boolean } = {}): DOMRect | null {
+  if (opts.ownBox) return dom.el(key)?.getBoundingClientRect() ?? null;
   return backend.screenRect(key);
 }
 
