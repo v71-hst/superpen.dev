@@ -85,9 +85,12 @@ export function setSceneFrames(next: SceneFrame[], imageFallbacks: number) {
     const t = textures.get(f.url);
     if (t) t.used = now;
   }
+  const same = next.length === frames.length && next.every((f, i) => { const o = frames[i]; return o.key === f.key && o.url === f.url && o.x === f.x && o.y === f.y && o.w === f.w && o.h === f.h; });
   frames = next;
-  // Draw right away so the canvas changes in the same frame as the <img> elements it replaces.
-  hooks.drawNow();
+  // Draw right away so the canvas changes in the same frame as the <img> elements it replaces. Roots re-renders
+  // often (zoom steps, frames going live a few at a time); an unchanged list needs no redraw (view changes redraw
+  // on their own).
+  if (!same) hooks.drawNow();
 }
 
 /** lod.ts dropped a snapshot (the frame changed or a new file was opened). */
