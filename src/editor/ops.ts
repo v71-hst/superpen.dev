@@ -14,62 +14,9 @@ import { makeUrlResolver } from './fileio';
 
 // ---------- DOM geometry ----------
 
-const elCache = new Map<string, HTMLElement>();
-
-/** Element rendering a node. Cached because a selector search over a large document is expensive. */
-export function elFor(key: string): HTMLElement | null {
-  const hit = elCache.get(key);
-  if (hit && hit.isConnected && hit.dataset.k === key) return hit;
-  const world = document.getElementById('pen-world');
-  let el: HTMLElement | null = null;
-  // Top-level frames are direct children of the world: avoid a full-document search for them.
-  if (world && !key.includes('/')) {
-    for (const c of world.children) if ((c as HTMLElement).dataset.k === key) el = c as HTMLElement;
-  }
-  el ??= document.querySelector(`#pen-world [data-k="${CSS.escape(key)}"]`);
-  if (el) {
-    if (elCache.size > 20000) elCache.clear();
-    elCache.set(key, el);
-  } else elCache.delete(key);
-  return el;
-}
-
-export function screenRectOf(key: string): DOMRect | null {
-  const el = elFor(key);
-  if (!el) return null;
-  const r = el.getBoundingClientRect();
-  if ((r.width > 0 || r.height > 0) && !el.hasAttribute('data-group')) return r;
-  // Groups have no box of their own: union of descendants.
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  el.querySelectorAll('[data-k]').forEach(c => {
-    const cr = c.getBoundingClientRect();
-    if (!cr.width && !cr.height) return;
-    x0 = Math.min(x0, cr.left);
-    y0 = Math.min(y0, cr.top);
-    x1 = Math.max(x1, cr.right);
-    y1 = Math.max(y1, cr.bottom);
-  });
-  if (!isFinite(x0)) return r;
-  return new DOMRect(x0, y0, x1 - x0, y1 - y0);
-}
-
-export function canvasRect(): DOMRect {
-  return document.getElementById('pen-canvas')?.getBoundingClientRect() ?? new DOMRect(0, 0, innerWidth, innerHeight);
-}
-
-export function clientToWorld(cx: number, cy: number) {
-  const { view } = useStore.getState();
-  const c = canvasRect();
-  return { x: (cx - c.left - view.x) / view.zoom, y: (cy - c.top - view.y) / view.zoom };
-}
-
-export function worldRectOf(key: string) {
-  const r = screenRectOf(key);
-  if (!r) return null;
-  const p = clientToWorld(r.left, r.top);
-  const z = useStore.getState().view.zoom;
-  return { x: p.x, y: p.y, w: r.width / z, h: r.height / z };
-}
+// Geometry lives in measure.ts (one seam for the DOM and, later, the Skia layout tree); these names stay for callers.
+import { canvasRect, clientToWorld, nodeEl as elFor, nodeRect as worldRectOf, nodeScreenRect as screenRectOf } from './measure';
+export { canvasRect, clientToWorld, elFor, screenRectOf, worldRectOf };
 
 // ---------- tree queries ----------
 
