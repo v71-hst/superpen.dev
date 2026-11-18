@@ -183,6 +183,7 @@
     "package": "npm run build && vsce package --no-dependencies --skip-license -o release/superpen.vsix"
   },
   "dependencies": {
+    "canvaskit-wasm": "0.42.0",
     "feather-icons": "4.29.2",
     "imagetracerjs": "1.2.6",
     "immer": "10.1.1",

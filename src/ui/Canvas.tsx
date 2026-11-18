@@ -1,6 +1,8 @@
 // Infinite canvas: renders the document, selection/hover overlay, frame labels and all pointer gestures.
 import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { NodeView, RenderCtx, type RenderContextValue } from '../render/NodeView';
+import { SkiaLayer } from '../skia/SkiaLayer';
+import { useActiveRenderer } from '../skia/renderer';
 import { pickAt, colorFromChain } from '../editor/eyedropper';
 import { useStore, keySource, applyProps } from '../editor/store';
 import { useTree, ancestry, currentTree, type Tree } from '../editor/tree';
@@ -813,6 +815,7 @@ export function Canvas() {
     canvasRef.current!.setPointerCapture(e.pointerId);
   };
 
+  const renderer = useActiveRenderer();
   const cursor = drag.current?.kind === 'pan' ? 'grabbing' : panning ? 'grab' : tool !== 'select' && tool !== 'scale' ? 'crosshair' : 'default';
 
   return (
@@ -829,6 +832,7 @@ export function Canvas() {
       onPointerLeave={() => useStore.getState().hover && useStore.getState().set({ hover: null })}
       onContextMenu={e => e.preventDefault()}
     >
+      {renderer !== 'dom' && <SkiaLayer />}
       <div id="pen-world" aria-hidden style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` }}>
         <RenderCtx.Provider value={renderCtx}>{tree && <Roots tree={tree} />}</RenderCtx.Provider>
       </div>

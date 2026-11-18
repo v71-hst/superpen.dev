@@ -10,6 +10,7 @@ async function boot() {
     (window as any).__penAgent = (await import('./editor/agent')).handleAgentRequest;
     (window as any).__penRaster = await import('./render/rasterize');
     (window as any).__penSvg = await import('./model/svgImport');
+    (window as any).__penSkia = { ...(await import('./skia/renderer')), ...(await import('./skia/SkiaLayer')) };
     // Lets a test drive the page from inside (tests/memory.mjs): an attached debugger distorts memory use.
     const harness = new URLSearchParams(location.search).get('penHarness');
     if (harness) void import(/* @vite-ignore */ harness);

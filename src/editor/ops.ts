@@ -514,7 +514,7 @@ export function zoomToRect(r: { x: number; y: number; w: number; h: number }, ma
 }
 
 /** Bounds from document positions for top-level nodes with fixed sizes (no rendering needed). */
-function propsRect(key: string) {
+export function propsRect(key: string) {
   const tree = currentTree();
   const n = tree?.byKey.get(key);
   if (!n || tree?.parent.get(key)) return null;

@@ -570,7 +570,14 @@ tool('read_asset', 'Read a text asset (script, shader, svg…) next to the selec
   return text(r.content);
 });
 
-tool('diagnose_editor', 'Debugging aid: the editor UI state (viewport, panels present, modal, selection), how the canvas is drawn (bitmap/placeholder/live frames on screen, culled, broken or blank snapshots, display scale), zoomed-out bitmap stats, picture levels, whether performance mode is on, and the recent internal log (errors, agent requests). Use when the user reports the editor misbehaving.', {}, async () => json(await callEditor('diagnose')));
+tool('diagnose_editor', 'Debugging aid: the editor UI state (viewport, panels present, modal, selection), how the canvas is drawn (bitmap/placeholder/live frames on screen, culled, broken or blank snapshots, display scale), zoomed-out bitmap stats, picture levels, whether performance mode is on, which renderer draws the canvas (DOM or Skia, and why Skia fell back) with its live CanvasKit object count, and the recent internal log (errors, agent requests). Use when the user reports the editor misbehaving.', {}, async () => json(await callEditor('diagnose')));
+
+tool(
+  'benchmark',
+  'Performance benchmark for the renderer work (docs/SKIA_REWORK.md). Run it ONLY when the user asks for it: it plays a fixed zoom-out, zoom-in and two pans over the selected design (about 10–20 s, the editor tab must be visible), times every frame (median, 95th percentile, worst), counts DOM elements and puts the view back. It edits nothing. Report the numbers as measured on the user\'s machine with the renderer and performance mode it names.',
+  {},
+  async () => json(await callEditor('benchmark')),
+);
 
 tool('save_file', 'Save the selected file to disk (requires the edit lock).', {}, async () => {
   const s = requireSelected();

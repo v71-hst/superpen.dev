@@ -21,6 +21,9 @@ import { analyze, closeupGrid, compare, loadImageData, presentShot, zoomCrop, ty
 import { checkDrawing } from './drawingCheck';
 import { imageLodStats } from '../render/imageLod';
 import { nextFrames } from '../render/frames';
+import { activeRenderer, rendererFailure, requestedRenderer } from '../skia/renderer';
+import { skiaStatus } from '../skia/SkiaLayer';
+import { runBenchmark } from './benchmark';
 
 /** Things the agent should know after any call: review mode, and comments from the user waiting for an answer. */
 function agentNotes(): string[] {
@@ -403,7 +406,18 @@ export async function handleAgentRequest(method: string, params: any): Promise<a
       return r;
     }
     case 'diagnose':
-      return { ui: uiSnapshot(), performanceMode: useStore.getState().perfMode, canvas: await canvasSnapshot(), blankSnapshots: blankBitmapsOnCanvas(), lod: lodStats(), images: imageLodStats(), log: recentLog() };
+      return {
+        ui: uiSnapshot(),
+        performanceMode: useStore.getState().perfMode,
+        renderer: { requested: requestedRenderer(), active: activeRenderer(), failure: rendererFailure(), skia: skiaStatus() },
+        canvas: await canvasSnapshot(),
+        blankSnapshots: blankBitmapsOnCanvas(),
+        lod: lodStats(),
+        images: imageLodStats(),
+        log: recentLog(),
+      };
+    case 'benchmark':
+      return runBenchmark();
     case 'root':
       return rootOf(params.id);
     default:
