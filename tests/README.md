@@ -28,12 +28,14 @@ closer to the real extension with `PEN_PROD=1 node start.mjs <folder>` (a produc
 | `blank.mjs <url> <shot dir>` | Frames stay visible when snapshots or their copies come out blank | a big file (10+ filled frames on screen when zoomed out) | 7 PASS |
 | `images.mjs <url> <shot dir>` | Zoom-sized copies of picture fills | 15 frames with 2-4K picture fills | 13 PASS |
 | `imagetools.mjs <url> <shot dir>` | `analyze_image` / `compare_to_reference` | copy of `fixtures/features.pen`; needs two reference files that are not in the repo | 16 PASS |
+| `skia-smoke.mjs <url>` | Skia layer (`pen.renderer=overview`): draws and reads back, survives a lost graphics context, falls back to the DOM renderer when it never returns; switch off loads no CanvasKit | copy of `fixtures/features.pen` | 11 PASS |
 | `stress.mjs <url> [steps] [seed]` | Random pan, zoom, select, drag and MCP actions | a big file | 0 page errors, 0 view jumps, 0 unexpected view changes |
 
 ## Measuring and looking
 
 | Script | Use |
 |---|---|
+| `make-big.mjs <out.spen> [frames] [seed] [pictures]` | Writes a seeded synthetic design (320 frames ≈ 40,000 nodes by default) plus generated pictures in `images/`, for big-file tests without anyone's real design |
 | `bench.mjs <url>` | Frame times for zoom, pan and hover. Headless runs use software graphics: treat single long frames as noise |
 | `memory.mjs <url> [perf=0\|1]` | Process memory without a debugger attached (a debugger inflates it). Windows only |
 | `zoomout.mjs`, `imgzoom.mjs`, `tracezoom.mjs`, `prof2.mjs`, `zoomfast.mjs` | GPU memory, decode work, traces and CPU profiles during zooming |
