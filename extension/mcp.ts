@@ -8,6 +8,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import { GUIDE } from './guide';
+import { SKILLS, SKILL_INDEX, findSkill } from './skills';
 
 const BRIDGE_DIR = path.join(os.homedir(), '.pen-editor', 'bridges');
 
@@ -174,7 +175,7 @@ const server = new McpServer(
   { name: 'pen-editor', version: '0.2.0' },
   {
     instructions:
-      'Edits Superpencil designs (.spen, and pen.dev .pen files; same JSON format) open in VS Code. Start with list_open_files, then select_file to choose the file this chat works on (this takes an edit lock so other chats cannot edit it at the same time). Call get_guide once for the .pen format. Edit with apply_operations, then screenshot to verify visually.',
+      'Edits Superpencil designs (.spen, and pen.dev .pen files; same JSON format) open in VS Code. Start with list_open_files, then select_file to choose the file this chat works on (this takes an edit lock so other chats cannot edit it at the same time). Call get_guide once for the .pen format. Before designing, restyling or reviewing anything, call list_design_skills and load the skills that fit with get_design_skill (layout, typography, colors, ui, interface, writing, accessibility, transitions, polish, interface-review, un-ai): they are how designs made here avoid looking generic. Edit with apply_operations, then screenshot to verify visually.',
   },
 );
 
@@ -228,6 +229,49 @@ tool('release_file', 'Release this chat\'s edit lock on the selected file so ano
 tool('get_editor_state', 'Summary of the selected file: top-level frames, node/component/variable counts, themes, and the user\'s current selection.', {}, async () => json(await callEditor('summary')));
 
 tool('get_guide', 'Reference for the .pen format, node types, sizing, paints, components, and the apply_operations syntax. Read once before editing.', {}, async () => text(GUIDE));
+
+tool(
+  'list_design_skills',
+  'The built-in design skills: what each one is for and which to load for which kind of task. Call this before designing, restyling, polishing or reviewing; then load the ones that fit with get_design_skill. No file needs to be selected.',
+  {},
+  async () => text(SKILL_INDEX),
+);
+
+tool(
+  'get_design_skill',
+  `Load one or more design skills (${SKILLS.map(s => s.name).join(', ')}): concrete rules, numbers, how to do it with this editor's tools, and a checklist to run before finishing. Load every skill that fits the task in one call and follow them while you work. No file needs to be selected.`,
+  { names: z.array(z.string()).min(1).max(SKILLS.length).describe('Skill names, e.g. ["un-ai", "layout", "typography"]') },
+  async ({ names }) => {
+    const found = new Map<string, string>();
+    const unknown: string[] = [];
+    for (const n of names) {
+      const s = findSkill(n);
+      if (s) found.set(s.name, s.text);
+      else unknown.push(n);
+    }
+    if (!found.size) throw new Error(`no design skill is called ${unknown.map(n => `"${n}"`).join(', ')}. The skills are: ${SKILLS.map(s => s.name).join(', ')}`);
+    return text([...found.values()].join('\n\n---\n\n') + (unknown.length ? `\n\n(Not found: ${unknown.join(', ')}. The skills are: ${SKILLS.map(s => s.name).join(', ')}.)` : ''));
+  },
+);
+
+// The same skills as prompts, so the user can start one from the chat's slash menu.
+for (const s of SKILLS) {
+  server.registerPrompt(
+    s.name,
+    { title: s.title, description: s.when, argsSchema: { target: z.string().optional().describe('What to apply it to (a frame, a screen, "the selection"). Default: the selection, or the whole file.') } },
+    ({ target }) => ({
+      messages: [
+        {
+          role: 'user' as const,
+          content: {
+            type: 'text' as const,
+            text: `Apply the design skill below to ${target?.trim() || 'what I have selected in Superpencil (or the whole selected file if nothing is selected)'}. Use the pen-editor tools: look at the design first (get_selection, get_tree, screenshot), make the changes with apply_operations${s.name === 'interface-review' ? ' only if I ask you to fix what you find' : ''}, then run the skill's "Check before you finish" list and tell me what you ${s.name === 'interface-review' ? 'found' : 'changed'}.\n\n${s.text}`,
+          },
+        },
+      ],
+    }),
+  );
+}
 
 tool(
   'get_tree',

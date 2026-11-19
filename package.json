@@ -178,7 +178,7 @@
     "typecheck": "tsc --noEmit",
     "build:webview": "vite build",
     "build:extension": "esbuild extension/extension.ts --bundle --platform=node --format=cjs --external:vscode --outfile=dist/extension.cjs",
-    "build:mcp": "esbuild extension/mcp.ts --bundle --platform=node --format=cjs --target=node18 --outfile=dist/mcp.cjs",
+    "build:mcp": "esbuild extension/mcp.ts --bundle --platform=node --format=cjs --target=node18 --loader:.md=text --outfile=dist/mcp.cjs",
     "build": "npm run build:webview && npm run build:extension && npm run build:mcp",
     "package": "npm run build && vsce package --no-dependencies --skip-license -o release/superpen.vsix"
   },

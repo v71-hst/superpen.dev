@@ -166,6 +166,12 @@ void main() {
 Output is premultiplied alpha (like gl_FragColor in pen.dev). Screenshot after writing a shader: compile errors are shown on the node
 and reported by check_layout.
 
+## Design quality
+The format is only half of it. list_design_skills lists the built-in design skills (un-ai, interface, layout,
+typography, colors, ui, writing, transitions, transitions-dev, accessibility, polish, interface-review);
+get_design_skill loads them. Load the ones that fit before designing or reviewing, and run their checklists
+(check_layout, lint_design, screenshot at full size and as a thumbnail) before you call anything finished.
+
 ## Tips
 - Prefer layout frames (vertical/horizontal + gap/padding) and fill_container over absolute x/y for UI.
 - Reuse existing variables and components (get_variables, list_components) to match the design system.
