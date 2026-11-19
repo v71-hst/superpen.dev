@@ -7,6 +7,7 @@
 import { useSyncExternalStore } from 'react';
 import type { Canvas as SkCanvas, CanvasKit, Image as SkImage, Paint, SkPicture, Surface } from 'canvaskit-wasm';
 import { baseSide, hasPictureCopy, levelSide, pictureCopy, stalePictureCopy } from './pictureTextures';
+import { addToFarAtlas, beginFarAtlas, drawFarAtlas, farAtlasStats, packFarAtlas, resetFarAtlas } from './farAtlas';
 import { beginWantPass, setImageQuietSource, trimImages } from './images';
 import { kitIfLoaded } from './kit';
 import { free, own } from './lifetime';
@@ -114,6 +115,7 @@ export function surfaceIsReady() {
 let gpu: Surface | null = null;
 
 export function setSceneSurface(s: Surface | null) {
+  if (s !== gpu) resetFarAtlas();
   gpu = s;
 }
 
@@ -279,11 +281,15 @@ export function drawScene(c: SkCanvas, ck: CanvasKit, visible: { x: number; y: n
   const until = now + (now - lastViewChange < 150 ? 5 : 14);
   let more = false;
   let placeholderPaint: Paint | null = null;
+  // Far-zoom copies are drawn as sprites of shared textures (farAtlas.ts): anything drawn another way flushes the
+  // sprites queued before it first, so frames keep their order.
+  beginFarAtlas(ck, gpu);
   for (const f of frames) {
     if (f.x > visible.x + visible.w || f.x + f.w < visible.x || f.y > visible.y + visible.h || f.y + f.h < visible.y) continue;
     if (f.record) {
       const pic = !far || performance.now() < until ? f.record() : (f.peek?.() ?? null);
       if (pic && !far) {
+        drawFarAtlas(c);
         c.drawPicture(pic);
         continue;
       }
@@ -294,10 +300,14 @@ export function drawScene(c: SkCanvas, ck: CanvasKit, visible: { x: number; y: n
       const copy = !gpu ? null : pic ? pictureCopy(ck, gpu, f.key, pic, f, side, canWork) : stalePictureCopy(f.key, side);
       if (copy) {
         const img = copy.image;
-        c.drawImageRectOptions(img, ck.XYWHRect(0, 0, img.width(), img.height()), ck.XYWHRect(f.x, f.y, f.w, f.h), ck.FilterMode.Linear, ck.MipmapMode.None, null);
+        if (!addToFarAtlas(img, f.x, f.y, f.w, f.h)) {
+          drawFarAtlas(c);
+          c.drawImageRectOptions(img, ck.XYWHRect(0, 0, img.width(), img.height()), ck.XYWHRect(f.x, f.y, f.w, f.h), ck.FilterMode.Linear, ck.MipmapMode.None, null);
+        }
         if (!copy.sharp) more = true;
         continue;
       }
+      drawFarAtlas(c);
       if (pic && canWork) {
         // A copy can't be made at all: replay the picture.
         stats.farReplays++;
@@ -314,10 +324,12 @@ export function drawScene(c: SkCanvas, ck: CanvasKit, visible: { x: number; y: n
     }
     const t = textures.get(f.url);
     if (!t?.image) continue;
+    drawFarAtlas(c);
     t.used = now;
     const img = t.image;
     c.drawImageRectOptions(img, ck.XYWHRect(0, 0, img.width(), img.height()), ck.XYWHRect(f.x, f.y, f.w, f.h), ck.FilterMode.Linear, ck.MipmapMode.Linear, null);
   }
+  drawFarAtlas(c);
   placeholderPaint?.delete();
   stats.slowestDrawMs = Math.max(stats.slowestDrawMs, Math.round(performance.now() - now));
   if (more) setTimeout(() => hooks.requestDraw(), 0);
@@ -357,6 +369,8 @@ function scheduleSettle() {
     settleHandle = null;
     if (performance.now() - lastViewChange < SETTLE_MS - 10) return scheduleSettle();
     noticeVisible();
+    // Far-zoom copies drawn on their own while the view moved go into the shared textures now, in one go.
+    if (packFarAtlas()) hooks.requestDraw();
   }, SETTLE_MS);
 }
 
@@ -532,6 +546,7 @@ export function takeProgramStep(c: SkCanvas, dpr: number): boolean {
 
 /** Throws away every texture (new file, or Skia switched off). */
 export function resetScene() {
+  resetFarAtlas();
   for (const t of textures.values()) free(t.image);
   textures.clear();
   queue.length = 0;
@@ -556,7 +571,7 @@ export function sceneStats() {
     else if (t.state === 'loading') pending++;
     else failed++;
   }
-  return { framesDrawn: frames.length, textures: ready, pending, failed, bytes, budget: budget(), surfaceReady, ...stats };
+  return { framesDrawn: frames.length, textures: ready, pending, failed, bytes, budget: budget(), surfaceReady, ...stats, atlas: farAtlasStats() };
 }
 
 /** Lets the layer ask for a redraw (e.g. after the view changed). */

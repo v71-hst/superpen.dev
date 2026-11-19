@@ -35,6 +35,9 @@ const state = {
   dpr: 1,
   draws: 0,
   lastDrawMs: 0,
+  /** Total time spent drawing, and the part of it in drawScene (the rest: clearing, flushing to the graphics card). */
+  drawMs: 0,
+  sceneMs: 0,
   contextLosses: 0,
   restores: 0,
   /** Times the GPU cache was emptied after a while without drawing. */
@@ -190,7 +193,9 @@ export function SkiaLayer() {
       c.translate(x, y);
       c.scale(zoom, zoom);
       try {
+        const s0 = performance.now();
         drawScene(c, ck, { x: -x / zoom, y: -y / zoom, w: canvas.clientWidth / zoom, h: canvas.clientHeight / zoom });
+        state.sceneMs += performance.now() - s0;
       } catch (e) {
         // A CanvasKit failure (an abort leaves it unusable): the DOM renderer takes over; frames never go missing.
         return giveUp(`Skia failed while drawing (${e instanceof Error ? e.message : e})`);
@@ -207,6 +212,7 @@ export function SkiaLayer() {
       surface.flush();
       state.draws++;
       state.lastDrawMs = performance.now() - t0;
+      state.drawMs += state.lastDrawMs;
     };
 
     requestDraw = () => {
