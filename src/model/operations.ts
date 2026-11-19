@@ -95,6 +95,8 @@ export function applyOperations(d: PenDoc, ops: Operation[]): { results: OpResul
         if (!existsKey(d, o.id)) fail(i, `node "${o.id}" not found`);
         const props = cleanProps(o.props);
         if (!Object.keys(props).length) fail(i, 'update needs non-empty "props"');
+        // Children given to a node inside an instance (filling a slot) are new nodes: they need ids.
+        if (o.id.includes('/') && Array.isArray(props.children)) props.children.forEach((c: PenNode) => ensureIds(c, ids));
         applyProps(d, o.id, props);
         results.push({ op: 'update', id: o.id });
         touched.push(o.id);
@@ -179,17 +181,28 @@ export function applyOperations(d: PenDoc, ops: Operation[]): { results: OpResul
         ids.add(id);
         const node: PenNode = { type: 'ref', id, ref: o.component, ...cleanProps(o.props ?? {}) };
         for (const [k, v] of Object.entries(node)) if (v === undefined) delete node[k];
-        if (o.overrides && typeof o.overrides === 'object') node.descendants = o.overrides;
+        if (o.overrides && typeof o.overrides === 'object') {
+          node.descendants = o.overrides;
+          for (const entry of Object.values<any>(o.overrides)) if (entry && Array.isArray(entry.children)) entry.children.forEach((c: PenNode) => ensureIds(c, ids));
+        }
         insertAt(childList(d, o.parent, i), node, o.index);
         results.push({ op: 'instantiate', id });
         touched.push(id);
         break;
       }
       default:
-        fail(i, `unknown op "${o?.op}". Valid: insert, update, delete, move, duplicate, replace, instantiate`);
+        fail(i, `unknown op "${o?.op}". Valid: insert, update, delete, move, duplicate, replace, scale, instantiate`);
     }
   });
   return { results, touched };
+}
+
+/** Gives every node of a subtree that has no id (or one already taken) a fresh one. */
+function ensureIds(n: PenNode, ids: Set<string>) {
+  if (!n || typeof n !== 'object') return;
+  if (typeof n.id !== 'string' || !n.id || n.id.includes('/') || ids.has(n.id)) n.id = newId(ids);
+  ids.add(n.id);
+  (n.children ?? []).forEach(c => ensureIds(c, ids));
 }
 
 function isInside(d: PenDoc, id: string, ancestorId: string): boolean {

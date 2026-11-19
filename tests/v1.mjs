@@ -306,5 +306,38 @@ const drawn = await ev(() => { const s = window.__penStore.getState(); const fin
 ok('the pen tool draws curves when you drag', drawn?.type === 'path' && /C/.test(drawn.geometry) && drawn.width >= 150, JSON.stringify(drawn && { g: drawn.geometry, w: drawn.width, h: drawn.height }));
 await ev(() => window.__penStore.setState({ selection: [], tool: 'select' }));
 
+// ---------- Component slots ----------
+await ops([
+  { op: 'update', id: 'v1', props: { height: 1000 } },
+  { op: 'insert', parent: 'v1', node: { type: 'frame', id: 'v1chip', name: 'Chip', reusable: true, x: 700, y: 640, width: 80, height: 24, cornerRadius: 12, fill: '#00FF00' } },
+  { op: 'insert', parent: 'v1', node: { type: 'frame', id: 'v1comp', name: 'Card', reusable: true, x: 40, y: 640, width: 200, height: 'fit_content', layout: 'vertical', gap: 6, padding: 10, fill: '#2A2F3A', children: [
+    { type: 'text', id: 'v1ctitle', content: 'Card', fontFamily: 'Inter', fontSize: 14, fill: '#FFFFFF' },
+    { type: 'frame', id: 'v1slot', name: 'Body', slot: ['v1chip'], layout: 'vertical', gap: 4, width: 'fill_container', height: 'fit_content(40)' },
+  ] } },
+  { op: 'instantiate', component: 'v1comp', parent: 'v1', props: { id: 'x', x: 280, y: 640 }, overrides: { v1slot: { children: [{ type: 'ref', ref: 'v1chip' }, { type: 'ref', ref: 'v1chip' }] } } },
+  { op: 'instantiate', component: 'v1comp', parent: 'v1', props: { x: 520, y: 640 } },
+]);
+await ev(() => window.__penStore.setState({ selection: [], hover: null }));
+await sleep(500);
+const insts = await ev(() => { const v = window.__penStore.getState().doc.children.find(n => n.id === 'v1'); return v.children.filter(n => n.type === 'ref').map(n => ({ id: n.id, kids: n.descendants?.v1slot?.children?.map(c => c.id) ?? [] })); });
+const filled = insts.find(i => i.kids.length === 2), empty = insts.find(i => i.kids.length === 0);
+const chipRect = filled ? await rect(`${filled.id}/v1slot/${filled.kids[1]}`) : null;
+ok('an instance fills a slot with its own children', !!filled && new Set(filled.kids).size === 2 && !!chipRect && Math.round(chipRect.w) === 80 && Math.round(chipRect.h) === 24, JSON.stringify({ insts, chipRect }));
+let marks = await ev(() => [...document.querySelectorAll('.slot-mark')].map(e => e.dataset.slot));
+ok('empty slots are marked on the canvas, filled ones are not', marks.includes('v1slot') && marks.includes(`${empty.id}/v1slot`) && !marks.includes(`${filled.id}/v1slot`), JSON.stringify(marks));
+// The design panel on the empty instance's slot: one click puts the suggested component in.
+await ev(k => window.__penStore.setState({ selection: [k], rightOpen: true }), `${empty.id}/v1slot`);
+await page.waitForFunction(() => [...document.querySelectorAll('.right-panel .rp-btn')].some(b => /Chip/.test(b.textContent)), { timeout: 5000 });
+await ev(() => [...document.querySelectorAll('.right-panel .rp-btn')].find(b => /Chip/.test(b.textContent)).click());
+await frames();
+let slotKids = await ev(id => window.__penStore.getState().doc.children.find(n => n.id === 'v1').children.find(n => n.id === id).descendants?.v1slot?.children ?? [], empty.id);
+ok('the panel inserts a suggested component into the slot', slotKids.length === 1 && slotKids[0].ref === 'v1chip' && !!(await rect(`${empty.id}/v1slot/${slotKids[0].id}`)), JSON.stringify(slotKids));
+await ev(() => [...document.querySelectorAll('.right-panel .rp-btn')].find(b => /^Clear/.test(b.textContent.trim())).click());
+await frames();
+slotKids = await ev(id => window.__penStore.getState().doc.children.find(n => n.id === 'v1').children.find(n => n.id === id).descendants?.v1slot?.children ?? [], empty.id);
+ok('Clear empties it again', slotKids.length === 0);
+if (shots) await page.screenshot({ path: `${shots}/v1-slots.png` });
+await ev(() => window.__penStore.setState({ selection: [] }));
+
 ok('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();

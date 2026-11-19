@@ -50,7 +50,7 @@ import { useStore, applyProps, keySource } from '../editor/store';
 import { useTree } from '../editor/tree';
 import type { RNode } from '../model/types';
 import { deepResolve, isVarRef, resolveVariable } from '../model/resolve';
-import { displayName, locate } from '../model/doc';
+import { allIds, displayName, indexDoc, locate, newId } from '../model/doc';
 import { scaleSubtree } from '../model/scale';
 import { fillList, parseColor, toHex } from '../render/paint';
 import { parseSizing } from '../render/NodeView';
@@ -159,6 +159,7 @@ export function RightPanel() {
         <PositionSection {...ctx} />
         {isFrame || n.type !== 'group' ? <LayoutSection {...ctx} /> : null}
         <AppearanceSection {...ctx} />
+        {!multi && <SlotSection {...ctx} />}
         {n.type === 'script' && (
           <Section title="Script">
             <ScriptControls props={p} theme={n.theme} set={set} />
@@ -508,6 +509,81 @@ function LayoutSection({ n, p, r, set }: Ctx) {
           )}
         </>
       )}
+    </Section>
+  );
+}
+
+/**
+ * Component slots (pen.dev's `slot: string[]` on a frame): a place inside a component that each instance fills with
+ * its own content. On a frame of a component: mark it as a slot and name the components suggested for it. On the
+ * slot inside an instance: put components in (they become that instance's children of the slot), or clear it.
+ */
+function SlotSection({ n, r, set }: Ctx) {
+  const doc = useStore(s => s.doc);
+  const menu = useMenu();
+  if (n.type !== 'frame' || !doc) return null;
+  const idx = indexDoc(doc);
+  const isSlot = Array.isArray(r.slot);
+  const suggested: string[] = isSlot ? r.slot.filter((x: any) => typeof x === 'string') : [];
+  const comps = idx.components.filter(c => c.id !== n.key);
+  const nameOf = (id: string) => displayName(idx.byId.get(id) ?? ({ id, type: 'frame' } as any));
+  const src = keySource(n.key);
+  if (src.kind === 'virtual') {
+    if (!isSlot) return null;
+    // What this instance has put in the slot so far (not the component's own default children).
+    const inst = idx.byId.get(src.instanceId);
+    const mine: any[] = inst?.descendants?.[src.path]?.children ?? [];
+    const add = (compId: string) => set({ children: [...mine, { type: 'ref', id: newId(allIds(doc)), ref: compId }] });
+    return (
+      <Section title="Slot">
+        <div className="hint">This is a slot: what you put here belongs to this instance only.</div>
+        {suggested.map(id => (
+          <button key={id} className="rp-btn" onClick={() => add(id)}>
+            <Plus /> {nameOf(id)}
+          </button>
+        ))}
+        <div className="row2">
+          <button className="rp-btn" disabled={!comps.length} onClick={e => menu.open({ anchor: (e.currentTarget as HTMLElement).getBoundingClientRect(), items: comps.map(c => ({ label: displayName(c), onClick: () => add(c.id) })) })}>
+            Add component…
+          </button>
+          <button className="rp-btn" disabled={!mine.length} onClick={() => set({ children: undefined })}>
+            Clear ({mine.length})
+          </button>
+        </div>
+        {menu.node}
+      </Section>
+    );
+  }
+  // A document frame: offered inside components, and wherever the flag is already set.
+  const inComponent = (() => {
+    for (let k: string | undefined = n.key; k; k = idx.parentOf.get(k)?.id) if (idx.byId.get(k)?.reusable) return true;
+    return false;
+  })();
+  if (!inComponent && !isSlot) return null;
+  return (
+    <Section title="Slot">
+      <CheckRow checked={isSlot} label="Slot (instances fill this frame with their own content)" onChange={v => set({ slot: v ? [] : undefined })} />
+      {isSlot && (
+        <>
+          <div className="sub-label">Suggested components</div>
+          {suggested.map(id => (
+            <div key={id} className="row-flex">
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nameOf(id)}</span>
+              <button className="icon-btn sm" title="Remove" onClick={() => set({ slot: suggested.filter(x => x !== id) })}>
+                <Minus />
+              </button>
+            </div>
+          ))}
+          <button
+            className="rp-btn"
+            disabled={!comps.filter(c => !suggested.includes(c.id)).length}
+            onClick={e => menu.open({ anchor: (e.currentTarget as HTMLElement).getBoundingClientRect(), items: comps.filter(c => !suggested.includes(c.id)).map(c => ({ label: displayName(c), onClick: () => set({ slot: [...suggested, c.id] }) })) })}
+          >
+            <Plus /> Suggest a component
+          </button>
+        </>
+      )}
+      {menu.node}
     </Section>
   );
 }

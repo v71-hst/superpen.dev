@@ -1,10 +1,10 @@
 // Canvas overlays beyond selection: smart guides, auto-layout gap handles, distances to the hovered layer (Alt),
 // prototype links, comment pins, and the banners for component-state editing and pending AI changes (review mode).
-import React, { useEffect, useLayoutEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { Check, Trash2, Undo2 } from 'lucide-react';
 import { useStore } from '../editor/store';
 import type { Tree } from '../editor/tree';
-import { canvasRect, worldRectOf, zoomToKeys } from '../editor/ops';
+import { canvasRect, propsRect, worldRectOf, zoomToKeys } from '../editor/ops';
 import { displayName } from '../model/doc';
 import type { Guides } from '../editor/snapping';
 import { commentPos, commentsOf, deleteComment, dropIfEmpty, postMessage, setResolved, type PenComment } from '../editor/comments';
@@ -33,6 +33,7 @@ export function CanvasExtras({ tree, draft, onGapStart, dragging }: { tree: Tree
         {draft?.gapLabel && <GapLabel {...draft.gapLabel} />}
         {draft?.scaleLabel && <ScaleLabel {...draft.scaleLabel} />}
         {!dragging && <Measurements />}
+        <SlotMarks tree={tree} />
         {!dragging && <GapHandles tree={tree} onGapStart={onGapStart} />}
         <PrototypeArrows tree={tree} />
         <CommentPins tree={tree} />
@@ -84,6 +85,52 @@ function ScaleLabel({ value, x, y }: { value: number; x: number; y: number }) {
     <div className="gap-label" style={{ left: x - c.left, top: y - c.top - 18 }}>
       {Math.round(value * 100) / 100}x
     </div>
+  );
+}
+
+/**
+ * Empty component slots get a hatched mark on the canvas (editor chrome: it is not part of the design, so it never
+ * shows in exports or screenshots). Only slots of frames in view are measured.
+ */
+function SlotMarks({ tree }: { tree: Tree }) {
+  const view = useStore(s => s.view);
+  const doc = useStore(s => s.doc);
+  const slots = useMemo(() => {
+    const out: { key: string; root: string }[] = [];
+    for (const n of tree.byKey.values()) {
+      if (n.type !== 'frame' || !Array.isArray(n.props.slot) || n.children.length || n.props.enabled === false) continue;
+      let root = n.key;
+      for (let p = tree.parent.get(root); p; p = tree.parent.get(root)) root = p.key;
+      out.push({ key: n.key, root });
+    }
+    return out;
+  }, [tree]);
+  const rects = useMeasured(() => {
+    if (!slots.length || view.zoom < 0.15) return [];
+    const c = canvasRect();
+    const vx = -view.x / view.zoom, vy = -view.y / view.zoom, vw = c.width / view.zoom, vh = c.height / view.zoom;
+    const out: { key: string; r: Rect }[] = [];
+    for (const s of slots) {
+      const rr = propsRect(s.root);
+      if (rr && (rr.x > vx + vw || rr.x + rr.w < vx || rr.y > vy + vh || rr.y + rr.h < vy)) continue;
+      const r = worldRectOf(s.key);
+      if (r && r.w > 0 && r.h > 0) out.push({ key: s.key, r });
+      if (out.length >= 150) break;
+    }
+    return out;
+  }, [slots, view, doc]);
+  if (!rects?.length) return null;
+  return (
+    <>
+      {rects.map(({ key, r }) => {
+        const w = r.w * view.zoom, h = r.h * view.zoom;
+        return (
+          <div key={key} className="slot-mark" data-slot={key} style={{ left: view.x + r.x * view.zoom, top: view.y + r.y * view.zoom, width: w, height: h }}>
+            {w > 44 && h > 16 && <span>Slot</span>}
+          </div>
+        );
+      })}
+    </>
   );
 }
 

@@ -1411,6 +1411,25 @@ button.tb-file:hover,
   padding: 0 12px;
 }
 
+/* An empty component slot on the canvas. */
+.slot-mark {
+  position: absolute;
+  pointer-events: none;
+  outline: 1px dashed color-mix(in srgb, var(--component) 70%, transparent);
+  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--component) 22%, transparent) 0 1px, transparent 1px 7px);
+  display: grid;
+  place-items: center;
+}
+.slot-mark span {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--component);
+  background: var(--island);
+  padding: 0 5px;
+  border-radius: 3px;
+  line-height: 15px;
+}
+
 /* Point editing for paths (ui/PathEdit.tsx). */
 .path-edit {
   position: absolute;

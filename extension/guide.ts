@@ -56,6 +56,12 @@ Themed values: "value": [ { "value": "#FFF" }, { "value": "#111", "theme": { "Mo
 ## Components
 Mark any node reusable: true to make it a component. Instantiate with the "instantiate" op.
 Nodes inside an instance have ids like "<instanceId>/<childId>"; "update" on such an id stores an override.
+Slots: a frame inside a component with slot: [] (or slot: ["<suggested component id>", ...]) is a place each instance
+fills with its own content. Fill it with children replacement: instantiate with
+  "overrides": { "<slotId>": { "children": [ { "type": "ref", "ref": "<component id>" }, { "type": "text", ... } ] } }
+or later { "op": "update", "id": "<instanceId>/<slotId>", "props": { "children": [...] } } (ids are generated).
+Use slots for the parts of a component that differ per use (a card's body, a list's rows, a dialog's actions)
+instead of making one component per variation.
 States (variants): on the component, states: { "hover": { "root": { props }, "descendants": { "<child id path>": { props } } }, "pressed": {...}, "disabled": {...} }.
 An instance shows one with state: "hover". In Present mode "hover" and "pressed" play automatically under the mouse.
 
