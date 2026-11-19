@@ -5,7 +5,8 @@
 # Superpencil
 
 **Superpencil** is a VS Code extension for designing UI. Open a `.spen` file (or a pen.dev `.pen` file) and you get a
-full visual editor in a tab: layers, components, auto layout, variables and themes, prototypes, shaders and scripts.
+full visual editor in a tab: layers, components, auto layout, variables and themes, prototypes, vector editing,
+shaders and scripts.
 It also includes an MCP server, so Claude Code, Codex or any MCP agent can read your designs and edit them while you
 watch.
 
@@ -14,6 +15,9 @@ watch.
 - **Your AI chat is a second designer.** It edits in batches you can undo, takes screenshots to check its own work,
   answers comments pinned on the canvas and draws vector art stroke by stroke with **AI Pen**. No sign-in or API keys:
   it uses the chat you already have.
+- **Built-in design skills.** Twelve guides (layout, typography, colour, accessibility, writing, polish, review and
+  more, including one against the generic "AI look") that the chat reads before it designs.
+- **Bring your work in.** Figma files, layers copied from Figma, web pages, HTML and SVG all import as editable layers.
 - **Plain files.** `.spen` is JSON next to your code. It holds exactly what pen.dev's `.pen` holds, so both open
   directly and convert either way without losing anything.
 
@@ -77,6 +81,30 @@ How working together goes:
   AI Pen requests".
 - **Sections.** On big files the chat groups frames into sections and shows only the ones it is working on.
 
+### Design skills
+
+The MCP server carries twelve design skills, written for this editor. A chat loads the ones that fit before it
+designs, restyles or reviews, and runs each skill's checklist before it calls the work finished:
+
+| Skill | What it covers |
+|---|---|
+| `un-ai` | Avoiding the generic machine-made look: the tells, and what to do instead |
+| `interface` | What goes on a screen, flows, states (empty, loading, error), forms, dialogs |
+| `layout` | Spacing scale, grouping, alignment, sizes for phone, desktop and game HUDs |
+| `typography` | Type scale, weights, line height, measure, choosing fonts |
+| `colors` | Neutrals, one accent, status colours, contrast, dark themes |
+| `ui` | Buttons, inputs, cards, depth, icons, component states |
+| `writing` | Labels, errors, empty states, realistic content |
+| `transitions` | Motion: durations, easing, which transition for which navigation |
+| `transitions-dev` | Motion specs for developers, with CSS and Roblox TweenService examples |
+| `accessibility` | WCAG 2.2 AA: contrast, target sizes, focus, colour-blind-safe choices |
+| `polish` | The finishing pass, in order |
+| `interface-review` | A structured critique with ranked findings |
+
+You do not have to do anything: the chat is told to use them. To start one yourself, the skills are also in the
+chat's slash menu (in Claude Code: `/mcp__pen-editor__polish`, `/mcp__pen-editor__interface-review`, and so on), or
+just say "polish this" or "review this screen".
+
 ---
 
 ## Features
@@ -87,12 +115,19 @@ How working together goes:
   through VS Code.
 - **Smart guides**: dragged layers snap to the edges and centres of their neighbours and parent, and to equal
   spacing. Hold Ctrl to move freely. Drag the pink handles between auto-layout children to change the gap.
+- **Scale** (K): resize a layer together with everything in it: text, strokes, corner radii, gaps, padding and
+  effects. Drag a handle, or type a percentage in the Design panel.
+- **Measure**: hold Alt and hover another layer to read the distances between it and the selection.
 - **Eyedropper** (I): click a layer to copy its colour, or apply it to the selection (Shift: as stroke).
 - **Find & replace** (Ctrl+F) across text, layer names and variable references.
 - **Mixed selections**: select shapes and text together and edit fill, stroke and typography at once.
 
 **Design system**
 - **Auto layout**, **components and instances**, **variables and themes**.
+- **Slots**: mark a frame inside a component as a slot, and each instance fills it with its own content (a card's
+  body, a dialog's buttons). Suggested components can be inserted with one click.
+- **Libraries**: use another design file's components and variables in this one (left panel → **Libraries**). They
+  stay linked to the library file.
 - **Component states**: give a component states like *hover*, *pressed* or *disabled*, edit each one on the canvas,
   and pick which one an instance shows.
 - **Prototypes**: link any layer to another frame with a transition. In Present mode links are clickable and
@@ -108,9 +143,26 @@ How working together goes:
 - Editing a `.js`, `.glsl` or image file next to your design updates the canvas by itself.
 
 **Vectors and images**
+- **Pen tool** (P): click for corners, click and drag for curves. Double-click a path (or select it and press Enter)
+  to edit its points: move anchors and handles, click the outline to add a point, double-click a point to switch
+  between smooth and corner, Delete to remove it.
+- **Gradients on the canvas**: with a gradient fill open, drag its ends, stops, centre and radius directly on the
+  layer. **Mesh gradients** have a grid of colour points you can move and bend.
+- **Masks**: tick *Use as mask* on a shape and it clips the layers above it in the same group.
+- **Image crop**: *Crop* on an image fill, then drag the picture or the handles; *Reset crop* undoes it.
+- **Remove background**: makes a plain or gently graded background transparent. It is built in, nothing is
+  downloaded and no AI model is involved, so it is meant for icons, renders and product shots, not busy photos.
 - **AI Pen** (Shift+P): described above. Select a drawing to ask for changes.
 - **SVG**: paste SVG code or import an `.svg` file and it becomes editable vector shapes. Image fills can be traced
   into vectors (logo / illustration / detailed).
+
+**Import**
+- **Figma**: Shapes menu → *Import Figma file…* takes a `.fig` file (in Figma: File → Save local copy) and imports
+  a page as editable layers: auto layout, text, vectors, pictures, shadows, masks and crops. Or copy layers in Figma
+  and paste them here. Component instances come in as plain layers; prototype links and variables are not imported.
+- **Web pages and HTML**: Shapes menu → *Import web page or HTML…* takes a web address, pasted HTML or an `.html`
+  file and turns every visible element into a layer. Scripts are not run, so pages built by JavaScript may come in
+  empty.
 
 **Export**
 - PNG / JPG / SVG / HTML per layer, and a slides presentation mode.
@@ -156,6 +208,21 @@ How working together goes:
 ---
 
 ## What's new
+
+### 1.0.0
+- **Design skills**: twelve built-in guides the chat reads before designing (see
+  [Design skills](#design-skills)), including `un-ai`, against the generic machine-made look.
+- **Figma import**: `.fig` files and layers copied from Figma.
+- **HTML import**: a web address, pasted HTML or an `.html` file becomes editable layers.
+- **Pen tool**: draw curves, and edit a path's points afterwards.
+- **Gradients edited on the canvas**, and real **mesh gradients**.
+- **Scale tool** (K) scales text, strokes, radii and effects with the layer.
+- **Measurements**: Alt + hover shows distances between layers.
+- **Libraries**: use another design file's components and variables.
+- **Component slots**.
+- **Masks**, **image crop** and built-in **remove background**.
+- New MCP tools: `list_design_skills`, `get_design_skill`, `import_figma`, `import_html`, `remove_background`, and a
+  `scale` operation in `apply_operations`.
 
 ### 0.4.0
 - **New canvas renderer, much faster on big designs.** Frames are drawn on the graphics card with Skia (the graphics
@@ -216,8 +283,9 @@ Project layout:
 
 - `src/` – the editor (React). `model/` file format, variables, operations and SVG import; `skia/` the GPU renderer;
   `layout/` the layout engine it uses; `render/` the previous renderer, shaders and scripts; `editor/` state, file
-  sync and the agent handler; `ui/` panels.
-- `extension/` – the VS Code extension (custom editor, per-window MCP bridge with locking) and the MCP server.
+  sync and the agent handler; `import/` Figma and HTML import; `ui/` panels.
+- `extension/` – the VS Code extension (custom editor, per-window MCP bridge with locking), the MCP server, and
+  `skills/`, the design skills as Markdown.
 - `tests/` – browser-driven test suites and measuring scripts ([tests/README.md](tests/README.md)).
 - `docs/` – [SKIA_REWORK.md](docs/SKIA_REWORK.md), the plan and log of the renderer rework.
 - `examples/` – the demo design with its scripts and shaders.

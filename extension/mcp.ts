@@ -173,7 +173,7 @@ function tool<T extends z.ZodRawShape>(name: string, description: string, shape:
 }
 
 const server = new McpServer(
-  { name: 'pen-editor', version: '0.2.0' },
+  { name: 'pen-editor', version: '1.0.0' },
   {
     instructions:
       'Edits Superpencil designs (.spen, and pen.dev .pen files; same JSON format) open in VS Code. Start with list_open_files, then select_file to choose the file this chat works on (this takes an edit lock so other chats cannot edit it at the same time). Call get_guide once for the .pen format. Before designing, restyling or reviewing anything, call list_design_skills and load the skills that fit with get_design_skill (layout, typography, colors, ui, interface, writing, accessibility, transitions, polish, interface-review, un-ai): they are how designs made here avoid looking generic. Edit with apply_operations, then screenshot to verify visually.',

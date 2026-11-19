@@ -9,6 +9,12 @@ PEN_NO_OPEN=1 node start.mjs <folder with copies of test files>
 node tests/<script>.mjs "http://127.0.0.1:5178/?file=<name>.pen" [more arguments]
 ```
 
+**Start browsers only through `browser.mjs`.** A Chromium browser (Edge, Chrome) started on a new, empty profile
+tries to sign in to Windows with a blank password to see whether the account has one. Windows counts that as a failed
+sign-in, and ten of them in ten minutes lock the account: this locked a developer out of their own PC. `launchOptions()`
+and `newProfile()` hand out profiles that skip the check, and refuse to start a browser when failed sign-ins are
+already piling up. `lockout.mjs` checks both.
+
 Always work on copies: several scripts edit the file they open. `browser.mjs` picks the browser (Edge or Chrome if
 installed, or the executable named in `PEN_BROWSER`).
 
@@ -41,6 +47,11 @@ closer to the real extension with `PEN_PROD=1 node start.mjs <folder>` (a produc
 | `full.mjs <url> [shot dir]` | Skia full mode (stage 4): frames drawn from pictures with no DOM inside, same pixels and boxes as the DOM renderer, hover/click/deep-select reach layers, text editing (frame goes DOM while edited), edits re-record, agent screenshot, far-zoom copies, fallback when the context is lost for good with 0 CanvasKit objects left | a `make-big.mjs` file | 14 PASS |
 | `sharpen.mjs <url> [shot dir]` | Skia's two sizes of pictures: zoomed out only the small versions are held, a picture seen close up gets a larger one and matches the DOM renderer, larger ones are let go again when nothing needs them, and no frame flashes its flat colour meanwhile. About 90 s | a `make-big.mjs` file with big pictures (`make-big.mjs big2k.spen 60 3 12 2048`) | 11 PASS |
 | `paint-diff.mjs <url> <out dir> [threshold] [layout=dom\|engine] [max frames]` | Skia painter against the DOM renderer, frame by frame (stage 3), with side-by-side images | copies of `fixtures/features.pen`, `examples/showcase.spen`, a `make-big.mjs` file | see the status log |
+| `v1.mjs <url> [shot dir]` | The 1.0 features: Scale tool, Alt + hover distances, image crop, masks, gradient and mesh handles, path point editing and pen curves, slots, libraries, remove background, HTML import, Figma import (file, dialog, paste, hand-over from the MCP tool). Adds its own layers far from the file's content. Run it with `&renderer=dom` and without. Needs the dev server. The Figma checks are skipped unless `dev/fixtures/figma/` holds `structure.fig`, `stacks_wrap.fig` (from sketch-hq/fig2sketch `tests/data/`) and `frame-with-r-g-b-rect.clipboard.html` (from gridaco/grida `fixtures/test-fig/clipboard/`); they are other people's files, so they are not in this repository | copy of `fixtures/features.pen` | 54 PASS (48 without the Figma samples) |
+| `skills.mjs [mcp.cjs]` | Design skills through the built MCP server: the index, each skill whole, aliases, unknown names, the prompts, and that every tool a skill mentions exists. No browser; run `npm run build:mcp` first | none | 11 PASS |
+| `fig-import.mjs [--out <folder>] [--page <name>] [--all-pages] <file.fig \| clipboard.html> ...` | Figma import on real files: converts each one, checks the result is a valid design (unique ids, known node types, numbers that are numbers, pictures present) and reports how many auto layout children land where Figma had them. No browser. Bring your own `.fig` files | none | `invariants: OK` per file |
+| `csp-srcdoc.mjs` | HTML import's sandboxed iframe loads and can be measured under the VS Code webview's content security policy (keep the list in the script the same as `extension/extension.ts`) | none | 3 PASS |
+| `lockout.mjs` | Starting test browsers makes no failed Windows sign-ins, and no script starts a browser on a profile of its own. Run it after touching `browser.mjs` or adding a script that launches a browser. Windows only | none | 2 PASS |
 | `stress.mjs <url> [steps] [seed]` | Random pan, zoom, select, drag and MCP actions | a big file | 0 page errors, 0 view jumps, 0 unexpected view changes |
 
 ## Measuring and looking
@@ -56,4 +67,6 @@ closer to the real extension with `PEN_PROD=1 node start.mjs <folder>` (a produc
 | `zoomout.mjs`, `imgzoom.mjs`, `tracezoom.mjs`, `prof2.mjs`, `zoomfast.mjs` | GPU memory, decode work, traces and CPU profiles during zooming |
 | `lodswitch.mjs`, `panelzoom.mjs`, `precision.mjs`, `invisible.mjs` | Narrow checks: snapshot-to-live switching, Ctrl+wheel over panels, coordinate precision, frames missing while zoomed out |
 | `featshot.mjs`, `svgshot.mjs`, `svgshot2x.mjs` | Screenshots to look at |
+| `uishot.mjs <url> <out prefix>` | The whole interface to look at: both themes, the menus, layer search, the FPS readout, a narrow window |
+| `figshot.mjs <url> <out prefix> [max]` | An imported Figma page to look at: its top-level layers and close-ups of cropped pictures. Convert with `fig-import.mjs --out` into the folder the dev server serves first |
 | `svgretain2.mjs` | Shows how much memory a browser holds per SVG data URL. Windows only |
