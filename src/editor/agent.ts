@@ -21,7 +21,7 @@ import { aiPenDraw, requestsForAgent } from './aipen';
 import { createSection, deleteSection, focusSections, hiddenFrameIds, sectionsOf, updateSection, viewerSections } from './sections';
 import { analyze, closeupGrid, compare, loadImageData, presentShot, zoomCrop, type Closeup } from './imageTools';
 import { checkDrawing } from './drawingCheck';
-import { imageLodStats } from '../render/imageLod';
+import { imageFillUrls, imageLodStats, imagesBusy, imagesIdle } from '../render/imageLod';
 import { nextFrames } from '../render/frames';
 import { activeRenderer, rendererFailure, requestedRenderer, setRenderer } from '../skia/renderer';
 import { skiaStatus } from '../skia/SkiaLayer';
@@ -82,10 +82,52 @@ async function imageSource(params: { image?: string; id?: string; scale?: number
   return loadImageData(shot.dataUrl);
 }
 
+/** A picture that is still loading is drawn from this one transparent pixel (render/imageLod.ts BLANK). */
+const BLANK_PIXEL = 'R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw';
+
+/**
+ * Waits until the pictures of a node, and of everything in it, are on its page elements. A layer gets its page
+ * elements when a capture asks for them, and a picture is drawn as nothing while it loads, so the first capture of
+ * a picture layer used to come out blank (seen in VS Code, where pictures load slower than in tests): analyze_image
+ * said "transparent 100%".
+ */
+async function picturesReady(key: string, ms = 6000) {
+  const root = currentTree()?.byKey.get(key);
+  if (!root) return;
+  const keys: string[] = [];
+  const walk = (n: RNode) => {
+    if (n.props.enabled === false) return;
+    if (imageFillUrls(n.props).some(u => !/^(data|blob):/i.test(u))) keys.push(n.key);
+    n.children.forEach(walk);
+  };
+  walk(root);
+  if (!keys.length) return;
+  const real = (s: string | null | undefined) => !!s && /url\(/.test(s) && !s.includes(BLANK_PIXEL);
+  const shown = (k: string) => {
+    const el = elFor(k) as HTMLElement | null;
+    if (!el) return false;
+    if (real(el.style.backgroundImage)) return true;
+    // Cropped pictures and pictures above other fills sit one or two elements in; shapes use an svg <image>.
+    for (const c of Array.from(el.children) as HTMLElement[]) {
+      if (real(c.style?.backgroundImage)) return true;
+      for (const g of Array.from(c.children) as HTMLElement[]) if (real(g.style?.backgroundImage)) return true;
+    }
+    const href = el.querySelector('image')?.getAttribute('href');
+    return !!href && !href.includes(BLANK_PIXEL);
+  };
+  const until = performance.now() + ms;
+  while (performance.now() < until) {
+    if (imagesBusy()) await imagesIdle(Math.max(100, until - performance.now()));
+    if (keys.every(shown)) return;
+    await frames(2);
+  }
+}
+
 async function capture(key: string, format: 'png' | 'jpg' | 'svg', scale: number, maxSize: number) {
   ensureRendered([key]);
   await frames(3);
   await document.fonts.ready;
+  await picturesReady(key);
   const el = elFor(key);
   if (!el) throw new Error(`node "${key}" is not rendered (it may be hidden: enabled false)`);
   const size = nodeSize(key)!;
