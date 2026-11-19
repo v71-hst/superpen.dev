@@ -85,11 +85,16 @@ ok('export uses the original picture', a === b && a > 500000, `${a} vs ${b} byte
 await ref.close();
 
 // Performance mode: frames away from the viewport are unloaded.
+// Performance mode is an item of the zoom menu in the top bar.
+const togglePerf = async () => {
+  await page.click('.zoom-btn');
+  await page.evaluate(() => [...document.querySelectorAll('.menu-item')].find(e => /Performance mode/.test(e.textContent)).click());
+};
 const roots = () => page.evaluate(() => { const k = [...document.querySelectorAll('#pen-world > [data-k]')]; return { live: k.filter(e => !('placeholder' in e.dataset) && !('bitmap' in e.dataset)).length, placeholder: k.filter(e => 'placeholder' in e.dataset).length }; });
 await setView(page, 1, 'f8');
 await sleep(1500);
 const before = await roots();
-await page.click('.zoom-ctl .zbtn');
+await togglePerf();
 await sleep(2500);
 const perf = await roots();
 ok('performance mode toggle unloads far frames', before.live === 15 && perf.live <= 9 && perf.placeholder >= 6 && perf.live + perf.placeholder === 15, `live ${before.live} -> ${perf.live}, placeholders ${perf.placeholder}`);
@@ -101,7 +106,7 @@ await sleep(2500);
 const moved = await roots();
 const f1 = await page.evaluate(() => !!document.querySelector('#pen-world > [data-k="f1"]:not([data-placeholder])'));
 ok('panning loads the frames that come into view', f1 && moved.live < 8, `f1 live: ${f1}, live ${moved.live}`);
-await page.click('.zoom-ctl .zbtn');
+await togglePerf();
 await sleep(2000);
 ok('turning it off loads everything again', (await roots()).live === 15);
 await browser.close();

@@ -12,11 +12,13 @@ import { elementAtPoint } from '../editor/measure';
 import { layerIconFor } from './common';
 import { printSlides } from './Present';
 import { sectionsOf, setAllSectionsHidden, setSectionHidden } from '../editor/sections';
+import { LayerSearch } from './Chrome';
 
 export function LeftPanel() {
   const tab = useStore(s => s.leftTab);
   const tree = useTree();
   const set = useStore(s => s.set);
+  const [searching, setSearching] = useState(false);
   const tabs = [
     { id: 'layers', label: 'Layers', Icon: Layers },
     { id: 'sections', label: 'Sections', Icon: LayoutGrid },
@@ -33,7 +35,12 @@ export function LeftPanel() {
             {tab === t.id && <span>{t.label}</span>}
           </button>
         ))}
+        <span className="tb-space" />
+        <button className={'tab' + (searching ? ' active' : '')} title="Find layers" onClick={() => setSearching(v => !v)}>
+          <Search strokeWidth={1.75} />
+        </button>
       </div>
+      {searching && <LayerSearch onClose={() => setSearching(false)} />}
       {tree && tab === 'layers' && <LayersTab tree={tree} />}
       {tree && tab === 'sections' && <SectionsTab tree={tree} />}
       {tree && tab === 'slides' && <SlidesTab tree={tree} />}

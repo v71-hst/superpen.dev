@@ -6,7 +6,7 @@ import { zoomToFit } from './editor/ops';
 import { Canvas } from './ui/Canvas';
 import { LeftPanel } from './ui/LeftPanel';
 import { RightPanel } from './ui/RightPanel';
-import { FilePill, LockChip, PromptBar, SectionBar, SideToggle, Toast, Toolbar, ZoomControl } from './ui/Chrome';
+import { SectionBar, Toast, TopBar } from './ui/Chrome';
 import { Modals } from './ui/Modals';
 import { Home } from './ui/Home';
 import { Presenter } from './ui/Present';
@@ -115,16 +115,11 @@ export function App() {
           </ErrorBoundary>
           <ErrorBoundary name="left panel" resetKey={doc}>
             {leftOpen && <LeftPanel />}
-            {leftOpen && <PromptBar />}
           </ErrorBoundary>
           <ErrorBoundary name="toolbar">
-            <SideToggle />
-            <Toolbar />
+            <TopBar />
           </ErrorBoundary>
           <ErrorBoundary name="chrome" resetKey={doc}>
-            <FilePill />
-            <LockChip />
-            <ZoomControl />
             <SectionBar />
           </ErrorBoundary>
           <ErrorBoundary name="design panel" resetKey={doc}>

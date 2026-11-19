@@ -68,8 +68,8 @@ How working together goes:
 - **Edits you can undo.** Each batch of the chat's changes is one undo step.
 - **It checks its work.** The chat can screenshot any layer, check layouts for overflow and clipping, and lint the
   design.
-- **Review mode** (checklist button in the tool column): the chat's edits show up straight away but wait in a banner
-  until you **Accept** or **Reject** them.
+- **Review mode** (**…** menu in the top bar → *Review AI edits before they apply*): the chat's edits show up
+  straight away but wait in a banner until you **Accept** or **Reject** them.
 - **Comments** (C): pin a comment anywhere on the canvas. The chat is told about open comments, does the work and
   answers in the thread.
 - **AI Pen** (Shift+P): drag a box, describe a drawing, and the chat draws it in passes while you watch each stroke.
@@ -97,7 +97,7 @@ How working together goes:
   and pick which one an instance shows.
 - **Prototypes**: link any layer to another frame with a transition. In Present mode links are clickable and
   hover/pressed states play by themselves.
-- **Design lint** (shield button): finds hard-coded colours that should be variables, tiny or low-contrast text,
+- **Design lint** (**…** menu in the top bar): finds hard-coded colours that should be variables, tiny or low-contrast text,
   fractional positions, overflowing text, missing components and fonts, with one-click fixes.
 
 **Generated and animated content**
@@ -126,9 +126,9 @@ How working together goes:
   elements. Frames with shader fills, and a frame whose text you are editing, are drawn the previous way. If the
   graphics card can't run it, the editor switches back to the previous renderer by itself and says so once.
 - **Sections.** Group top-level frames into named sections (ask your chat to "group my frames into sections"). Hide or
-  show whole sections from the **Sections** tab in the left panel; hidden frames aren't drawn at all. The grid button
-  next to the zoom control switches to the **Sections** viewer, which shows one section at a time like slides.
-- **Performance mode** (lightning button next to the zoom control), for PCs with little memory or a weak GPU: pictures
+  show whole sections from the **Sections** tab in the left panel; hidden frames aren't drawn at all. The zoom menu
+  (the percentage in the top bar) switches to the **Sections** viewer, which shows one section at a time like slides.
+- **Performance mode** (in the zoom menu), for PCs with little memory or a weak GPU: pictures
   use half the resolution, shader animation runs slower, and designs in background tabs let go of their frames. It
   turns on by itself the first time on PCs with 16 GB of memory or less.
 - **Measure it.** Ask your chat to "run the benchmark": it times zooming and panning on your own design and reports
@@ -163,9 +163,13 @@ How working together goes:
 - **Less memory.** The same design takes about 100–250 MB less while you work in it. Pictures load small first and
   sharpen a moment after you zoom in on them.
 - Selecting, deep-select, text editing, AI Pen, screenshots and exports work as before.
+- **Redesigned interface.** One slim top bar holds the tools, the zoom menu and Present; the layers and design
+  panels are attached to the window edges; colours are neutral with a single blue accent. Less-used tools (notes,
+  variables, find & replace, lint, review mode, shortcuts, settings) are under the **…** button, and performance
+  mode and the Sections viewer are in the zoom menu.
 - New MCP tools: `benchmark` (times zooming and panning on your own design) and `set_renderer` (switches between the
   new renderer and the previous one).
-- New banner, and this README was rewritten.
+- New banner and icon, and this README was rewritten.
 
 ### 0.3.1
 - **Fix: frames going invisible when zoomed far out** after a graphics hiccup.

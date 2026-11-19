@@ -449,13 +449,16 @@ export async function vectorizeNode(key: string, opts: VectorizeOptions = {}): P
 export function zoomToRect(r: { x: number; y: number; w: number; h: number }, maxZoom = 1, pad = 80) {
   const c = canvasRect();
   const { leftOpen, selection } = useStore.getState();
-  const left = leftOpen ? 440 : 60;
-  const right = selection.length ? 240 : 20;
+  // The panels and the top bar lie over the canvas: fit into what is left (see styles.css for their sizes).
+  const { rightOpen } = useStore.getState();
+  const left = leftOpen ? 248 : 0;
+  const right = selection.length && rightOpen ? 248 : 0;
+  const top = 40;
   const availW = Math.max(100, c.width - left - right - pad * 2);
-  const availH = Math.max(100, c.height - pad * 2 - 40);
+  const availH = Math.max(100, c.height - top - pad * 2);
   const zoom = Math.max(0.02, Math.min(maxZoom, availW / Math.max(r.w, 1), availH / Math.max(r.h, 1)));
   const x = left + pad + (availW - r.w * zoom) / 2 - r.x * zoom;
-  const y = pad + (availH - r.h * zoom) / 2 - r.y * zoom;
+  const y = top + pad + (availH - r.h * zoom) / 2 - r.y * zoom;
   viewChangeSource('zoomTo');
   useStore.getState().setView({ x, y, zoom });
 }

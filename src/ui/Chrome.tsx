@@ -1,11 +1,14 @@
-// Floating chrome: sidebar toggle, tool column, zoom control, file pill, quick-find bar and toasts.
-import React, { useMemo, useRef, useState } from 'react';
+// Editor chrome: the top bar (sidebar toggle, file name, tools, AI lock, zoom menu, Present), the Sections viewer
+// bar, the layer search of the left panel, and toasts.
+import React, { useMemo, useState } from 'react';
 import {
-  ArrowUp,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleUser,
+  Ellipsis,
+  PenLine,
+  Play,
   Circle,
   Code,
   Component,
@@ -16,20 +19,15 @@ import {
   LayoutGrid,
   Zap,
   ListChecks,
-  Lock,
   MessageSquare,
   Search,
   ShieldCheck,
-  Maximize2,
-  Minus,
   MousePointer2,
   Palette,
   PanelLeft,
   PenTool,
-  Plus,
   Scaling,
   SlidersHorizontal,
-  Sparkles,
   Square,
   Star,
   StickyNote,
@@ -39,7 +37,8 @@ import {
 } from 'lucide-react';
 import { useStore, isDirty, type Tool } from '../editor/store';
 
-import { setPerfMode } from '../editor/perf';import { useTree } from '../editor/tree';
+import { setPerfMode } from '../editor/perf';
+import { currentTree, useTree } from '../editor/tree';
 import { setZoom, zoomBy, zoomToFit, zoomToKeys, clientToWorld, insertSvg } from '../editor/ops';
 import { openLocalFile, reloadFromDisk, saveDoc, saveDocAs, saveCopyAs, newDocument } from '../editor/fileio';
 import { allIds, displayName, newId } from '../model/doc';
@@ -50,15 +49,6 @@ import { sectionsOf, viewerSections } from '../editor/sections';
 import { createAssetFile } from './AssetControls';
 import { setReviewMode } from '../editor/review';
 
-export function SideToggle() {
-  const leftOpen = useStore(s => s.leftOpen);
-  return (
-    <button className="island side-toggle" style={{ left: leftOpen ? 394 : 8 }} title="Toggle sidebar (Ctrl+\)" onClick={() => useStore.setState({ leftOpen: !leftOpen })}>
-      <PanelLeft strokeWidth={1.75} />
-    </button>
-  );
-}
-
 const SHAPES = [
   { tool: 'rect', label: 'Rectangle', kbd: 'R', Icon: Square },
   { tool: 'ellipse', label: 'Ellipse', kbd: 'O', Icon: Circle },
@@ -66,11 +56,41 @@ const SHAPES = [
   { tool: 'icon', label: 'Icon', kbd: '', Icon: Star },
 ] as const;
 
-export function Toolbar() {
+/** The bar across the top: sidebar toggle and file on the left, tools next to them, lock, zoom and Present on the right. */
+export function TopBar() {
+  const leftOpen = useStore(s => s.leftOpen);
+  return (
+    <div className="island topbar">
+      <button className={'tool' + (leftOpen ? ' active' : '')} title="Toggle sidebar (Ctrl+\)" onClick={() => useStore.setState({ leftOpen: !leftOpen })}>
+        <PanelLeft strokeWidth={1.75} />
+      </button>
+      <FileName />
+      <Tools />
+      <span className="tb-space" />
+      <LockChip />
+      <ZoomMenu />
+      <button className="tb-present" title="Present from the selected frame" onClick={present}>
+        <Play strokeWidth={2} />
+        <span>Present</span>
+      </button>
+    </div>
+  );
+}
+
+/** Starts the presentation at the top-level frame the selection is in (the first frame if nothing is selected). */
+function present() {
+  const s = useStore.getState();
+  const tree = currentTree();
+  if (!tree) return;
+  let n = s.selection.length ? tree.byKey.get(s.selection[0]) : undefined;
+  while (n && tree.parent.get(n.key)) n = tree.parent.get(n.key) ?? undefined;
+  useStore.setState({ presenting: Math.max(0, n ? tree.roots.indexOf(n) : 0) });
+}
+
+function Tools() {
   const tool = useStore(s => s.tool);
   const shapeTool = useStore(s => s.shapeTool);
   const selectTool = useStore(s => s.selectTool);
-  const leftOpen = useStore(s => s.leftOpen);
   const reviewMode = useStore(s => s.reviewMode);
   const menu = useMenu();
   const setTool = (t: Tool) => useStore.setState({ tool: t });
@@ -82,15 +102,29 @@ export function Toolbar() {
   );
   const caret = (items: MenuItem[]) => (e: React.MouseEvent) => {
     const r = (e.currentTarget as HTMLElement).previousElementSibling!.getBoundingClientRect();
-    menu.open({ anchor: r, items, placement: 'right' });
+    menu.open({ anchor: r, items });
   };
+  const more: MenuItem[] = [
+    { label: 'Note', icon: <StickyNote />, kbd: 'N', onClick: () => setTool('note') },
+    { label: 'Components', icon: <Component />, onClick: () => useStore.setState({ leftOpen: true, leftTab: 'components' }) },
+    { label: 'Variables & themes', icon: <Palette />, onClick: () => useStore.setState({ modal: 'variables' }) },
+    { sep: true },
+    { label: 'Find & replace', icon: <Search />, kbd: 'Ctrl+F', onClick: () => useStore.setState({ modal: 'find' }) },
+    { label: 'Design lint', icon: <ShieldCheck />, onClick: () => useStore.setState({ modal: 'lint' }) },
+    { label: 'Review AI edits before they apply', icon: <ListChecks />, kbd: reviewMode ? 'On' : 'Off', onClick: () => setReviewMode(!reviewMode) },
+    { sep: true },
+    { label: 'Keyboard shortcuts', icon: <Keyboard />, kbd: 'Ctrl+/', onClick: () => useStore.setState({ modal: 'shortcuts' }) },
+    { label: 'Settings', icon: <SlidersHorizontal />, onClick: () => useStore.setState({ modal: 'settings' }) },
+    { label: 'About', icon: <CircleUser />, onClick: () => useStore.setState({ modal: 'about' }) },
+  ];
   return (
-    <div className="island toolbar" style={{ left: leftOpen ? 394 : 8 }}>
+    <div className="toolbar">
       <button className={'tool' + (tool === 'select' || tool === 'scale' ? ' active' : '')} title={selectTool === 'scale' ? 'Scale (K)' : 'Move (V)'} onClick={() => setTool(selectTool)}>
         {selectTool === 'scale' ? <Scaling strokeWidth={1.75} /> : <MousePointer2 strokeWidth={1.75} />}
       </button>
       <button
         className="tool-caret"
+        title="Move or scale"
         onClick={caret([
           { label: 'Move', icon: <MousePointer2 />, kbd: 'V', checked: selectTool === 'select', onClick: () => useStore.setState({ selectTool: 'select', tool: 'select' }) },
           { label: 'Scale', icon: <Scaling />, kbd: 'K', checked: selectTool === 'scale', onClick: () => useStore.setState({ selectTool: 'scale', tool: 'scale' }) },
@@ -98,11 +132,13 @@ export function Toolbar() {
       >
         <ChevronDown strokeWidth={2.5} />
       </button>
+      {btn('frame', Frame, 'Frame (F)')}
       <button className={'tool' + (SHAPES.some(s => s.tool === tool) ? ' active' : '')} title="Shapes" onClick={() => setTool(shapeTool)}>
         <ShapeIcon strokeWidth={1.75} />
       </button>
       <button
         className="tool-caret"
+        title="Shapes, scripts and images"
         onClick={caret([
           ...SHAPES.map(s => ({
             label: s.label,
@@ -118,43 +154,19 @@ export function Toolbar() {
         <ChevronDown strokeWidth={2.5} />
       </button>
       {btn('pen', PenTool, 'Pen (P)')}
-      {btn('aipen', Sparkles, 'AI Pen (Shift+P): drag an area, describe what to draw, and your AI model draws it as editable vectors')}
       {btn('text', Type, 'Text (T)')}
-      {btn('frame', Frame, 'Frame (F)')}
-      {btn('note', StickyNote, 'Note (N)')}
       {btn('hand', Hand, 'Hand (H)')}
+      <span className="tb-sep" />
+      {btn('aipen', PenLine, 'AI Pen (Shift+P): drag an area, describe what to draw, and your AI model draws it as editable vectors')}
       {btn('comment', MessageSquare, 'Comment (C)')}
       {btn('eyedropper', Pipette, 'Eyedropper (I): click a layer to copy its color, or apply it to the selection (Shift: stroke)')}
-      <button className="tool" title="Components" onClick={() => useStore.setState({ leftOpen: true, leftTab: 'components' })}>
-        <Component strokeWidth={1.75} />
-      </button>
-      <button className="tool" title="Variables & themes" onClick={() => useStore.setState({ modal: 'variables' })}>
-        <Palette strokeWidth={1.75} />
-      </button>
-      <button className="tool" title="Find & replace (Ctrl+F)" onClick={() => useStore.setState({ modal: 'find' })}>
-        <Search strokeWidth={1.75} />
-      </button>
-      <button className="tool" title="Design lint" onClick={() => useStore.setState({ modal: 'lint' })}>
-        <ShieldCheck strokeWidth={1.75} />
-      </button>
+      <span className="tb-sep" />
       <button
-        className={'tool' + (reviewMode ? ' active' : '')}
-        title={reviewMode ? 'Review mode ON: AI edits wait for you to accept them' : 'Review mode OFF: AI edits apply immediately'}
-        onClick={() => setReviewMode(!reviewMode)}
+        className={'tool' + (tool === 'note' ? ' active' : '')}
+        title="More: note, components, variables, find, lint, review mode, shortcuts, settings"
+        onClick={e => menu.open({ anchor: (e.currentTarget as HTMLElement).getBoundingClientRect(), items: more })}
       >
-        <ListChecks strokeWidth={1.75} />
-      </button>
-      <button className="tool" title="Keyboard shortcuts (Ctrl+/)" onClick={() => useStore.setState({ modal: 'shortcuts' })}>
-        <Keyboard strokeWidth={1.75} />
-      </button>
-      <button className="tool" title="Settings" onClick={() => useStore.setState({ modal: 'settings' })}>
-        <SlidersHorizontal strokeWidth={1.75} />
-      </button>
-      <button className="tool" title="About" onClick={() => useStore.setState({ modal: 'about' })}>
-        <CircleUser strokeWidth={1.75} />
-      </button>
-      <button className="tool" title="Zoom to fit (Shift+1)" onClick={() => zoomToFit()}>
-        <Maximize2 strokeWidth={1.75} />
+        <Ellipsis strokeWidth={1.75} />
       </button>
       {menu.node}
     </div>
@@ -302,70 +314,66 @@ export function SectionBar() {
   );
 }
 
-export function ZoomControl() {
+/** The zoom level; its menu also holds the fit commands, performance mode and the Sections viewer. */
+function ZoomMenu() {
   const zoom = useStore(s => s.view.zoom);
-  const hasRight = useStore(s => s.selection.length > 0 && s.rightOpen);
   const viewer = useStore(s => s.viewer);
   const perfMode = useStore(s => s.perfMode);
   const menu = useMenu();
   return (
-    <div className={'island zoom-ctl' + (hasRight ? '' : ' no-right')}>
+    <>
       <button
-        className={'zbtn' + (perfMode ? ' on' : '')}
-        title={perfMode ? 'Performance mode is on (uses less memory; pictures and zoomed-out previews are less sharp). Click to turn off' : 'Performance mode: use less memory and GPU on big or image-heavy files'}
-        onClick={() => {
-          setPerfMode(!perfMode);
-          useStore.getState().notify(perfMode ? 'Performance mode off' : 'Performance mode on: off-screen frames are unloaded and previews are less sharp');
-        }}
-      >
-        <Zap strokeWidth={1.75} />
-      </button>
-      <button
-        className={'zbtn' + (viewer === 'sections' ? ' on' : '')}
-        title={viewer === 'sections' ? 'Sections viewer (one section at a time): switch to Classic' : 'Classic viewer: switch to Sections (one section at a time)'}
-        onClick={() => setViewer(viewer === 'sections' ? 'classic' : 'sections')}
-      >
-        <LayoutGrid strokeWidth={1.75} />
-      </button>
-      <span className="zsep" />
-      <button className="zbtn" title="Zoom out (Ctrl+-)" onClick={() => zoomBy(1 / 1.25)}>
-        <Minus strokeWidth={1.75} />
-      </button>
-      <button
-        className="zval"
+        className={'zoom-btn' + (perfMode ? ' perf' : '')}
+        title={perfMode ? 'Zoom and view options (performance mode is on)' : 'Zoom and view options'}
         onClick={e =>
           menu.open({
             anchor: (e.currentTarget as HTMLElement).getBoundingClientRect(),
-            placement: 'above',
             align: 'right',
             items: [
+              { label: 'Zoom in', kbd: 'Ctrl+=', onClick: () => zoomBy(1.25) },
+              { label: 'Zoom out', kbd: 'Ctrl+-', onClick: () => zoomBy(1 / 1.25) },
               { label: 'Zoom to fit', kbd: 'Shift+1', onClick: zoomToFit },
               { label: 'Zoom to selection', kbd: 'Shift+2', onClick: () => zoomToKeys(useStore.getState().selection, 8) },
               { sep: true },
               { label: '50%', onClick: () => setZoom(0.5) },
               { label: '100%', kbd: 'Shift+0', onClick: () => setZoom(1) },
               { label: '200%', onClick: () => setZoom(2) },
+              { sep: true },
+              {
+                label: 'Performance mode',
+                icon: <Zap />,
+                kbd: perfMode ? 'On' : 'Off',
+                onClick: () => {
+                  setPerfMode(!perfMode);
+                  useStore.getState().notify(perfMode ? 'Performance mode off' : 'Performance mode on: uses less memory, pictures are less sharp');
+                },
+              },
+              { label: 'Sections viewer (one section at a time)', icon: <LayoutGrid />, kbd: viewer === 'sections' ? 'On' : 'Off', onClick: () => setViewer(viewer === 'sections' ? 'classic' : 'sections') },
             ],
           })
         }
       >
+        {perfMode && <Zap strokeWidth={2} />}
         {Math.round(zoom * 100)}%
-      </button>
-      <button className="zbtn" title="Zoom in (Ctrl+=)" onClick={() => zoomBy(1.25)}>
-        <Plus strokeWidth={1.75} />
+        <ChevronDown strokeWidth={2} />
       </button>
       {menu.node}
-    </div>
+    </>
   );
 }
 
-export function FilePill() {
+/** The file's name. Outside VS Code (where the editor tab has no file menu of its own) it opens the file menu. */
+function FileName() {
   const file = useStore(s => s.file);
   const dirty = useStore(isDirty);
-  const hasRight = useStore(s => s.selection.length > 0 && s.rightOpen);
   const menu = useMenu();
-  // In VS Code the editor tab already shows the file name and dirty state.
-  if (!file || inVsCode) return null;
+  if (!file) return null;
+  if (inVsCode)
+    return (
+      <span className="tb-file" title={file.path ?? file.name}>
+        <span className="tb-file-name">{file.name}</span>
+      </span>
+    );
   const items: MenuItem[] = [
     { label: 'New file', kbd: 'Ctrl+Alt+N', onClick: () => confirmDiscard() && useStore.getState().openDoc(newDocument(), { name: 'untitled.spen', path: null }) },
     { label: 'Open…', kbd: 'Ctrl+O', onClick: () => confirmDiscard() && useStore.getState().closeDoc() },
@@ -379,14 +387,10 @@ export function FilePill() {
   ];
   return (
     <>
-      <button
-        className={'island file-pill' + (hasRight ? '' : ' no-right')}
-        title={file.path ?? file.name}
-        onClick={e => menu.open({ anchor: (e.currentTarget as HTMLElement).getBoundingClientRect(), items, align: 'right' })}
-      >
+      <button className="tb-file" title={file.path ?? file.name} onClick={e => menu.open({ anchor: (e.currentTarget as HTMLElement).getBoundingClientRect(), items })}>
+        <span className="tb-file-name">{file.name}</span>
         {dirty && <span className="dot" title="Unsaved changes" />}
-        <span>{file.name}</span>
-        <ChevronDown />
+        <ChevronDown strokeWidth={2} />
       </button>
       {menu.node}
     </>
@@ -394,9 +398,8 @@ export function FilePill() {
 }
 
 /** Shows which AI session holds the edit lock on this file; click to revoke it. */
-export function LockChip() {
+function LockChip() {
   const locks = useStore(s => s.locks);
-  const hasRight = useStore(s => s.selection.length > 0 && s.rightOpen);
   const menu = useMenu();
   if (!locks.length) return null;
   const l = locks[0];
@@ -404,7 +407,7 @@ export function LockChip() {
   return (
     <>
       <button
-        className={'island file-pill' + (hasRight ? '' : ' no-right')}
+        className="tb-lock"
         title={`Locked for editing by AI session "${l.label}" · last active ${idle < 60 ? `${idle}s` : `${Math.round(idle / 60)}m`} ago`}
         onClick={e =>
           menu.open({
@@ -418,8 +421,8 @@ export function LockChip() {
           })
         }
       >
-        <Lock style={{ color: '#d946ef' }} />
-        <span>{l.label}</span>
+        <span className="dot" />
+        <span className="tb-lock-name">{l.label}</span>
       </button>
       {menu.node}
     </>
@@ -430,13 +433,11 @@ export function confirmDiscard() {
   return !isDirty(useStore.getState()) || confirm('Discard unsaved changes?');
 }
 
-/** The bottom-left bar: quick find for layers (pen.dev uses this spot for its AI prompt). */
-export function PromptBar() {
+/** Layer search of the left panel: type to find layers by name or text; Enter or a click selects and zooms to one. */
+export function LayerSearch({ onClose }: { onClose: () => void }) {
   const [q, setQ] = useState('');
-  const [focus, setFocus] = useState(false);
   const [active, setActive] = useState(0);
   const tree = useTree();
-  const inputRef = useRef<HTMLInputElement>(null);
   const results = useMemo(() => {
     if (!tree || !q.trim()) return [];
     const needle = q.toLowerCase();
@@ -454,9 +455,28 @@ export function PromptBar() {
     zoomToKeys([key], 2);
   };
   return (
-    <>
-      {focus && results.length > 0 && (
-        <div className="island find-results">
+    <div className="layer-search">
+      <div className="layer-search-box">
+        <Search strokeWidth={1.75} />
+        <input
+          autoFocus
+          placeholder="Find layers"
+          value={q}
+          onChange={e => {
+            setQ(e.target.value);
+            setActive(0);
+          }}
+          onKeyDown={e => {
+            e.stopPropagation();
+            if (e.key === 'ArrowDown') setActive(a => Math.min(a + 1, results.length - 1));
+            if (e.key === 'ArrowUp') setActive(a => Math.max(a - 1, 0));
+            if (e.key === 'Enter' && results[active]) go(results[active].key);
+            if (e.key === 'Escape') onClose();
+          }}
+        />
+      </div>
+      {results.length > 0 && (
+        <div className="find-results">
           {results.map((n, i) => {
             const { Icon, cls } = layerIconFor(n);
             return (
@@ -470,30 +490,7 @@ export function PromptBar() {
           })}
         </div>
       )}
-      <div className="island prompt-bar">
-        <input
-          ref={inputRef}
-          placeholder="Find layers…"
-          value={q}
-          onFocus={() => setFocus(true)}
-          onBlur={() => setFocus(false)}
-          onChange={e => {
-            setQ(e.target.value);
-            setActive(0);
-          }}
-          onKeyDown={e => {
-            e.stopPropagation();
-            if (e.key === 'ArrowDown') setActive(a => Math.min(a + 1, results.length - 1));
-            if (e.key === 'ArrowUp') setActive(a => Math.max(a - 1, 0));
-            if (e.key === 'Enter' && results[active]) go(results[active].key);
-            if (e.key === 'Escape') inputRef.current?.blur();
-          }}
-        />
-        <button className="prompt-send" onClick={() => results[active] && go(results[active].key)}>
-          <ArrowUp strokeWidth={3} />
-        </button>
-      </div>
-    </>
+    </div>
   );
 }
 
