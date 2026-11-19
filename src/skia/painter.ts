@@ -14,6 +14,7 @@ import { Scope, free, own } from './lifetime';
 import { familyList, fontBlocker, fontCollection, fontEpoch, fontStyleKey } from './fonts';
 import { getImage } from './images';
 import { iconLibrarySupported, iconPaths } from './icons';
+import { meshOf, tessellate } from '../render/mesh';
 
 export type Mat = [number, number, number, number, number, number];
 
@@ -222,24 +223,21 @@ function drawFill(r: Rec, world: Mat, f: any, x: number, y: number, w: number, h
     return;
   }
   if (f.type === 'mesh_gradient') {
-    // The DOM's three-gradient approximation: bottom row, top row, then a vertical fade to the bottom-right colour.
-    const cols: any[] = f.colors ?? [];
-    const n = num(f.columns, 2), m = num(f.rows, 2), op = num(f.opacity, 1);
-    if (cols.length < 4) {
-      paint.setColor(color(ck, cols[0], op));
-      c.drawRect(rect, paint);
-      return;
+    // The same patches as the DOM renderer's bitmap (render/mesh.ts), as coloured triangles.
+    const cols: string[] = (f.colors ?? []).map((cc: any) => (typeof cc === 'string' ? cc : ''));
+    if (!cols.length) return;
+    const t = tessellate(meshOf(f), cols, 12, num(f.opacity, 1));
+    const pos = new Float32Array(t.positions.length);
+    for (let i = 0; i < pos.length; i += 2) {
+      pos[i] = x + t.positions[i] * w;
+      pos[i + 1] = y + t.positions[i + 1] * h;
     }
-    const tl = color(ck, cols[0], op), tr = color(ck, cols[n - 1], op), bl = color(ck, cols[(m - 1) * n], op), br = color(ck, cols[m * n - 1], op);
-    const layers: [number[], number[], Float32Array[]][] = [
-      [[x, y], [x + w, y], [bl, br]],
-      [[x, y], [x + w, y], [tl, tr]],
-      [[x, y], [x, y + h], [ck.TRANSPARENT, br]],
-    ];
-    for (const [a, b, cs] of layers) {
-      paint.setShader(scope.own(ck.Shader.MakeLinearGradient(a, b, cs, [0, 1], ck.TileMode.Clamp, undefined, PREMUL), 'shader'));
-      c.drawRect(rect, paint);
-    }
+    const verts = scope.own(ck.MakeVertices(ck.VertexMode.Triangles, pos, null, t.colors, t.indices, true), 'vertices');
+    paint.setColor(ck.WHITE);
+    c.save();
+    c.clipRect(rect, ck.ClipOp.Intersect, true);
+    c.drawVertices(verts, ck.BlendMode.Dst, paint);
+    c.restore();
     return;
   }
   if (f.type === 'image' && f.url) {

@@ -1,4 +1,5 @@
 // Converts .pen fills, strokes and effects (already variable-resolved) into CSS / SVG paint.
+import { meshDataUrl } from './mesh';
 import type { CSSProperties } from 'react';
 
 export type RGBA = { r: number; g: number; b: number; a: number };
@@ -124,16 +125,11 @@ function angularCss(f: any): string {
   return `conic-gradient(from ${round(-num(f.rotation, 0))}deg at ${round(cx * 100)}% ${round(cy * 100)}%, ${stops(f)})`;
 }
 
+/** A mesh gradient as a CSS image: a small bitmap of its patches (render/mesh.ts), stretched over the box. */
 function meshCss(f: any): string {
-  const cols: string[] = (f.colors ?? []).map((c: any) => colorCss(c, num(f.opacity, 1)));
-  const n = num(f.columns, 2);
-  const m = num(f.rows, 2);
-  if (cols.length < 4) return `linear-gradient(${cols[0] ?? 'transparent'}, ${cols[0] ?? 'transparent'})`;
-  const tl = cols[0];
-  const tr = cols[n - 1];
-  const bl = cols[(m - 1) * n];
-  const br = cols[m * n - 1];
-  return `linear-gradient(to bottom, transparent, ${br}), linear-gradient(to right, ${tl}, ${tr}), linear-gradient(to right, ${bl}, ${br})`;
+  const cols: string[] = (f.colors ?? []).map((c: any) => colorCss(c));
+  if (!cols.length) return 'linear-gradient(transparent, transparent)';
+  return `url("${meshDataUrl(f, cols)}")`;
 }
 
 /**
@@ -178,9 +174,7 @@ export function fillToLayers(f: Fill, w: number, h: number, resolveUrl: UrlResol
       return [{ image: `url("${resolveUrl(f.url, { w, h, mode })}")`, size, position: 'center', repeat: 'no-repeat', blend }];
     }
     case 'mesh_gradient':
-      return meshCss(f)
-        .split(/,\s(?=linear)/)
-        .map(image => ({ image, blend }));
+      return [{ image: meshCss(f), size: '100% 100%', blend }];
     default:
       return [];
   }

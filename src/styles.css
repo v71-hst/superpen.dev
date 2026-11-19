@@ -1411,6 +1411,43 @@ button.tb-file:hover,
   padding: 0 12px;
 }
 
+/* Gradient handles on the canvas (ui/GradientEdit.tsx) and the mesh point picker in the paint popover. */
+.grad-edit {
+  pointer-events: none;
+}
+.grad-knob {
+  pointer-events: auto;
+  stroke: #fff;
+  stroke-width: 2;
+  filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.7));
+  cursor: grab;
+}
+.grad-knob.ring {
+  fill: rgba(255, 255, 255, 0.01);
+  cursor: move;
+}
+.grad-knob.on {
+  stroke: var(--sel);
+  stroke-width: 2.5;
+}
+.mesh-grid {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--control);
+  justify-items: center;
+}
+.mesh-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px #fff, 0 0 0 2.5px rgba(0, 0, 0, 0.35);
+}
+.mesh-dot.on {
+  box-shadow: 0 0 0 2px var(--sel), 0 0 0 3.5px #fff;
+}
+
 /* Image crop (ui/Crop.tsx): the whole picture faded, the layer's box as the window over it. */
 .crop-overlay {
   position: absolute;

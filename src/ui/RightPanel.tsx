@@ -768,6 +768,7 @@ function PaintSection({ n, p, set, theme, prop, title }: Ctx & { prop: 'fill' | 
           paint={list[editing.i]}
           theme={theme}
           allowImage={prop === 'fill'}
+          target={prop === 'fill' ? { key: n.key, index: editing.i } : undefined}
           onClose={() => setEditing(null)}
           onChange={np => write(list.map((x, j) => (j === editing.i ? np : x)), `paint-${prop}-${editing.i}`)}
         />

@@ -90,6 +90,8 @@ type State = {
   prevTool: Tool | null;
   /** The image fill being cropped on the canvas: the layer and the fill's index among its fills (ui/Crop.tsx). */
   crop: { key: string; index: number } | null;
+  /** The gradient fill whose handles are on the canvas (ui/GradientEdit.tsx): layer, fill index, selected stop or mesh point. */
+  gradientEdit: { key: string; index: number; point: number } | null;
 };
 
 type Actions = {
@@ -150,6 +152,7 @@ export const useStore = create<State & Actions>((set, get) => ({
   pickColor: null,
   prevTool: null,
   crop: null,
+  gradientEdit: null,
 
   openDoc: (doc, file) =>
     set({ doc, savedDoc: doc, file, past: [], future: [], selection: [], hover: null, editingKey: null, previewTheme: null, expanded: {}, lastMerge: null, view: fitViewForDoc(doc), stateView: null, pending: null, openComment: null }),

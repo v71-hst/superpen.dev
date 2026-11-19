@@ -27,6 +27,7 @@ import { snapMove, type Guides } from '../editor/snapping';
 import { addComment } from '../editor/comments';
 import { CanvasExtras } from './CanvasExtras';
 import { CropOverlay } from './Crop';
+import { GradientOverlay } from './GradientEdit';
 
 function unionRect(rs: Rect[]): Rect {
   const x0 = Math.min(...rs.map(r => r.x));
@@ -856,6 +857,7 @@ export function Canvas() {
       {tree && <Overlay tree={tree} onResizeStart={onResizeStart} draft={draft} />}
       {tree && <CanvasExtras tree={tree} draft={draft} onGapStart={onGapStart} dragging={!!drag.current} />}
       <CropOverlay />
+      <GradientOverlay />
       <AiPenLayer />
       {tool === 'pen' && penPoints.length > 0 && <PenPreview points={penPoints} hover={penHover} />}
     </div>

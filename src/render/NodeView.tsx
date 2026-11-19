@@ -7,6 +7,7 @@ import type { PenDoc, RNode } from '../model/types';
 import { deepResolve } from '../model/resolve';
 import { colorCss, effectList, fillList, fillsToBackground, imageTransform, isEnabled, linearEndpoints, normalizeStroke, primaryColor, type StrokeInfo, type UrlResolver } from './paint';
 import svgpath from 'svgpath';
+import { meshDataUrl } from './mesh';
 import { imageFillUrls, useImageEpoch, useImageVisibility } from './imageLod';
 import { ellipseGeometry, pathGeometry, polygonGeometry } from './geometry';
 import { ensureFont, ensureIconFont, weightNum } from './fonts';
@@ -578,6 +579,14 @@ function SvgPaint({ id, fill, w, h, resolveUrl }: { id: string; fill: any; w: nu
       </radialGradient>
     );
   }
+  if (fill.type === 'mesh_gradient') {
+    const cols = (fill.colors ?? []).map((c: any) => colorCss(c));
+    return cols.length ? (
+      <pattern id={id} patternUnits="userSpaceOnUse" width={w} height={h}>
+        <image href={meshDataUrl(fill, cols)} width={w} height={h} preserveAspectRatio="none" />
+      </pattern>
+    ) : null;
+  }
   if (fill.type === 'image' && fill.url) {
     const mode = fill.mode ?? 'cover';
     const t = imageTransform(fill);
@@ -595,7 +604,7 @@ function paintRef(fill: any, id: string): string {
   if (fill.type === 'color') return colorCss(fill.color);
   if (fill.type === 'gradient' && fill.gradientType === 'angular') return colorCss(fill.colors?.[0]?.color);
   if (fill.type === 'gradient' || fill.type === 'image') return `url(#${id})`;
-  if (fill.type === 'mesh_gradient') return colorCss(fill.colors?.[0]);
+  if (fill.type === 'mesh_gradient') return fill.colors?.length ? `url(#${id})` : 'none';
   return 'none';
 }
 

@@ -34,6 +34,9 @@ Optional fallback: "fit_content(200)". Children of layout frames ignore x/y unle
 ## Paint
 fill / stroke: "#RRGGBB" | "#RRGGBBAA" | "$variable" | array of paints (last paints on top) |
   { type: "gradient", gradientType: "linear"|"radial"|"angular", rotation (deg, CCW, 0 = up), colors: [{color, position 0..1}] } |
+  { type: "mesh_gradient", columns: 2..4, rows: 2..4, colors: [one per point, row by row], points?: [[x,y] | { position: [x,y],
+    leftHandle?, rightHandle?, topHandle?, bottomHandle? (relative offsets) }] } (points default to an even grid in 0..1;
+    keep the points on the edges where they are and move inner ones for soft, organic colour fields) |
   { type: "image", url: "./relative.png", mode: "cover"|"contain"|"stretch", transform?: [a,b,c,d,tx,ty] }.
   Image crop: transform is applied to the picture after it is fitted to the box, in units of the box
   ([2,0,0,2,-0.5,-0.5] zooms into the middle 2x; [2,0,0,1,-1,0] shows the right half). Omit it for no crop.

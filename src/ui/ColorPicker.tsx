@@ -140,10 +140,37 @@ function VariableList({ value, onPick, theme }: { value: any; onPick: (v: string
   );
 }
 
-export function PaintPopover({ anchor, paint, onChange, onClose, allowImage = true, theme }: { anchor: DOMRect; paint: any; onChange: (p: any) => void; onClose: () => void; allowImage?: boolean; theme: any }) {
+export function PaintPopover({
+  anchor,
+  paint,
+  onChange,
+  onClose,
+  allowImage = true,
+  theme,
+  target,
+}: {
+  anchor: DOMRect;
+  paint: any;
+  onChange: (p: any) => void;
+  onClose: () => void;
+  allowImage?: boolean;
+  theme: any;
+  /** The layer fill this popover edits: while it shows a gradient, its handles are on the canvas too. */
+  target?: { key: string; index: number };
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: -9999, top: 0 });
-  const [stop, setStop] = useState(0);
+  const [stop, setStopLocal] = useState(0);
+  // The selected stop (or mesh point) is shared with the handles on the canvas.
+  const canvasPoint = useStore(s => (target && s.gradientEdit?.key === target.key && s.gradientEdit.index === target.index ? s.gradientEdit.point : null));
+  useEffect(() => {
+    if (canvasPoint !== null) setStopLocal(canvasPoint);
+  }, [canvasPoint]);
+  const setStop = (i: number) => {
+    setStopLocal(i);
+    const ge = useStore.getState().gradientEdit;
+    if (ge && target && ge.key === target.key && ge.index === target.index) useStore.setState({ gradientEdit: { ...ge, point: i } });
+  };
   useLayoutEffect(() => {
     const h = ref.current!.offsetHeight;
     setPos({ left: Math.max(8, anchor.left - 252), top: Math.max(8, Math.min(anchor.top - 40, innerHeight - h - 8)) });
@@ -152,7 +179,8 @@ export function PaintPopover({ anchor, paint, onChange, onClose, allowImage = tr
     const down = (e: PointerEvent) => {
       // A canvas click while the eyedropper picks for this popover must not close it.
       if (useStore.getState().pickColor && !ref.current?.contains(e.target as Node)) return;
-      if (!ref.current?.contains(e.target as Node) && !(e.target as HTMLElement).closest?.('.swatch-btn')) onClose();
+      // The gradient's handles on the canvas belong to this popover.
+      if (!ref.current?.contains(e.target as Node) && !(e.target as HTMLElement).closest?.('.swatch-btn, .grad-edit')) onClose();
     };
     const key = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
@@ -173,7 +201,13 @@ export function PaintPopover({ anchor, paint, onChange, onClose, allowImage = tr
   }, [onClose]);
   useEffect(() => () => stopPicking(), []);
 
-  const kind = typeof paint === 'string' ? 'color' : paint?.type === 'gradient' ? (paint.gradientType ?? 'linear') : (paint?.type ?? 'color');
+  const kind = typeof paint === 'string' ? 'color' : paint?.type === 'gradient' ? (paint.gradientType ?? 'linear') : paint?.type === 'mesh_gradient' ? 'mesh' : (paint?.type ?? 'color');
+  const onCanvas = !!target && (kind === 'linear' || kind === 'radial' || kind === 'angular' || kind === 'mesh');
+  useEffect(() => {
+    if (!onCanvas || !target) return;
+    useStore.setState({ gradientEdit: { key: target.key, index: target.index, point: 0 } });
+    return () => useStore.setState({ gradientEdit: null });
+  }, [onCanvas, target?.key, target?.index]);
   const solidValue = typeof paint === 'string' ? paint : paint?.type === 'color' ? paint.color : '#000000';
   const setSolid = (c: string) => onChange(typeof paint === 'object' && paint?.type === 'color' ? { ...paint, color: c } : c);
 
@@ -184,6 +218,17 @@ export function PaintPopover({ anchor, paint, onChange, onClose, allowImage = tr
     if (k === 'color') return onChange(first);
     if (k === 'image') return onChange({ type: 'image', ...base, url: '', mode: 'cover' });
     if (k === 'shader') return onChange({ type: 'shader', ...base, url: '', uniforms: {} });
+    if (k === 'mesh') {
+      // Four corners from what was there: the first colour, the last, and two between.
+      const list: string[] = (paint?.colors ?? []).map((s: any) => (typeof s === 'string' ? s : s.color)).filter(Boolean);
+      const a = list[0] ?? (isVarRef(first) ? first : toHex({ ...(parseColor(first) ?? { r: 0, g: 0, b: 0, a: 1 }) }));
+      const b = list[list.length - 1] && list.length > 1 ? list[list.length - 1] : '#D946EF';
+      return onChange({ type: 'mesh_gradient', ...base, columns: 2, rows: 2, colors: [a, list[1] ?? '#3D99FF', list[2] ?? '#FFB86B', b] });
+    }
+    if (kind === 'mesh') {
+      const list: string[] = paint?.colors ?? [];
+      return onChange({ type: 'gradient', ...base, gradientType: k, rotation: 180, size: k === 'linear' ? { height: 1 } : { width: 1, height: 1 }, colors: [{ color: list[0] ?? '#000000', position: 0 }, { color: list[list.length - 1] ?? '#FFFFFF', position: 1 }] });
+    }
     const colors = paint?.colors ?? [
       { color: isVarRef(first) ? first : toHex({ ...(parseColor(first) ?? { r: 0, g: 0, b: 0, a: 1 }) }), position: 0 },
       { color: '#FFFFFF00', position: 1 },
@@ -230,6 +275,7 @@ export function PaintPopover({ anchor, paint, onChange, onClose, allowImage = tr
     { value: 'linear', label: 'Linear' },
     { value: 'radial', label: 'Radial' },
     { value: 'angular', label: 'Angular' },
+    { value: 'mesh', label: 'Mesh' },
     ...(allowImage ? [{ value: 'image', label: 'Image' }, { value: 'shader', label: 'Shader' }] : []),
   ];
 
@@ -280,6 +326,7 @@ export function PaintPopover({ anchor, paint, onChange, onClose, allowImage = tr
           )}
         </>
       )}
+      {kind === 'mesh' && <MeshControls paint={paint} onChange={onChange} point={stop} setPoint={setStop} theme={theme} resolveC={resolveC} />}
       {kind === 'shader' && <ShaderControls value={paint} theme={theme} onChange={nv => onChange({ ...paint, url: nv.url, uniforms: nv.uniforms })} />}
       {kind === 'image' && (
         <>
@@ -296,6 +343,60 @@ export function PaintPopover({ anchor, paint, onChange, onClose, allowImage = tr
   );
 }
 
+/** Mesh gradient: grid size, a picker of its points (the same ones drawn on the canvas) and the selected point's colour. */
+function MeshControls({ paint, onChange, point, setPoint, theme, resolveC }: { paint: any; onChange: (p: any) => void; point: number; setPoint: (i: number) => void; theme: any; resolveC: (c: any) => string }) {
+  const cols = Math.max(2, paint.columns ?? 2), rows = Math.max(2, paint.rows ?? 2);
+  const colors: string[] = paint.colors ?? [];
+  const cur = Math.min(point, cols * rows - 1);
+  const resize = (nc: number, nr: number) => {
+    // Colours of the new grid are read off the old one at the same relative places; the shape starts even again.
+    const at = (c: number, r: number) => colors[Math.round((r / (nr - 1)) * (rows - 1)) * cols + Math.round((c / (nc - 1)) * (cols - 1))] ?? colors[0] ?? '#000000';
+    const next: string[] = [];
+    for (let r = 0; r < nr; r++) for (let c = 0; c < nc; c++) next.push(at(c, r));
+    const { points, ...rest } = paint;
+    onChange({ ...rest, columns: nc, rows: nr, colors: next });
+    setPoint(0);
+  };
+  return (
+    <>
+      <div className="row-flex">
+        <Select
+          value={`${cols}x${rows}`}
+          options={[[2, 2], [3, 2], [3, 3], [4, 3], [4, 4]].map(([c, r]) => ({ value: `${c}x${r}`, label: `${c} × ${r} points` }))}
+          onChange={v => {
+            const [c, r] = v.split('x').map(Number);
+            resize(c, r);
+          }}
+        />
+        <NumberField label="%" value={Math.round((paint.opacity ?? 1) * 100)} min={0} max={100} onChange={v => onChange({ ...paint, opacity: v / 100 })} title="Opacity" />
+      </div>
+      <div className="mesh-grid" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
+        {Array.from({ length: cols * rows }, (_, i) => (
+          <button key={i} className={'mesh-dot' + (i === cur ? ' on' : '')} style={{ background: resolveC(colors[i]) }} title={`Point ${i + 1}`} onClick={() => setPoint(i)} />
+        ))}
+      </div>
+      <div className="row-flex">
+        <span className="sub-label" style={{ flex: 1, margin: 0 }}>
+          Point {cur + 1}: drag it and its handles on the canvas
+        </span>
+        <button
+          className="rp-btn"
+          style={{ padding: '0 8px' }}
+          disabled={!paint.points}
+          onClick={() => {
+            const { points, ...rest } = paint;
+            onChange(rest);
+          }}
+        >
+          Reset shape
+        </button>
+      </div>
+      <ColorArea value={colors[cur] ?? '#000000'} onChange={c => onChange({ ...paint, colors: Array.from({ length: cols * rows }, (_, i) => (i === cur ? c : (colors[i] ?? '#000000'))) })} theme={theme} />
+      <VariableList value={colors[cur]} onPick={c => onChange({ ...paint, colors: Array.from({ length: cols * rows }, (_, i) => (i === cur ? c : (colors[i] ?? '#000000'))) })} theme={theme} />
+    </>
+  );
+}
+
 export function paintSwatch(paint: any, doc: any, theme: any): string {
   const res = (c: any) => colorCss(isVarRef(c) ? resolveVariable(doc, c.slice(1), theme) : c);
   if (typeof paint === 'string') return res(paint);
@@ -304,6 +405,10 @@ export function paintSwatch(paint: any, doc: any, theme: any): string {
   if (paint.type === 'gradient') {
     const stops = (paint.colors ?? []).map((s: any) => `${res(s.color)} ${s.position * 100}%`).join(', ');
     return paint.gradientType === 'radial' ? `radial-gradient(${stops || 'transparent, transparent'})` : `linear-gradient(${180 - (paint.rotation ?? 0)}deg, ${stops || 'transparent, transparent'})`;
+  }
+  if (paint.type === 'mesh_gradient') {
+    const c: any[] = paint.colors ?? [];
+    return `linear-gradient(135deg, ${res(c[0])}, ${res(c[c.length - 1] ?? c[0])})`;
   }
   if (paint.type === 'image') return '#71717a';
   if (paint.type === 'shader') return 'conic-gradient(#f43f5e, #f59e0b, #22c55e, #3b82f6, #a855f7, #f43f5e)';

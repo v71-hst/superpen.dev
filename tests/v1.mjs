@@ -181,5 +181,63 @@ ok('a mask clips the layers after it', isGreen(inside) && !isGreen(corner), `ins
 ok('the mask layer itself paints nothing', !isRed(maskOnly) && !isGreen(maskOnly), String(maskOnly));
 if (shots) await page.screenshot({ path: `${shots}/v1-mask.png` });
 
+// ---------- Gradients: mesh rendering, and handles on the canvas ----------
+await ops([
+  { op: 'insert', parent: 'v1', node: { type: 'rectangle', id: 'v1mesh', x: 640, y: 300, width: 200, height: 200, fill: { type: 'mesh_gradient', columns: 2, rows: 2, colors: ['#FF0000', '#00FF00', '#0000FF', '#FFFFFF'] } } },
+  { op: 'insert', parent: 'v1', node: { type: 'rectangle', id: 'v1mesh3', x: 640, y: 40, width: 200, height: 200, fill: { type: 'mesh_gradient', columns: 3, rows: 3, colors: ['#000000', '#000000', '#000000', '#000000', '#FFFFFF', '#000000', '#000000', '#000000', '#000000'], points: [[0, 0], [0.5, 0], [1, 0], [0, 0.5], [0.25, 0.25], [1, 0.5], [0, 1], [0.5, 1], [1, 1]] } } },
+  { op: 'insert', parent: 'v1', node: { type: 'rectangle', id: 'v1grad', x: 300, y: 40, width: 160, height: 160, fill: { type: 'gradient', gradientType: 'linear', rotation: 0, colors: [{ color: '#000000', position: 0 }, { color: '#FFFFFF', position: 1 }] } } },
+]);
+await sleep(700);
+const tl = await px(650, 310), tr = await px(830, 310), bl = await px(650, 490), br = await px(830, 490);
+ok('a mesh gradient blends its corner colours', tl[0] > 190 && tl[1] < 70 && tr[1] > 190 && tr[0] < 70 && bl[2] > 190 && bl[0] < 70 && br[0] > 190 && br[1] > 190 && br[2] > 190, `tl ${tl} tr ${tr} bl ${bl} br ${br}`);
+const moved = await px(640 + 50, 40 + 50), middle = await px(640 + 150, 40 + 150);
+ok('a moved mesh point carries its colour with it', moved[0] > 200 && middle[0] < 60, `at the point ${moved} | far side ${middle}`);
+
+// Handles: the popover would set store.gradientEdit; here the test does.
+const knobAt = sel => ev(sel => { const r = document.querySelector(sel)?.getBoundingClientRect(); return r ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null; }, sel);
+await ev(() => window.__penStore.setState({ selection: ['v1grad'], gradientEdit: { key: 'v1grad', index: 0, point: 0 } }));
+await page.waitForSelector('[data-grad="end"]', { timeout: 5000 });
+let k = await knobAt('[data-grad="end"]');
+// The end handle sits 14 px beyond the gradient's end, which starts at the top middle (rotation 0 runs bottom to
+// top). Drag it so the end lands on the right middle: the handle then sits 14 px further along the new direction.
+await page.mouse.move(k.x, k.y);
+await page.mouse.down();
+await page.mouse.move(k.x + 40, k.y + 40, { steps: 3 });
+await page.mouse.move(k.x + 80 + 14 * Math.SQRT1_2, k.y + 14 + 80 - 14 * Math.SQRT1_2, { steps: 3 });
+await page.mouse.up();
+await frames();
+let g = (await node('v1grad')).fill;
+ok('dragging a linear gradient\'s end sets its angle, centre and length', Math.abs(g.rotation + 45) < 1 && Math.abs(g.center.x - 0.75) < 0.01 && Math.abs(g.center.y - 0.75) < 0.01 && Math.abs(g.size.height - 0.707) < 0.01, JSON.stringify({ rotation: g.rotation, center: g.center, size: g.size }));
+k = await knobAt('[data-grad="stop0"]');
+const kEnd = await knobAt('[data-grad="stop1"]');
+await page.mouse.move(k.x, k.y);
+await page.mouse.down();
+await page.mouse.move((k.x + kEnd.x) / 2, (k.y + kEnd.y) / 2, { steps: 4 });
+await page.mouse.up();
+await frames();
+g = (await node('v1grad')).fill;
+ok('dragging a stop along the line moves it', Math.abs(g.colors[0].position - 0.5) < 0.03, JSON.stringify(g.colors));
+await ev(() => window.__penStore.setState({ selection: ['v1mesh3'], gradientEdit: { key: 'v1mesh3', index: 0, point: 4 } }));
+await page.waitForSelector('[data-grad="point4"]', { timeout: 5000 });
+k = await knobAt('[data-grad="point4"]');
+await page.mouse.move(k.x, k.y);
+await page.mouse.down();
+await page.mouse.move(k.x + 30, k.y + 15, { steps: 3 });
+await page.mouse.move(k.x + 50, k.y + 30, { steps: 3 });
+await page.mouse.up();
+await frames();
+let mp = (await node('v1mesh3')).fill.points[4];
+ok('dragging a mesh point moves it', Math.abs(mp[0] - 0.5) < 0.01 && Math.abs(mp[1] - 0.4) < 0.01, JSON.stringify(mp));
+k = await knobAt('[data-grad="handle-right"]');
+await page.mouse.move(k.x, k.y);
+await page.mouse.down();
+await page.mouse.move(k.x + 10, k.y - 20, { steps: 4 });
+await page.mouse.up();
+await frames();
+mp = (await node('v1mesh3')).fill.points[4];
+ok('dragging a handle bends the patch (the handle is written to the file)', !!mp.position && Array.isArray(mp.rightHandle) && mp.rightHandle[1] < 0, JSON.stringify(mp));
+if (shots) await page.screenshot({ path: `${shots}/v1-gradients.png` });
+await ev(() => window.__penStore.setState({ selection: [], gradientEdit: null }));
+
 ok('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();
