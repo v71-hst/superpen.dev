@@ -28,6 +28,9 @@ import { addComment } from '../editor/comments';
 import { CanvasExtras } from './CanvasExtras';
 import { CropOverlay } from './Crop';
 import { GradientOverlay } from './GradientEdit';
+import { PathEditOverlay } from './PathEdit';
+import { serializePath, type Anchor } from '../editor/pathModel';
+import { pathBox } from '../render/geometry';
 
 function unionRect(rs: Rect[]): Rect {
   const x0 = Math.min(...rs.map(r => r.x));
@@ -55,7 +58,8 @@ type Drag =
   | { kind: 'gap'; key: string; sx: number; sy: number; start: number; horiz: boolean }
   | { kind: 'marquee'; sx: number; sy: number; scope: string | null; base: string[] }
   | { kind: 'resize'; key: string; handle: string; sx: number; sy: number; start: Rect; props: any; abs: boolean; /** Scale tool: the document node as it was when the drag began. */ scale?: { id: string; orig: PenNode } }
-  | { kind: 'draw'; tool: string; sx: number; sy: number; parent: string | null };
+  | { kind: 'draw'; tool: string; sx: number; sy: number; parent: string | null }
+  | { kind: 'pen'; sx: number; sy: number };
 
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 
@@ -128,7 +132,8 @@ export function Canvas() {
     gapLabel?: { key: string; value: number; x: number; y: number };
     scaleLabel?: { value: number; x: number; y: number };
   } | null>(null);
-  const [penPoints, setPenPoints] = useState<{ x: number; y: number }[]>([]);
+  // The pen tool's path so far: a click adds a corner, a click-and-drag a smooth point whose handles follow the drag.
+  const [penPoints, setPenPoints] = useState<Anchor[]>([]);
   const [penHover, setPenHover] = useState<{ x: number; y: number } | null>(null);
 
   const resolveUrl: UrlResolver = useMemo(() => {
@@ -187,11 +192,11 @@ export function Canvas() {
       setPenHover(null);
       useStore.setState({ tool: 'select' });
       if (pts.length < 2) return;
-      const x0 = Math.min(...pts.map(p => p.x));
-      const y0 = Math.min(...pts.map(p => p.y));
-      const x1 = Math.max(...pts.map(p => p.x));
-      const y1 = Math.max(...pts.map(p => p.y));
-      const geometry = 'M' + pts.map(p => `${fmt(p.x - x0)} ${fmt(p.y - y0)}`).join('L') + (close ? 'Z' : '');
+      // The outline's real extent (curves bulge past their anchors), then the shape relative to its top-left corner.
+      const [bx, by, bw, bh] = pathBox(serializePath([{ anchors: pts, closed: close }]));
+      const x0 = bx, y0 = by, x1 = bx + bw, y1 = by + bh;
+      const rel = (q?: { x: number; y: number }) => q && { x: q.x - x0, y: q.y - y0 };
+      const geometry = serializePath([{ closed: close, anchors: pts.map(a => ({ x: a.x - x0, y: a.y - y0, in: rel(a.in), out: rel(a.out) })) }]);
       const parent = containerAt(...worldToClient(pts[0]), new Set());
       const pr = parent ? worldRectOf(parent) : null;
       const s = useStore.getState();
@@ -329,7 +334,13 @@ export function Canvas() {
         if (Math.hypot(first.x - w.x, first.y - w.y) * s.view.zoom < 8) return finishPen(true);
       }
       if (e.detail >= 2 && penPoints.length >= 2) return finishPen(false);
+      // A second click on the point just placed ends the path (a double-click, whatever the event calls it).
+      const lastPt = penPoints[penPoints.length - 1];
+      if (lastPt && penPoints.length >= 2 && Math.hypot(lastPt.x - w.x, lastPt.y - w.y) * s.view.zoom < 6) return finishPen(false);
       setPenPoints(p => [...p, { x: Math.round(w.x), y: Math.round(w.y) }]);
+      // Keep the press: dragging before letting go pulls this point's handles out (a smooth point).
+      drag.current = { kind: 'pen', sx: e.clientX, sy: e.clientY };
+      capture(e);
       return;
     }
 
@@ -401,6 +412,10 @@ export function Canvas() {
       const n = tree.byKey.get(cur ?? '');
       if (n && n.type === 'text' && i === chain.length - 1) {
         useStore.setState({ editingKey: cur });
+        return;
+      }
+      if (n && n.type === 'path' && i === chain.length - 1) {
+        useStore.setState({ pathEdit: { key: cur } });
         return;
       }
       if (i >= 0 && i + 1 < chain.length) {
@@ -510,6 +525,16 @@ export function Canvas() {
     if (d.kind === 'pan') {
       markUserViewChange();
       s.setView({ x: d.vx + e.clientX - d.sx, y: d.vy + e.clientY - d.sy });
+      return;
+    }
+    if (d.kind === 'pen') {
+      if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 4) return;
+      const w = clientToWorld(e.clientX, e.clientY);
+      setPenPoints(pts => {
+        const last = pts[pts.length - 1];
+        if (!last) return pts;
+        return [...pts.slice(0, -1), { ...last, out: { x: w.x, y: w.y }, in: { x: 2 * last.x - w.x, y: 2 * last.y - w.y } }];
+      });
       return;
     }
     if (d.kind === 'marquee') {
@@ -858,6 +883,7 @@ export function Canvas() {
       {tree && <CanvasExtras tree={tree} draft={draft} onGapStart={onGapStart} dragging={!!drag.current} />}
       <CropOverlay />
       <GradientOverlay />
+      <PathEditOverlay />
       <AiPenLayer />
       {tool === 'pen' && penPoints.length > 0 && <PenPreview points={penPoints} hover={penHover} />}
     </div>
@@ -869,17 +895,27 @@ function isTyping(e: KeyboardEvent) {
   return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
 }
 
-function PenPreview({ points, hover }: { points: { x: number; y: number }[]; hover: { x: number; y: number } | null }) {
+function PenPreview({ points, hover }: { points: Anchor[]; hover: { x: number; y: number } | null }) {
   const view = useStore(s => s.view);
-  const pts = hover ? [...points, hover] : points;
-  const sp = (p: { x: number; y: number }) => `${view.x + p.x * view.zoom},${view.y + p.y * view.zoom}`;
+  const S = (p: { x: number; y: number }) => ({ x: view.x + p.x * view.zoom, y: view.y + p.y * view.zoom });
+  const P = (p: { x: number; y: number }) => `${S(p).x} ${S(p).y}`;
+  let d = points.length ? `M${P(points[0])}` : '';
+  for (let i = 1; i < points.length; i++) d += `C${P(points[i - 1].out ?? points[i - 1])} ${P(points[i].in ?? points[i])} ${P(points[i])}`;
+  const last = points[points.length - 1];
   return (
     <svg className="overlay" width="100%" height="100%">
-      <polyline points={pts.map(sp).join(' ')} fill="none" stroke="#3d99ff" strokeWidth={1.5} />
-      {points.map((p, i) => {
-        const [x, y] = sp(p).split(',').map(Number);
-        return <rect key={i} x={x - 3.5} y={y - 3.5} width={7} height={7} fill="#fff" stroke="#3d99ff" />;
-      })}
+      <path d={d} fill="none" stroke="#3d99ff" strokeWidth={1.5} />
+      {last && hover && <path d={`M${P(last)}C${P(last.out ?? last)} ${P(hover)} ${P(hover)}`} fill="none" stroke="#3d99ff" strokeWidth={1} strokeDasharray="3 3" />}
+      {last?.out && last.in && (
+        <>
+          <line x1={S(last.in).x} y1={S(last.in).y} x2={S(last.out).x} y2={S(last.out).y} stroke="#3d99ff" strokeWidth={1} />
+          <circle cx={S(last.in).x} cy={S(last.in).y} r={3} fill="#fff" stroke="#3d99ff" />
+          <circle cx={S(last.out).x} cy={S(last.out).y} r={3} fill="#fff" stroke="#3d99ff" />
+        </>
+      )}
+      {points.map((p, i) => (
+        <rect key={i} x={S(p).x - 3.5} y={S(p).y - 3.5} width={7} height={7} fill="#fff" stroke="#3d99ff" />
+      ))}
     </svg>
   );
 }

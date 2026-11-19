@@ -20,6 +20,7 @@ frame      container. layout: "none" (children use x/y) | "vertical" | "horizont
 group      plain container without its own box.
 rectangle, ellipse (innerRadius 0..1, startAngle, sweepAngle), polygon (polygonCount), line
 path       geometry: SVG path data; viewBox [x,y,w,h] maps it onto width×height.
+           (the user can edit its points by hand: double-click the path, or select it and press Enter)
 text       content, fontFamily (Google Fonts), fontSize, fontWeight ("400","600","bold"), lineHeight (multiplier),
            letterSpacing (px), textAlign, textAlignVertical, textGrowth:
              "auto" (no wrap; width/height ignored) | "fixed-width" (wraps, height grows) | "fixed-width-height".

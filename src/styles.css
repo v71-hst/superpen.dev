@@ -1411,6 +1411,32 @@ button.tb-file:hover,
   padding: 0 12px;
 }
 
+/* Point editing for paths (ui/PathEdit.tsx). */
+.path-edit {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+}
+.path-hit {
+  cursor: copy;
+}
+.path-anchor {
+  fill: #fff;
+  stroke: var(--sel);
+  stroke-width: 1.5;
+  cursor: move;
+}
+.path-anchor.on {
+  fill: var(--sel);
+  stroke: #fff;
+}
+.path-handle {
+  fill: #fff;
+  stroke: var(--sel);
+  stroke-width: 1.5;
+  cursor: grab;
+}
+
 /* Gradient handles on the canvas (ui/GradientEdit.tsx) and the mesh point picker in the paint popover. */
 .grad-edit {
   pointer-events: none;

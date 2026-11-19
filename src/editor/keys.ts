@@ -162,6 +162,7 @@ export function installShortcuts() {
         if (!n) return;
         e.preventDefault();
         if (n.type === 'text') return s.set({ editingKey: n.key });
+        if (n.type === 'path') return s.set({ pathEdit: { key: n.key } });
         if (n.children.length) return s.select(n.children.map(c => c.key));
         return;
       }

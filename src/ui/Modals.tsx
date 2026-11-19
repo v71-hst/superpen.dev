@@ -82,6 +82,8 @@ const SHORTCUTS: [string, [string, string][]][] = [
       ['Zoom to 100%', 'Shift 0'],
       ['Toggle sidebar', 'Ctrl \\'],
       ['Show frame rate (FPS)', 'F8'],
+      ['Edit a path\'s points', 'Enter / double-click'],
+      ['Distances to the hovered layer', 'Alt + hover'],
       ['Present', 'Ctrl Alt Enter'],
     ],
   ],

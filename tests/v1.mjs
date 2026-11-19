@@ -239,5 +239,72 @@ ok('dragging a handle bends the patch (the handle is written to the file)', !!mp
 if (shots) await page.screenshot({ path: `${shots}/v1-gradients.png` });
 await ev(() => window.__penStore.setState({ selection: [], gradientEdit: null }));
 
+// ---------- Pen tool: editing points, drawing curves ----------
+const model = await ev(async () => {
+  const m = await import('/src/editor/pathModel.ts');
+  const subs = m.parsePath('M10 10 h80 v60 q-40 30 -80 0 z');
+  const round = m.serializePath(m.parsePath(m.serializePath(subs)));
+  const tri = m.parsePath('M0 0L100 0L50 80Z');
+  const at = m.insertAnchor(tri[0], 0, 1, 0.5);
+  return { anchors: subs[0].anchors.length, closed: subs[0].closed, stable: round === m.serializePath(subs), curve: /C/.test(round), inserted: [at, tri[0].anchors.length, tri[0].anchors[at].x, tri[0].anchors[at].y] };
+});
+ok('path data parses into anchors and writes back unchanged', model.anchors === 4 && model.closed && model.stable && model.curve && JSON.stringify(model.inserted) === '[1,4,50,0]', JSON.stringify(model));
+
+await ops([{ op: 'insert', parent: 'v1', node: { type: 'path', id: 'v1path', x: 60, y: 440, width: 100, height: 80, geometry: 'M0 0L100 0L50 80Z', viewBox: [0, 0, 100, 80], stroke: '#FFFFFF', strokeWidth: 2 } }]);
+await ev(() => window.__penStore.setState({ selection: ['v1path'], pathEdit: { key: 'v1path' } }));
+await page.waitForSelector('[data-path-anchor="0-2"]', { timeout: 5000 });
+const dragBy = async (sel, dx, dy) => {
+  const k = await knobAt(sel);
+  await page.mouse.move(k.x, k.y);
+  await page.mouse.down();
+  await page.mouse.move(k.x + dx / 2, k.y + dy / 2, { steps: 3 });
+  await page.mouse.move(k.x + dx, k.y + dy, { steps: 3 });
+  await page.mouse.up();
+  await frames();
+};
+await dragBy('[data-path-anchor="0-2"]', 0, 40);
+let pn = await node('v1path');
+ok('dragging an anchor reshapes the path and its box follows', pn.height === 120 && pn.viewBox[3] === 120 && /50 120/.test(pn.geometry) && pn.x === 60 && pn.y === 440, JSON.stringify({ g: pn.geometry, vb: pn.viewBox, h: pn.height, x: pn.x }));
+await dragBy('[data-path-anchor="0-0"]', -20, 0);
+pn = await node('v1path');
+ok('moving a point past the left edge moves the layer, not the other points', pn.x === 40 && pn.width === 120 && pn.viewBox[0] === -20 && /-20 0/.test(pn.geometry), JSON.stringify({ g: pn.geometry, vb: pn.viewBox, w: pn.width, x: pn.x }));
+// Click the middle of the top side: a new point.
+const a0 = await knobAt('[data-path-anchor="0-0"]'), a1 = await knobAt('[data-path-anchor="0-1"]');
+await page.mouse.click((a0.x + a1.x) / 2, (a0.y + a1.y) / 2);
+await frames();
+ok('clicking the outline adds a point', (await ev(() => document.querySelectorAll('[data-path-anchor]').length)) === 4, (await node('v1path')).geometry);
+// The new point is selected: double-click makes it smooth, a handle bends the curve, Delete removes it.
+const mid = await knobAt('[data-path-anchor="0-1"]');
+await page.mouse.click(mid.x, mid.y, { clickCount: 2 });
+await frames();
+pn = await node('v1path');
+const hasHandles = await ev(() => document.querySelectorAll('[data-path-handle]').length);
+ok('double-clicking a point makes it smooth', /C/.test(pn.geometry) && hasHandles === 2, `${pn.geometry} | ${hasHandles} handles`);
+await dragBy('[data-path-handle="out"]', 0, -30);
+pn = await node('v1path');
+ok('dragging a handle bends the curve above the old top edge', pn.viewBox[1] < 0 && pn.y < 440, JSON.stringify({ vb: pn.viewBox, y: pn.y }));
+if (shots) await page.screenshot({ path: `${shots}/v1-path.png` });
+await page.keyboard.press('Delete');
+await frames();
+ok('Delete removes the selected point', (await ev(() => document.querySelectorAll('[data-path-anchor]').length)) === 3 && !!(await node('v1path')).geometry);
+await page.keyboard.press('Escape');
+await frames();
+ok('Escape ends point editing and keeps the layer', (await ev(() => window.__penStore.getState().pathEdit === null && !document.querySelector('.path-edit'))) && !!(await node('v1path')).id);
+
+// Drawing: a click, then a press-and-drag (a smooth point), then a double-click to finish.
+await ev(() => window.__penStore.setState({ selection: [], tool: 'pen' }));
+const base = { x: 200 + 300, y: 120 + 470 };
+await page.mouse.click(base.x, base.y);
+await page.mouse.move(base.x + 80, base.y - 40);
+await page.mouse.down();
+await page.mouse.move(base.x + 110, base.y - 40, { steps: 4 });
+await page.mouse.up();
+await page.mouse.click(base.x + 160, base.y);
+await page.mouse.click(base.x + 160, base.y);
+await frames();
+const drawn = await ev(() => { const s = window.__penStore.getState(); const find = (ns, id) => { for (const n of ns || []) { if (n.id === id) return n; const r = find(n.children, id); if (r) return r; } }; return find(s.doc.children, s.selection[0]); });
+ok('the pen tool draws curves when you drag', drawn?.type === 'path' && /C/.test(drawn.geometry) && drawn.width >= 150, JSON.stringify(drawn && { g: drawn.geometry, w: drawn.width, h: drawn.height }));
+await ev(() => window.__penStore.setState({ selection: [], tool: 'select' }));
+
 ok('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();

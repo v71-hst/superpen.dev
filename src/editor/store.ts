@@ -92,6 +92,8 @@ type State = {
   crop: { key: string; index: number } | null;
   /** The gradient fill whose handles are on the canvas (ui/GradientEdit.tsx): layer, fill index, selected stop or mesh point. */
   gradientEdit: { key: string; index: number; point: number } | null;
+  /** The path whose points are being edited on the canvas (ui/PathEdit.tsx). */
+  pathEdit: { key: string } | null;
 };
 
 type Actions = {
@@ -153,6 +155,7 @@ export const useStore = create<State & Actions>((set, get) => ({
   prevTool: null,
   crop: null,
   gradientEdit: null,
+  pathEdit: null,
 
   openDoc: (doc, file) =>
     set({ doc, savedDoc: doc, file, past: [], future: [], selection: [], hover: null, editingKey: null, previewTheme: null, expanded: {}, lastMerge: null, view: fitViewForDoc(doc), stateView: null, pending: null, openComment: null }),
