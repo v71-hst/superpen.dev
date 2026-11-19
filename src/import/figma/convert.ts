@@ -113,7 +113,12 @@ function base(n: FNode, type: string, parentLayout: Layout, ctx: ConvertCtx, box
       ctx.notes.add('luminance masks (marked maskType: "luminance"; drawn as ordinary masks)');
     }
   }
-  if (blendName(n.blendMode)) ctx.notes.add('layer blend modes (drawn as normal)');
+  const blend = blendName(n.blendMode);
+  if (blend) {
+    // Not something the editor draws yet; kept (named like a fill's blendMode) so that it can.
+    pen.blendMode = blend;
+    ctx.notes.add('layer blend modes (kept as blendMode on the layer; drawn as normal)');
+  }
   if (ctx.debug) pen.figmaBox = [num(n.transform?.m02), num(n.transform?.m12), num(n.size?.x), num(n.size?.y)];
   return pen;
 }
@@ -623,9 +628,14 @@ function convertKind(n: FNode, parentLayout: Layout, ctx: ConvertCtx, depth: num
       return pen;
     }
     default:
-      if (n.type && !SILENT.has(n.type)) ctx.notes.add(`${n.type.toLowerCase().replace(/_/g, ' ')} layers (left out)`);
+      noteLeftOut(n, ctx.notes);
       return null;
   }
+}
+
+/** Records a layer of a kind that has no .pen counterpart (FigJam stickies, slides, widgets and so on). */
+export function noteLeftOut(n: FNode, notes: Notes) {
+  if (n.type && !SILENT.has(n.type)) notes.add(`${n.type.toLowerCase().replace(/_/g, ' ')} layers (left out)`);
 }
 
 /** True for node types that become something on the canvas. */

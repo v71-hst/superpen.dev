@@ -137,12 +137,17 @@ function readKiwiBinary(bytes: Uint8Array): { magic: string; version: number; me
 export function readFig(bytes: Uint8Array): FigData {
   if (!isZip(bytes)) return { ...readKiwiBinary(bytes), archiveImages: new Set() };
   const archiveImages = new Set<string>();
-  const files = unzipSync(bytes, {
-    filter: f => {
-      if (f.name.startsWith('images/') && f.name.length > 7 && !f.name.endsWith('/')) archiveImages.add(f.name);
-      return f.name === 'canvas.fig';
-    },
-  });
+  let files: Record<string, Uint8Array>;
+  try {
+    files = unzipSync(bytes, {
+      filter: f => {
+        if (f.name.startsWith('images/') && f.name.length > 7 && !f.name.endsWith('/')) archiveImages.add(f.name);
+        return f.name === 'canvas.fig';
+      },
+    });
+  } catch {
+    throw new Error('The .fig file is damaged or incomplete (it cannot be unpacked).');
+  }
   const canvas = files['canvas.fig'];
   if (!canvas) throw new Error('This ZIP file is not a Figma file (there is no canvas.fig inside).');
   return { ...readKiwiBinary(canvas), archive: bytes, archiveImages };

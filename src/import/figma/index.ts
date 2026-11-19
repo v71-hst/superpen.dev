@@ -13,7 +13,7 @@
 // - Image fills point at "./images/<hash>.<ext>"; the files are returned in `images`.
 import type { PenNode } from '../../model/types';
 import { figmaClipboard, figmaClipboardMeta, isFigFile, readArchiveFiles, readClipboard, readFig, type FigData } from './container';
-import { convertNode, isConvertible, newContext, r2 } from './convert';
+import { convertNode, isConvertible, newContext, noteLeftOut, r2 } from './convert';
 import { colorHex, type ImageUse } from './paints';
 import { buildScene, type FNode, type Scene } from './scene';
 import { modeScope, type ModeScope } from './styles';
@@ -155,6 +155,7 @@ function convert(data: FigData, opts: FigmaImportOptions, fromClipboard: boolean
   const nodes: PenNode[] = [];
   const sections = new Map<string, string[]>();
   for (const page of chosen) {
+    for (const k of page.kids) if (!isConvertible(k)) noteLeftOut(k, notes);
     for (const t of topLevel(scene, page, flatten)) {
       ctx.modes = t.modes;
       const pen = convertNode(t.node, 'none', ctx);
