@@ -1,6 +1,8 @@
 // End-to-end checks for states, prototype, snapping, gap handles, comments, review mode, lint, find/replace,
 // mixed multi-select and the Roblox export.
 import puppeteer from 'puppeteer-core';
+import pngjs from 'pngjs';
+const { PNG } = pngjs;
 import { launchOptions } from './browser.mjs';
 const [, , url] = process.argv;
 const browser = await puppeteer.launch(launchOptions({ headless: true }));
@@ -17,8 +19,17 @@ const ev = (fn, ...a) => page.evaluate(fn, ...a);
 const frames = () => ev(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
 await ev(() => window.__penStore.getState().setView({ x: 100, y: 100, zoom: 1 }));
 await frames();
-const bg = k => ev(k => { const el = document.querySelector(`#pen-world [data-k="${k}"]`); return el && (getComputedStyle(el).backgroundImage.match(/rgb\([^)]+\)/)?.[0] ?? getComputedStyle(el).backgroundColor); }, k);
-const rect = k => ev(k => { const r = document.querySelector(`#pen-world [data-k="${k}"]`).getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; }, k);
+// Boxes come from measure.ts and colours from the element's style, or, for layers Skia draws (pen.renderer=full, no
+// element), from the screen pixel just inside the layer's left edge (clear of centred text).
+const rect = k => ev(async k => { const m = await import('/src/editor/measure.ts'); const r = m.nodeScreenRect(k); return { x: r.x, y: r.y, w: r.width, h: r.height }; }, k);
+const bg = async k => {
+  const css = await ev(k => { const el = document.querySelector(`#pen-world [data-k="${k}"]`); return el && (getComputedStyle(el).backgroundImage.match(/rgb\([^)]+\)/)?.[0] ?? getComputedStyle(el).backgroundColor); }, k);
+  if (css) return css;
+  const r = await rect(k);
+  await frames();
+  const png = PNG.sync.read(Buffer.from(await page.screenshot({ clip: { x: Math.round(r.x + 6), y: Math.round(r.y + r.h / 2), width: 1, height: 1 } })));
+  return `rgb(${png.data[0]}, ${png.data[1]}, ${png.data[2]})`;
+};
 
 // --- states
 check('instance default color', (await bg('inst')) === 'rgb(51, 102, 255)', await bg('inst'));
