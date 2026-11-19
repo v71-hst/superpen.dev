@@ -1,6 +1,6 @@
 // Left island: Layers / Sections / Slides / Components / Libraries tabs.
 import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronRight, Component, Eye, EyeOff, FileDown, Layers, LayoutGrid, Library, Monitor, Play, Plus, Search, Diamond } from 'lucide-react';
+import { ChevronRight, Component, Eye, EyeOff, FileDown, Layers, LayoutGrid, Library, Monitor, Play, Plus, Search, Diamond, Minus } from 'lucide-react';
 import { useStore, keySource, applyProps } from '../editor/store';
 import { useTree, type Tree } from '../editor/tree';
 import { displayName, allIds, newId, locate } from '../model/doc';
@@ -13,6 +13,10 @@ import { layerIconFor } from './common';
 import { printSlides } from './Present';
 import { sectionsOf, setAllSectionsHidden, setSectionHidden } from '../editor/sections';
 import { LayerSearch } from './Chrome';
+import { libraries } from '../model/libraries';
+import { addLibrary, removeLibrary, syncLibraries } from '../editor/libraries';
+import { inVsCode, request } from '../editor/host';
+import { workspaceInfo } from '../editor/fileio';
 
 export function LeftPanel() {
   const tab = useStore(s => s.leftTab);
@@ -419,16 +423,20 @@ function ComponentsTab({ tree }: { tree: Tree }) {
   const shown = comps.filter(c => displayName(c.props).toLowerCase().includes(q.toLowerCase()));
   const selection = useStore(s => s.selection);
 
-  const placeInstance = (comp: RNode, clientX?: number, clientY?: number) => {
+  const placeRef = (ref: string, clientX?: number, clientY?: number) => {
     const s = useStore.getState();
     const center = clientX !== undefined ? clientToWorld(clientX, clientY!) : clientToWorld(innerWidth / 2, innerHeight / 2);
     let id = '';
     s.edit(d => {
       id = newId(allIds(d));
-      d.children.push({ type: 'ref', id, ref: comp.key, x: Math.round(center.x), y: Math.round(center.y) });
+      d.children.push({ type: 'ref', id, ref, x: Math.round(center.x), y: Math.round(center.y) });
     });
     s.select([id]);
   };
+  const placeInstance = (comp: RNode, clientX?: number, clientY?: number) => placeRef(comp.key, clientX, clientY);
+  // Components of imported libraries (model/libraries.ts): a click or a drag puts an instance on the canvas.
+  useStore(s => s.assetVersion);
+  const libs = libraries();
 
   return (
     <div className="panel-scroll" style={{ padding: 0 }}>
@@ -467,7 +475,7 @@ function ComponentsTab({ tree }: { tree: Tree }) {
         </ThumbProvider>
       ) : comps.length ? (
         <div className="help-text">No components match “{q}”.</div>
-      ) : (
+      ) : libs.some(l => l.components.length) ? null : (
         <div className="help-text">
           <div style={{ color: 'var(--fg)', fontWeight: 600 }}>No components created yet.</div>
           <h4>Tip: Why Use Components</h4>
@@ -482,6 +490,39 @@ function ComponentsTab({ tree }: { tree: Tree }) {
           Copy the component on the canvas, or drag it from this list, to create an instance. Instances are marked with a violet bounding box when selected.
         </div>
       )}
+      {libs.map(l => {
+        const list = l.components.filter(c => String(c.name ?? c.id).toLowerCase().includes(q.toLowerCase()));
+        if (!list.length && !l.error) return null;
+        return (
+          <div key={l.alias} data-library={l.alias}>
+            <div className="lib-head">
+              {l.alias} <span>{l.uri}</span>
+            </div>
+            {l.error ? (
+              <div className="help-text">Could not load this library: {l.error}</div>
+            ) : (
+              <div className="lib-list">
+                {list.map(c => (
+                  <button
+                    key={c.id}
+                    className="lib-item"
+                    draggable
+                    title="Click to insert an instance · or drag it onto the canvas"
+                    onClick={() => placeRef(c.id)}
+                    onDragEnd={e => {
+                      const el = elementAtPoint(e.clientX, e.clientY);
+                      if (el?.closest('#pen-canvas') && !el.closest('.island')) placeRef(c.id, e.clientX, e.clientY);
+                    }}
+                  >
+                    <Component strokeWidth={1.75} />
+                    <span>{c.name ?? c.id.slice(l.alias.length + 1)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -490,14 +531,87 @@ function ComponentsTab({ tree }: { tree: Tree }) {
 
 function LibrariesTab() {
   const doc = useStore(s => s.doc);
+  const file = useStore(s => s.file);
+  useStore(s => s.assetVersion);
   const imports = Object.entries(doc?.imports ?? {});
   const themes = Object.entries(doc?.themes ?? {});
   const vars = Object.keys(doc?.variables ?? {});
+  const loaded = libraries();
+  const [path, setPath] = useState('');
+  const [files, setFiles] = useState<string[]>([]);
+  // Other designs that could be imported: asked from VS Code, or from the dev server's workspace listing.
+  useEffect(() => {
+    let off = false;
+    (async () => {
+      let list: string[] = [];
+      if (inVsCode) list = (await request<string[]>('listDesigns').catch(() => [])) ?? [];
+      else {
+        const info = await workspaceInfo();
+        const dir = file?.path && file.path.includes('/') ? file.path.slice(0, file.path.lastIndexOf('/') + 1) : '';
+        list = (info?.files ?? []).filter(f => f !== file?.path && f.startsWith(dir)).map(f => './' + f.slice(dir.length));
+      }
+      if (!off) setFiles(list.filter(f => !imports.some(([, u]) => u === f)));
+    })();
+    return () => {
+      off = true;
+    };
+  }, [file?.path, imports.length]);
+  const add = (uri: string) => {
+    const u = uri.trim();
+    if (!u) return;
+    addLibrary(u);
+    setPath('');
+  };
   return (
     <div className="panel-scroll" style={{ padding: 0 }}>
       <div className="help-text">
         <h4 style={{ marginTop: 4 }}>Imported libraries</h4>
-        {imports.length ? imports.map(([alias, uri]) => <div key={alias}>{alias} → {uri}</div>) : <div>This file does not import any libraries.</div>}
+        {imports.length ? (
+          imports.map(([alias, uri]) => {
+            const l = loaded.find(x => x.alias === alias);
+            return (
+              <div key={alias} className="lib-row" data-import={alias}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ color: 'var(--fg)', fontWeight: 600 }}>{alias}</div>
+                  <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {String(uri)} · {l ? (l.error ? 'not loaded' : `${l.components.length} component${l.components.length === 1 ? '' : 's'}`) : 'loading…'}
+                  </div>
+                </div>
+                <button className="icon-btn" title="Remove this import (instances of its components will show as missing)" onClick={() => removeLibrary(alias)}>
+                  <Minus />
+                </button>
+              </div>
+            );
+          })
+        ) : (
+          <div>A library is another design file whose components you use here. Change a component in the library and every file that imports it follows.</div>
+        )}
+      </div>
+      {files.length > 0 && (
+        <div className="lib-list" style={{ marginTop: 8 }}>
+          {files.slice(0, 30).map(f => (
+            <button key={f} className="lib-item" title={`Import ${f}`} onClick={() => add(f)}>
+              <Plus strokeWidth={1.75} />
+              <span>{f.replace(/^\.\//, '')}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="search-box" style={{ marginTop: 8 }}>
+        <input
+          placeholder="Path to a .spen / .pen file, relative to this one"
+          value={path}
+          onChange={e => setPath(e.target.value)}
+          onKeyDown={e => {
+            e.stopPropagation();
+            if (e.key === 'Enter') add(path);
+          }}
+        />
+      </div>
+      <button className="wide-btn" onClick={() => (path.trim() ? add(path) : void syncLibraries(true).then(() => useStore.getState().notify('Libraries reloaded')))}>
+        {path.trim() ? 'Import library' : 'Reload libraries'}
+      </button>
+      <div className="help-text">
         <h4>Variables</h4>
         <div>
           {vars.length} variable{vars.length === 1 ? '' : 's'}

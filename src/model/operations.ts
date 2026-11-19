@@ -1,5 +1,6 @@
 // Agent-facing document operations (atomic batches) and compact read views (outline, search, node JSON).
 import type { PenDoc, PenNode, RNode } from './types';
+import { libraryNode } from './libraries';
 import { scaleSubtree } from './scale';
 import { allIds, cloneWithNewIds, displayName, indexDoc, locate, newId } from './doc';
 import { applyProps, keySource } from '../editor/store';
@@ -174,9 +175,10 @@ export function applyOperations(d: PenDoc, ops: Operation[]): { results: OpResul
       }
       case 'instantiate': {
         if (typeof o.component !== 'string') fail(i, 'instantiate needs "component" (id of a reusable node)');
-        const comp = locate(d, o.component);
-        if (!comp) fail(i, `component "${o.component}" not found`);
-        if (!comp.node.reusable) fail(i, `node "${o.component}" is not a component (set reusable: true on it first)`);
+        // A component of this file, or "alias:id" from an imported library.
+        const compNode = locate(d, o.component)?.node ?? libraryNode(o.component);
+        if (!compNode) fail(i, `component "${o.component}" not found${o.component.includes(':') ? ' (is the library imported? see list_components)' : ''}`);
+        if (!compNode.reusable) fail(i, `node "${o.component}" is not a component (set reusable: true on it first)`);
         const id = newId(ids);
         ids.add(id);
         const node: PenNode = { type: 'ref', id, ref: o.component, ...cleanProps(o.props ?? {}) };

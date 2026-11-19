@@ -339,5 +339,38 @@ ok('Clear empties it again', slotKids.length === 0);
 if (shots) await page.screenshot({ path: `${shots}/v1-slots.png` });
 await ev(() => window.__penStore.setState({ selection: [] }));
 
+// ---------- UI libraries: components of another file ----------
+// The library is a real file next to the open one (written through the dev server), imported under the alias "kit".
+const libDoc = { version: '2.21', variables: { accent: { type: 'color', value: '#FF00FF' } }, children: [
+  { type: 'frame', id: 'badge', name: 'Badge', reusable: true, x: 0, y: 0, width: 60, height: 20, cornerRadius: 4, fill: '$accent' },
+  { type: 'frame', id: 'row', name: 'Row', reusable: true, x: 0, y: 60, width: 160, height: 40, layout: 'horizontal', alignItems: 'center', padding: 10, fill: '#202530', children: [{ type: 'ref', id: 'b1', ref: 'badge' }] },
+] };
+const libPath = new URL(url).searchParams.get('file').replace(/[^/]+$/, '') + 'v1-lib.spen';
+const wrote = await ev(async (path, text) => (await fetch(`/api/file?path=${encodeURIComponent(path)}`, { method: 'PUT', body: text })).ok, libPath, JSON.stringify(libDoc));
+await ev(() => window.__penStore.getState().edit(d => { d.imports = { kit: './v1-lib.spen' }; }));
+let listed = [];
+for (let i = 0; i < 40 && !listed.some(c => /kit:row/.test(c)); i++) {
+  await sleep(150);
+  listed = await ev(() => window.__penAgent('components', {}));
+}
+ok('an imported library\'s components are listed', wrote && listed.some(c => /#kit:row/.test(c)) && listed.some(c => /#kit:badge/.test(c)), JSON.stringify(listed.filter(c => /kit/.test(c))));
+const made = await ops([{ op: 'instantiate', component: 'kit:row', parent: 'v1', props: { x: 40, y: 780 } }]);
+const libInst = made.results?.[0]?.id ?? made[0]?.id;
+await ev(() => window.__penStore.setState({ selection: [], hover: null }));
+await sleep(500);
+const badgeRect = await rect(`${libInst}/kit:b1`);
+const badgePx = await px(40 + 10 + 30, 780 + 20);
+ok('an instance of a library component renders, with its nested component and its variables', !!badgeRect && Math.round(badgeRect.w) === 60 && badgePx[0] > 200 && badgePx[1] < 60 && badgePx[2] > 200, JSON.stringify({ badgeRect, badgePx }));
+// The Components tab offers them: a click puts an instance on the canvas.
+await ev(() => window.__penStore.setState({ leftOpen: true, leftTab: 'components' }));
+await page.waitForSelector('[data-library="kit"] .lib-item', { timeout: 5000 });
+const before = await ev(() => window.__penStore.getState().doc.children.length);
+await ev(() => document.querySelector('[data-library="kit"] .lib-item').click());
+await frames();
+const placed = await ev(() => { const s = window.__penStore.getState(); const n = s.doc.children[s.doc.children.length - 1]; return { count: s.doc.children.length, ref: n.ref, selected: s.selection[0] === n.id }; });
+ok('the Components tab inserts a library component', placed.count === before + 1 && /^kit:/.test(placed.ref) && placed.selected, JSON.stringify(placed));
+if (shots) await page.screenshot({ path: `${shots}/v1-libraries.png` });
+await ev(() => window.__penStore.setState({ leftOpen: false, selection: [] }));
+
 ok('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();

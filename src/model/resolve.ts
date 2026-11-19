@@ -1,6 +1,7 @@
 // Variable/theme resolution and expansion of `ref` (component instance) nodes into render trees.
 import type { PenDoc, PenNode, RNode, Theme } from './types';
 import { indexDoc, type NodeIndex } from './doc';
+import { libraryEpoch, libraryNode, libraryVariable } from './libraries';
 
 // ---------- variables & themes ----------
 
@@ -27,7 +28,8 @@ function pickThemed(value: any, theme: Theme): any {
 }
 
 export function resolveVariable(doc: PenDoc, name: string, theme: Theme, depth = 0): any {
-  const def = doc.variables?.[name];
+  // "alias:name" is a variable of an imported library.
+  const def = doc.variables?.[name] ?? libraryVariable(name);
   if (!def || depth > 16) return undefined;
   const v = pickThemed(def.value, theme);
   if (typeof v === 'string' && v.startsWith('$')) {
@@ -114,9 +116,10 @@ export function withState(node: PenNode, state: string): PenNode {
 
 /** Builds the plain template tree an instance renders: component content with overrides applied. */
 export function materializeRef(ref: PenNode, idx: NodeIndex, visited: Set<string> = new Set()): PenNode | null {
-  const comp = idx.byId.get(ref.ref);
-  if (!comp || visited.has(comp.id)) return null;
-  const nextVisited = new Set(visited).add(comp.id);
+  // A component of this document, or "alias:id" from an imported library.
+  const comp = idx.byId.get(ref.ref) ?? libraryNode(ref.ref);
+  if (!comp || visited.has(ref.ref)) return null;
+  const nextVisited = new Set(visited).add(ref.ref);
   const template = comp.type === 'ref' ? materializeRef(comp, idx, nextVisited) : comp;
   if (!template) return null;
   const st: ComponentState | undefined = typeof ref.state === 'string' && ref.state ? (comp.states ?? template.states)?.[ref.state] : undefined;
@@ -180,6 +183,7 @@ export class TreeBuilder {
   /** A component shown (and edited) in one of its states on the canvas. */
   stateView: { comp: string; state: string } | null = null;
   private stateSig = '';
+  private libSig = -1;
   idx!: NodeIndex;
 
   private containsScript(n: PenNode, depth = 0): boolean {
@@ -187,7 +191,7 @@ export class TreeBuilder {
     if (f !== undefined) return f;
     f = n.type === 'script' || (depth < 24 && (n.children ?? []).some(c => c && typeof c === 'object' && this.containsScript(c, depth + 1)));
     if (!f && n.type === 'ref' && depth < 24) {
-      const comp = this.idx.byId.get(n.ref);
+      const comp = this.idx.byId.get(n.ref) ?? libraryNode(n.ref);
       f = !!comp && comp !== n && this.containsScript(comp, depth + 1);
     }
     this.scriptFlags.set(n, f);
@@ -224,8 +228,9 @@ export class TreeBuilder {
     // Instances depend on component content, so any component change invalidates cached subtrees.
     // A state preview changes how its component's ancestors render too, so it invalidates cached subtrees.
     const sv = this.stateView ? `${this.stateView.comp}\u0000${this.stateView.state}` : '';
-    if (comps.length !== this.compSig.length || comps.some((c, i) => c !== this.compSig[i]) || doc.variables !== this.varsRef || sv !== this.stateSig) {
+    if (comps.length !== this.compSig.length || comps.some((c, i) => c !== this.compSig[i]) || doc.variables !== this.varsRef || sv !== this.stateSig || this.libSig !== libraryEpoch()) {
       this.cache = new WeakMap();
+      this.libSig = libraryEpoch();
       this.compSig = comps;
       this.varsRef = doc.variables;
       this.stateSig = sv;

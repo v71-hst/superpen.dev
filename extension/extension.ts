@@ -356,6 +356,27 @@ class PenEditorProvider implements vscode.CustomTextEditorProvider {
             post({ type: 'response', id: m.id, result: ok });
             break;
           }
+          case 'listDesigns': {
+            // Other designs in the workspace, as paths relative to this one (for importing them as libraries).
+            let result: string[] = [];
+            try {
+              const found = await vscode.workspace.findFiles('**/*.{spen,pen}', '**/node_modules/**', 300);
+              const from = docDir.path.endsWith('/') ? docDir.path : docDir.path + '/';
+              result = found
+                .filter(u => u.toString() !== document.uri.toString())
+                .map(u => {
+                  const a = from.split('/').filter(Boolean), b = u.path.split('/').filter(Boolean);
+                  let i = 0;
+                  while (i < a.length && i < b.length - 1 && a[i].toLowerCase() === b[i].toLowerCase()) i++;
+                  return (i === a.length ? './' : '../'.repeat(a.length - i)) + b.slice(i).join('/');
+                })
+                .sort();
+            } catch {
+              result = [];
+            }
+            post({ type: 'response', id: m.id, result });
+            break;
+          }
           case 'notify':
             vscode.window.showInformationMessage(String(m.text));
             break;

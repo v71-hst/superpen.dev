@@ -1,5 +1,6 @@
 // Handles MCP requests forwarded by the extension: reads, atomic edits, screenshots, layout checks, exports.
 import { useStore } from './store';
+import { libraries } from '../model/libraries';
 import { rasterize } from '../render/rasterize';
 import { canvasSnapshot, recentLog, uiSnapshot } from './diagnostics';
 import { blankBitmapsOnCanvas, lodStats } from './lod';
@@ -299,11 +300,17 @@ export async function handleAgentRequest(method: string, params: any): Promise<a
       flushEdits();
       return { ok: true, count: Object.keys(useStore.getState().doc?.variables ?? {}).length };
     }
-    case 'components':
-      return [...tree.byKey.values()].filter(n => n.isComponent && !n.inInstance).map(n => {
+    case 'components': {
+      const own = [...tree.byKey.values()].filter(n => n.isComponent && !n.inInstance).map(n => {
         const inst = [...tree.byKey.values()].filter(x => x.instanceOf === n.key).length;
         return `${describe(n)} — ${inst} instance(s)`;
       });
+      // Components of imported libraries: instantiate them by their "alias:id".
+      const fromLibs = libraries().flatMap(l =>
+        l.error ? [`library "${l.alias}" (${l.uri}) did not load: ${l.error}`] : l.components.map(c => `${c.type} "${c.name ?? c.id}" #${c.id} — from library "${l.alias}" (${l.uri})`),
+      );
+      return [...own, ...fromLibs];
+    }
     case 'selection':
       return s.selection.map(k => {
         const n = tree.byKey.get(k);

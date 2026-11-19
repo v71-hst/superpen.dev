@@ -17,6 +17,7 @@ import { installDiagnostics } from './editor/diagnostics';
 import { resetLod } from './editor/lod';
 import { resetImages } from './render/imageLod';
 import { installPerf } from './editor/perf';
+import { installLibraries } from './editor/libraries';
 
 function EditorCrashed({ error, reset }: { error: Error; reset: () => void }) {
   return (
@@ -53,6 +54,7 @@ export function App() {
   }, [uiTheme]);
 
   useEffect(() => installPerf(), []);
+  useEffect(() => installLibraries(), []);
 
   // Open ?file=… on startup.
   useEffect(() => {

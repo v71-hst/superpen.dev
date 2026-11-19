@@ -5,6 +5,7 @@ import { TreeBuilder, defaultTheme, indexTree } from '../model/resolve';
 import { onAssetsChanged, setScriptNotifier } from '../render/scripts';
 import { scriptState } from './scriptHost';
 import type { RNode, Theme } from '../model/types';
+import { libraryEpoch } from '../model/libraries';
 
 const builder = new TreeBuilder();
 
@@ -27,17 +28,17 @@ export type Tree = {
   theme: Theme;
 };
 
-let last: { doc: any; theme: any; epoch: number; stateView: any; tree: Tree } | null = null;
+let last: { doc: any; theme: any; epoch: number; libs: number; stateView: any; tree: Tree } | null = null;
 
 export function buildTree(doc: any, preview: Theme | null): Tree {
   const stateView = useStore.getState().stateView;
-  if (last && last.doc === doc && last.theme === preview && last.epoch === builder.scriptEpoch && last.stateView === stateView) return last.tree;
+  if (last && last.doc === doc && last.theme === preview && last.epoch === builder.scriptEpoch && last.libs === libraryEpoch() && last.stateView === stateView) return last.tree;
   const theme = { ...defaultTheme(doc), ...(preview ?? {}) };
   builder.stateView = stateView;
   const roots = builder.build(doc, theme);
   const { byKey, parent } = indexTree(roots);
   const tree = { roots, byKey, parent, theme };
-  last = { doc, theme: preview, epoch: builder.scriptEpoch, stateView, tree };
+  last = { doc, theme: preview, epoch: builder.scriptEpoch, libs: libraryEpoch(), stateView, tree };
   return tree;
 }
 

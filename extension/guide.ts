@@ -56,6 +56,9 @@ Themed values: "value": [ { "value": "#FFF" }, { "value": "#111", "theme": { "Mo
 ## Components
 Mark any node reusable: true to make it a component. Instantiate with the "instantiate" op.
 Nodes inside an instance have ids like "<instanceId>/<childId>"; "update" on such an id stores an override.
+Libraries: "imports": { "<alias>": "./other-file.spen" } at the top level makes that file's components usable here.
+list_components lists them with ids like "<alias>:<id>"; instantiate them by that id ("component": "kit:button").
+Their nested components and variables come with them. A library's components are edited in the library file.
 Slots: a frame inside a component with slot: [] (or slot: ["<suggested component id>", ...]) is a place each instance
 fills with its own content. Fill it with children replacement: instantiate with
   "overrides": { "<slotId>": { "children": [ { "type": "ref", "ref": "<component id>" }, { "type": "text", ... } ] } }
