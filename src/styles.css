@@ -1411,6 +1411,29 @@ button.tb-file:hover,
   padding: 0 12px;
 }
 
+/* F8: frame rate, bottom left, out of the way. */
+.fps {
+  position: fixed;
+  left: 8px;
+  bottom: 6px;
+  z-index: 15;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 12px;
+  color: #3ddc84;
+  pointer-events: none;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
+}
+.fps.with-left {
+  left: calc(var(--panel-w) + 8px);
+}
+html.light .fps {
+  color: #0a8f47;
+  text-shadow: 0 0 2px rgba(255, 255, 255, 0.9);
+}
+
 .toast {
   position: fixed;
   left: 50%;

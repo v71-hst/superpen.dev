@@ -1,6 +1,6 @@
 // Editor chrome: the top bar (sidebar toggle, file name, tools, AI lock, zoom menu, Present), the Sections viewer
 // bar, the layer search of the left panel, and toasts.
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
   ChevronLeft,
@@ -503,6 +503,62 @@ export function LayerSearch({ onClose }: { onClose: () => void }) {
       )}
     </div>
   );
+}
+
+/**
+ * F8 shows a small frame-rate readout at the bottom left (remembered). It counts the animation frames the page got in
+ * the last half second, so it shows what the editor's main thread manages: the screen's refresh rate when nothing
+ * holds it up. Nothing runs while it is off.
+ */
+export function FpsMeter() {
+  const [on, setOn] = useState(() => {
+    try {
+      return localStorage.getItem('pen.fps') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const leftOpen = useStore(s => s.leftOpen);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'F8' || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+      e.preventDefault();
+      setOn(v => {
+        try {
+          localStorage.setItem('pen.fps', v ? '0' : '1');
+        } catch {
+          // Storage blocked: the choice lasts for this session.
+        }
+        return !v;
+      });
+    };
+    window.addEventListener('keydown', key, true);
+    return () => window.removeEventListener('keydown', key, true);
+  }, []);
+  useEffect(() => {
+    if (!on) return;
+    let frame = 0;
+    let frames = 0;
+    let since = performance.now();
+    const tick = (now: number) => {
+      frames++;
+      if (now - since >= 500) {
+        // Written straight to the element: a React render twice a second would itself show up in the number.
+        if (ref.current) ref.current.textContent = `${Math.round((frames * 1000) / (now - since))} FPS`;
+        frames = 0;
+        since = now;
+      }
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [on]);
+  return on ? (
+    <div ref={ref} className={'fps' + (leftOpen ? ' with-left' : '')} title="Frames per second (F8 hides it)">
+      – FPS
+    </div>
+  ) : null;
 }
 
 export function Toast() {

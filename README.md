@@ -131,6 +131,7 @@ How working together goes:
 - **Performance mode** (in the zoom menu), for PCs with little memory or a weak GPU: pictures
   use half the resolution, shader animation runs slower, and designs in background tabs let go of their frames. It
   turns on by itself the first time on PCs with 16 GB of memory or less.
+- **Frame rate.** Press **F8** for a small FPS readout at the bottom left; press it again to hide it.
 - **Measure it.** Ask your chat to "run the benchmark": it times zooming and panning on your own design and reports
   the numbers.
 
@@ -167,6 +168,7 @@ How working together goes:
   panels are attached to the window edges; colours are neutral with a single blue accent. Less-used tools (notes,
   variables, find & replace, lint, review mode, shortcuts, settings) are under the **…** button, and performance
   mode and the Sections viewer are in the zoom menu.
+- **F8** shows a small frame-rate (FPS) readout at the bottom left.
 - New MCP tools: `benchmark` (times zooming and panning on your own design) and `set_renderer` (switches between the
   new renderer and the previous one).
 - New banner and icon, and this README was rewritten.

@@ -42,6 +42,16 @@ for (const scheme of ['dark', 'light']) {
     await page.keyboard.type('hero');
     await sleep(400);
     await shot(page, 'search');
+    // F8: the frame-rate readout (bottom left), on and off again.
+    await page.keyboard.press('Escape');
+    await page.mouse.click(700, 500);
+    await page.keyboard.press('F8');
+    await sleep(1300);
+    const fps = await page.evaluate(() => document.querySelector('.fps')?.textContent ?? null);
+    await shot(page, 'fps');
+    await page.keyboard.press('F8');
+    await sleep(200);
+    console.log(`F8 readout: ${fps}; hidden again: ${await page.evaluate(() => !document.querySelector('.fps'))}`);
     await page.evaluate(() => window.__penStore.setState({ leftOpen: false, selection: [] }));
     await page.setViewport({ width: 640, height: 700 });
     await sleep(600);

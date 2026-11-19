@@ -6,7 +6,7 @@ import { zoomToFit } from './editor/ops';
 import { Canvas } from './ui/Canvas';
 import { LeftPanel } from './ui/LeftPanel';
 import { RightPanel } from './ui/RightPanel';
-import { SectionBar, Toast, TopBar } from './ui/Chrome';
+import { FpsMeter, SectionBar, Toast, TopBar } from './ui/Chrome';
 import { Modals } from './ui/Modals';
 import { Home } from './ui/Home';
 import { Presenter } from './ui/Present';
@@ -136,6 +136,7 @@ export function App() {
       <Modals />
       <Presenter />
       <Toast />
+      <FpsMeter />
       {dragging && <div className="drop-hint">Drop a .spen or .pen file to open it</div>}
     </div>
   );

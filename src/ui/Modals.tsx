@@ -81,6 +81,7 @@ const SHORTCUTS: [string, [string, string][]][] = [
       ['Zoom to selection', 'Shift 2'],
       ['Zoom to 100%', 'Shift 0'],
       ['Toggle sidebar', 'Ctrl \\'],
+      ['Show frame rate (FPS)', 'F8'],
       ['Present', 'Ctrl Alt Enter'],
     ],
   ],
