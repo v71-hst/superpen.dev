@@ -2,7 +2,7 @@
 // .spen (Superpencil, the default for new files) and .pen (pen.dev) hold the same JSON, so either converts losslessly.
 import type { PenDoc } from '../model/types';
 import { useStore, isDirty } from './store';
-import { flushEdits, inVsCode, post, vscodeBaseUri } from './host';
+import { blobToDataUrl, flushEdits, inVsCode, post, request, vscodeBaseUri } from './host';
 
 export const serverAvailable = (async () => {
   if (typeof (globalThis as any).acquireVsCodeApi === 'function') return false;
@@ -227,6 +227,23 @@ export async function reloadFromDisk() {
   const text = await fetch(`/api/file?path=${encodeURIComponent(s.file.path)}`).then(r => r.text());
   const st = await fetch(`/api/stat?path=${encodeURIComponent(s.file.path)}`).then(x => x.json());
   useStore.getState().replaceDocFromDisk(parsePen(text), st.mtime);
+}
+
+/**
+ * Writes a file next to the open design (e.g. "images/logo.png") and returns the url a fill should use for it:
+ * "./images/logo.png", or a data: url when the design has no place on disk yet (an untitled file in the browser).
+ */
+export async function saveAsset(relPath: string, blob: Blob): Promise<string> {
+  const rel = relPath.replace(/^\.\//, '');
+  const s = useStore.getState();
+  if (inVsCode) {
+    if (await request<boolean>('writeFile', { relPath: rel, dataUrl: await blobToDataUrl(blob) })) return `./${rel}`;
+  } else if (s.file?.path) {
+    const dir = s.file.path.includes('/') ? s.file.path.slice(0, s.file.path.lastIndexOf('/') + 1) : '';
+    const r = await fetch(`/api/file?path=${encodeURIComponent(dir + rel)}`, { method: 'PUT', body: blob }).catch(() => null);
+    if (r?.ok) return `./${rel}`;
+  }
+  return blobToDataUrl(blob);
 }
 
 export function makeUrlResolver(path: string | null): (u: string) => string {

@@ -1,5 +1,8 @@
 // Editing commands shared by keyboard shortcuts, menus, panels and canvas gestures.
 import type { PenDoc, PenNode } from '../model/types';
+import { removeBackground, type RemoveBgOptions } from './removeBg';
+import { SOFT } from '../render/pixels';
+import { saveAsset } from './fileio';
 import { canvasHiddenIds } from './sections';
 import { allIds, cloneWithNewIds, locate, newId } from '../model/doc';
 import { materializeRef } from '../model/resolve';
@@ -442,6 +445,46 @@ export async function vectorizeNode(key: string, opts: VectorizeOptions = {}): P
     name: `${n.props.name ?? 'Image'} (vector)`,
   });
   return { id: r.id, paths: r.paths };
+}
+
+/**
+ * Removes the background of a node's image fill (editor/removeBg.ts: plain or gently graded backgrounds, no model).
+ * The result is saved as a new PNG next to the design and the fill is pointed at it; the original file is kept.
+ */
+export async function removeBackgroundOf(key: string, opts: RemoveBgOptions & { index?: number } = {}): Promise<{ url: string; removed: number; background: number[]; tolerance: number; note?: string }> {
+  const tree = currentTree();
+  const n = tree?.byKey.get(key);
+  if (!n) throw new Error(`node "${key}" not found`);
+  const isList = Array.isArray(n.props.fill);
+  const fills: any[] = isList ? n.props.fill : [n.props.fill];
+  const isImg = (f: any) => !!f && typeof f === 'object' && f.type === 'image' && !!f.url;
+  const index = opts.index !== undefined && isImg(fills[opts.index]) ? opts.index : fills.map(isImg).lastIndexOf(true);
+  if (index < 0) throw new Error('that node has no image fill');
+  const fill = fills[index];
+  const s = useStore.getState();
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.src = makeUrlResolver(s.file?.path ?? null)(fill.url);
+  await img.decode().catch(() => {
+    throw new Error('the picture could not be loaded');
+  });
+  // Work on the picture's own pixels, up to 4096 on the long side.
+  const k = Math.min(1, 4096 / Math.max(img.naturalWidth, img.naturalHeight, 1));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(img.naturalWidth * k));
+  c.height = Math.max(1, Math.round(img.naturalHeight * k));
+  const g = c.getContext('2d', SOFT)!;
+  g.drawImage(img, 0, 0, c.width, c.height);
+  const r = removeBackground(g.getImageData(0, 0, c.width, c.height), opts);
+  if (r.removed < 0.01 || r.removed > 0.97 || r.borderShare < 0.35) throw new Error(r.note ?? 'the background could not be told from the subject');
+  g.putImageData(r.image, 0, 0);
+  const blob = await new Promise<Blob | null>(res => c.toBlob(res, 'image/png'));
+  if (!blob) throw new Error('the result could not be saved');
+  const base = (String(fill.url).startsWith('data:') ? 'picture' : String(fill.url).split(/[\\/]/).pop()!.replace(/\.[a-z0-9]+$/i, '')).replace(/[^A-Za-z0-9_-]+/g, '-') || 'picture';
+  const url = await saveAsset(`images/${base}-nobg-${Date.now().toString(36).slice(-4)}.png`, blob);
+  const next = { ...fill, url };
+  useStore.getState().edit(d => applyProps(d, key, { fill: isList ? fills.map((f, i) => (i === index ? next : f)) : next }));
+  return { url: url.startsWith('data:') ? '(embedded)' : url, removed: r.removed, background: r.background, tolerance: r.tolerance, note: r.note };
 }
 
 // ---------- viewport ----------

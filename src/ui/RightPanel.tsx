@@ -54,7 +54,7 @@ import { allIds, displayName, indexDoc, locate, newId } from '../model/doc';
 import { scaleSubtree } from '../model/scale';
 import { fillList, parseColor, toHex } from '../render/paint';
 import { parseSizing } from '../render/NodeView';
-import { align, detachInstance, elFor, goToComponent, parentLayoutOf, toggleComponent, vectorizeNode, worldRectOf } from '../editor/ops';
+import { align, detachInstance, elFor, goToComponent, parentLayoutOf, removeBackgroundOf, toggleComponent, vectorizeNode, worldRectOf } from '../editor/ops';
 import { CheckRow, NumberField, Seg, Select, fmt, layerIconFor, useMenu } from './common';
 import { PaintPopover, paintSwatch } from './ColorPicker';
 import { ICON_NAMES } from './icons';
@@ -767,12 +767,15 @@ function PaintSection({ n, p, set, theme, prop, title }: Ctx & { prop: 'fill' | 
               {prop === 'fill' && typeof f === 'object' && f.type === 'image' && f.url && (
                 <button
                   className="icon-btn"
-                  title="Vectorize image (trace to editable paths)"
+                  title="Remove background, or trace to vectors"
                   onClick={e =>
                     vmenu.open({
                       anchor: (e.currentTarget as HTMLElement).getBoundingClientRect(),
                       align: 'right',
                       items: [
+                        { label: 'Remove background', onClick: () => runRemoveBg(n.key, i, {}) },
+                        { label: 'Remove background, keep enclosed areas', onClick: () => runRemoveBg(n.key, i, { inner: false }) },
+                        { sep: true },
                         { label: 'Vectorize as logo (2 colors)', onClick: () => runVectorize(n.key, { colors: 2, detail: 0.6 }) },
                         { label: 'Vectorize as illustration (8 colors)', onClick: () => runVectorize(n.key, { colors: 8, detail: 0.5 }) },
                         { label: 'Vectorize detailed (24 colors)', onClick: () => runVectorize(n.key, { colors: 24, detail: 0.9 }) },
@@ -851,6 +854,14 @@ function PaintSection({ n, p, set, theme, prop, title }: Ctx & { prop: 'fill' | 
       )}
     </Section>
   );
+}
+
+function runRemoveBg(key: string, index: number, opts: { inner?: boolean }) {
+  const notify = useStore.getState().notify;
+  notify('Removing the background…');
+  removeBackgroundOf(key, { ...opts, index })
+    .then(r => notify(`Background removed (${Math.round(r.removed * 100)}% of the picture). Undo brings the original back.`))
+    .catch(e => notify(`Remove background: ${e instanceof Error ? e.message : e}`));
 }
 
 function runVectorize(key: string, opts: { colors: number; detail: number }) {

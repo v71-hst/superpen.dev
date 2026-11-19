@@ -5,7 +5,7 @@ import { rasterize } from '../render/rasterize';
 import { canvasSnapshot, recentLog, uiSnapshot } from './diagnostics';
 import { blankBitmapsOnCanvas, lodStats } from './lod';
 import { currentTree } from './tree';
-import { clientToWorld, elFor, insertSvg, vectorizeNode, worldRectOf, zoomToKeys } from './ops';
+import { clientToWorld, elFor, insertSvg, removeBackgroundOf, vectorizeNode, worldRectOf, zoomToKeys } from './ops';
 import { isRendered, nodeScreenRect, nodeSize, ownerNodeKey } from './measure';
 import { ensureRendered } from './culling';
 import { flushEdits } from './host';
@@ -410,6 +410,13 @@ export async function handleAgentRequest(method: string, params: any): Promise<a
       recordAgentChange(before, 'vectorize_image', () => [r.id]);
       flushEdits();
       requestAnimationFrame(() => flash([r.id]));
+      return r;
+    }
+    case 'removeBackground': {
+      const before = useStore.getState().doc;
+      const r = await removeBackgroundOf(String(params.id), { tolerance: params.tolerance, inner: params.keep_enclosed === true ? false : undefined });
+      recordAgentChange(before, 'remove_background', () => [String(params.id)]);
+      flushEdits();
       return r;
     }
     case 'diagnose':

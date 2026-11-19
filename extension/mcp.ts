@@ -544,6 +544,16 @@ tool(
 );
 
 tool(
+  'remove_background',
+  'Make the background of a node\'s image fill transparent. Built in, nothing is downloaded: it removes what can be reached from the picture\'s border without crossing a clear change of colour, so it works on plain or gently graded backgrounds (icons, product shots, renders, generated art) and NOT on photos with busy backgrounds. The result is saved as a new PNG next to the design (the original stays) and the fill points at it. tolerance 0-100 (default: chosen from the picture) widens or narrows what counts as background; keep_enclosed: true leaves enclosed areas of the background colour (the hole of a ring) in place. Screenshot the node afterwards on a contrasting background to check the edges.',
+  { id: z.string(), tolerance: z.number().min(0).max(100).optional(), keep_enclosed: z.boolean().optional() },
+  async a => {
+    const r = await callEditor('removeBackground', a, true);
+    return text(`Background removed: ${Math.round(r.removed * 100)}% of the picture is now transparent (background colour rgb(${r.background.join(', ')}), tolerance ${r.tolerance}). Saved as ${r.url}.${r.note ? ' Note: ' + r.note : ''}`);
+  },
+);
+
+tool(
   'vectorize_image',
   'Trace a node\'s image fill into editable vector paths (placed in a new frame beside it). Works best on flat, high-contrast artwork like logos and icons; photos trace poorly. colors: 2 for a monochrome logo, ~8 for flat illustrations, up to 64. detail: 0 (smooth, few points) to 1 (detailed). Requires the edit lock.',
   { id: z.string(), colors: z.number().int().min(2).max(64).optional(), detail: z.number().min(0).max(1).optional() },

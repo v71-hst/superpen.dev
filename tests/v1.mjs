@@ -372,5 +372,39 @@ ok('the Components tab inserts a library component', placed.count === before + 1
 if (shots) await page.screenshot({ path: `${shots}/v1-libraries.png` });
 await ev(() => window.__penStore.setState({ leftOpen: false, selection: [] }));
 
+// ---------- Remove background (built in) ----------
+const bgUnit = await ev(async () => {
+  const m = await import('/src/editor/removeBg.ts');
+  const make = draw => { const c = document.createElement('canvas'); c.width = 240; c.height = 160; const g = c.getContext('2d', { willReadFrequently: true }); draw(g); return g.getImageData(0, 0, 240, 160); };
+  const at = (img, x, y) => [...img.data.slice((y * 240 + x) * 4, (y * 240 + x) * 4 + 4)];
+  // A red disc with a hole on white; then the same on a soft grey gradient.
+  const disc = g => { g.fillStyle = '#e02020'; g.beginPath(); g.arc(120, 80, 60, 0, 7); g.fill(); };
+  const hole = (g, fill) => { g.fillStyle = fill; g.beginPath(); g.arc(120, 80, 20, 0, 7); g.fill(); };
+  const plain = m.removeBackground(make(g => { g.fillStyle = '#ffffff'; g.fillRect(0, 0, 240, 160); disc(g); hole(g, '#ffffff'); }));
+  const kept = m.removeBackground(make(g => { g.fillStyle = '#ffffff'; g.fillRect(0, 0, 240, 160); disc(g); hole(g, '#ffffff'); }), { inner: false });
+  const graded = m.removeBackground(make(g => { const gr = g.createLinearGradient(0, 0, 240, 160); gr.addColorStop(0, '#f2f2f2'); gr.addColorStop(1, '#b8b8c4'); g.fillStyle = gr; g.fillRect(0, 0, 240, 160); disc(g); }));
+  const busy = m.removeBackground(make(g => { for (let y = 0; y < 160; y += 8) for (let x = 0; x < 240; x += 8) { g.fillStyle = `hsl(${(x * 7 + y * 13) % 360} 80% 50%)`; g.fillRect(x, y, 8, 8); } }));
+  // The disc's edge: partly transparent pixels must not carry the white of the old background.
+  let fringe = 0, soft = 0;
+  for (let i = 0; i < plain.image.data.length; i += 4) { const al = plain.image.data[i + 3]; if (al > 20 && al < 235) { soft++; if (plain.image.data[i + 1] > 150 && plain.image.data[i + 2] > 150) fringe++; } }
+  return { plain: { corner: at(plain.image, 3, 3), body: at(plain.image, 120, 30), hole: at(plain.image, 120, 80), removed: plain.removed, bg: plain.background }, keptHole: at(kept.image, 120, 80), graded: { corner: at(graded.image, 3, 3), far: at(graded.image, 236, 156), body: at(graded.image, 120, 80), removed: graded.removed }, busy: { removed: busy.removed, note: busy.note }, soft, fringe };
+});
+ok('a plain background is removed, the subject kept, enclosed areas too',
+  bgUnit.plain.corner[3] === 0 && bgUnit.plain.body[3] === 255 && bgUnit.plain.body[0] > 200 && bgUnit.plain.hole[3] === 0 && bgUnit.keptHole[3] === 255 && bgUnit.plain.removed > 0.6 && bgUnit.plain.removed < 0.8,
+  JSON.stringify({ ...bgUnit.plain, keptHole: bgUnit.keptHole }));
+ok('a gently graded background goes too', bgUnit.graded.corner[3] === 0 && bgUnit.graded.far[3] === 0 && bgUnit.graded.body[3] === 255, JSON.stringify(bgUnit.graded));
+ok('the cut edge is soft and carries no halo of the old background', bgUnit.soft > 40 && bgUnit.fringe <= bgUnit.soft * 0.05, `${bgUnit.soft} soft edge pixels, ${bgUnit.fringe} still whitish`);
+ok('a busy background is reported, not mangled', bgUnit.busy.removed < 0.2 && /plain/.test(bgUnit.busy.note ?? ''), JSON.stringify(bgUnit.busy));
+// Through the editor: the fill is pointed at a new file and the picture's corner now shows what is behind it.
+const onWhite = await ev(() => { const c = document.createElement('canvas'); c.width = 200; c.height = 100; const g = c.getContext('2d'); g.fillStyle = '#ffffff'; g.fillRect(0, 0, 200, 100); g.fillStyle = '#0000ff'; g.fillRect(60, 20, 80, 60); return c.toDataURL('image/png'); });
+await ops([{ op: 'insert', parent: 'v1', node: { type: 'rectangle', id: 'v1cut', x: 500, y: 520, width: 200, height: 100, fill: { type: 'image', url: onWhite, mode: 'stretch' } } }]);
+await sleep(500);
+const beforeCut = await px(505, 525);
+const cut = await ev(() => window.__penAgent('removeBackground', { id: 'v1cut' }).catch(e => ({ error: String(e) })));
+await sleep(900);
+const afterCut = await px(505, 525), keptCut = await px(600, 570);
+const cutFill = (await node('v1cut')).fill;
+ok('remove_background rewrites the fill to a new picture with a transparent background', !cut.error && cut.removed > 0.6 && cutFill.url !== onWhite && beforeCut[0] > 240 && afterCut[0] < 40 && keptCut[2] > 200 && keptCut[0] < 60, JSON.stringify({ cut, url: String(cutFill.url).slice(0, 60), beforeCut, afterCut, keptCut }));
+
 ok('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();
