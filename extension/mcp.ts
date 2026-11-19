@@ -579,6 +579,13 @@ tool(
   async () => json(await callEditor('benchmark')),
 );
 
+tool(
+  'set_renderer',
+  'Developer switch for the renderer rework (docs/SKIA_REWORK.md), for comparing renderers with the benchmark. Use it ONLY when the user asks. dom = the standard renderer (default); overview = Skia draws zoomed-out frames; full = Skia draws every frame it can. Takes effect at once and is remembered for this editor. Changes no design.',
+  { mode: z.enum(['dom', 'overview', 'full']) },
+  async ({ mode }) => json(await callEditor('setRenderer', { mode })),
+);
+
 tool('save_file', 'Save the selected file to disk (requires the edit lock).', {}, async () => {
   const s = requireSelected();
   const r = await rpc(s.bridge, 'save', { path: s.path });

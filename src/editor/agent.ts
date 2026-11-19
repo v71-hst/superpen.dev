@@ -22,7 +22,7 @@ import { analyze, closeupGrid, compare, loadImageData, presentShot, zoomCrop, ty
 import { checkDrawing } from './drawingCheck';
 import { imageLodStats } from '../render/imageLod';
 import { nextFrames } from '../render/frames';
-import { activeRenderer, rendererFailure, requestedRenderer } from '../skia/renderer';
+import { activeRenderer, rendererFailure, requestedRenderer, setRenderer } from '../skia/renderer';
 import { skiaStatus } from '../skia/SkiaLayer';
 import { runBenchmark } from './benchmark';
 
@@ -418,6 +418,11 @@ export async function handleAgentRequest(method: string, params: any): Promise<a
       };
     case 'benchmark':
       return runBenchmark();
+    case 'setRenderer': {
+      setRenderer(params.mode);
+      await nextFrames(3);
+      return { requested: requestedRenderer(), active: activeRenderer(), failure: rendererFailure() };
+    }
     case 'root':
       return rootOf(params.id);
     default:
