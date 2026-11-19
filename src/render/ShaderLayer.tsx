@@ -25,7 +25,7 @@ function useAssetEpoch() {
 }
 
 /** Draws plain fills (color/gradients) into a canvas: the @content of a shader fill is the fills under it. */
-function paintFills(fills: any[], w: number, h: number, scale: number, shape: ShapeSpec | null): HTMLCanvasElement {
+export function paintFills(fills: any[], w: number, h: number, scale: number, shape: ShapeSpec | null): HTMLCanvasElement {
   const c = document.createElement('canvas');
   c.width = Math.max(1, Math.round(w * scale));
   c.height = Math.max(1, Math.round(h * scale));

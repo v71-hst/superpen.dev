@@ -44,6 +44,18 @@ void main() {
 }
 `,
 );
+// An animated one (it reads the time), not used by the design: shaderfill.mjs switches a fill to it.
+fs.writeFileSync(
+  path.join(dir, 'shaders', 'moving.glsl'),
+  `precision highp float;
+/** @resolution */ uniform vec2 u_resolution;
+/** @time */ uniform float u_time;
+void main() {
+  vec2 uv = gl_FragCoord.xy / u_resolution;
+  gl_FragColor = vec4(uv.x, 0.5 + 0.5 * sin(u_time), uv.y, 1.0);
+}
+`,
+);
 const n = Number(framesArg);
 const cols = Math.ceil(Math.sqrt(n));
 const tints = ['#3A86FF', '#FF006E', '#8338EC', '#06D6A0', '#FFBE0B', '#FB5607'];

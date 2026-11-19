@@ -175,8 +175,9 @@ just say "polish this" or "review this screen".
 ## Big files
 
 - **GPU canvas (since 0.4.0).** Frames are drawn by Skia on the graphics card instead of as thousands of page
-  elements. Frames with shader fills, and a frame whose text you are editing, are drawn the previous way. If the
-  graphics card can't run it, the editor switches back to the previous renderer by itself and says so once.
+  elements. Frames with an animated shader or a shader effect, and a frame whose text you are editing, are drawn
+  the previous way; still shader fills are drawn by Skia too. If the graphics card can't run it, the editor
+  switches back to the previous renderer by itself and says so once.
 - **Sections.** Group top-level frames into named sections (ask your chat to "group my frames into sections"). Hide or
   show whole sections from the **Sections** tab in the left panel; hidden frames aren't drawn at all. The zoom menu
   (the percentage in the top bar) switches to the **Sections** viewer, which shows one section at a time like slides.
@@ -208,6 +209,21 @@ just say "polish this" or "review this screen".
 ---
 
 ## What's new
+
+### 1.0.1
+Speed on big designs, after a report of stutter. Measured on generated test designs (40,000 layers; 192 shader
+fills; 48 large pictures):
+- **Dragging a layer is about 6 times faster** (68 ms a frame to 11.5 ms on the 40,000-layer design). Every edit used
+  to re-check and re-list the whole document.
+- **No more hitch on the first zoom-in** after opening a design (about 180 ms to about 30 ms): the graphics card is
+  now given its work in idle moments right after opening.
+- **Shader fills**: still ones are drawn by the GPU canvas like everything else, so a frame with a shader fill no
+  longer falls back to the slow path, and zooming a design full of them no longer has frames of 300 ms.
+- **Pictures** are decoded once, at the size needed, off the editor's own thread.
+- **Performance mode** no longer does more work than normal mode while zooming.
+- Fix: the first measurement or screenshot of a picture layer could come out blank.
+- Fix: remove background refused a small subject on a large plain background.
+Thanks to the user who reported the stutter and pointed at several of the causes.
 
 ### 1.0.0
 - **Design skills**: twelve built-in guides the chat reads before designing (see

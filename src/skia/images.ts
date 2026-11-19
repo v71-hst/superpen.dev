@@ -55,8 +55,55 @@ type Entry = {
   stamp: number;
   /** The epoch at which it loaded or failed: all that matters to a frame drawing the small version. */
   smallStamp: number;
+  /** When it was last asked for (made pictures that nothing asks for any more are forgotten). */
+  seen: number;
   error?: string;
 };
+
+/** What decode() gives: the original's size and a way to turn the result into a Skia image on the editor's thread. */
+type Made = { w0: number; h0: number; make: () => Image | null; discard: () => void };
+/**
+ * Pictures that are made rather than fetched (a still shader run into an image, see shaderFills.ts): the function
+ * gives the picture at `side` pixels on its longest side. Everything else about them is as for a file: a small
+ * version first, larger ones while something on screen needs them.
+ */
+const sources = new Map<string, (side: number) => Promise<Made>>();
+const MADE_KEPT = 400;
+
+export function registerImageSource(url: string, make: (side: number) => Promise<Made>) {
+  if (!sources.has(url)) sources.set(url, make);
+}
+
+/**
+ * Things frames depend on that are not pictures themselves (whether a shader file has been read and what it needs):
+ * a frame lists such a key among its pictures and is checked again when the key is bumped. Only those frames are.
+ */
+const extraStamps = new Map<string, number>();
+
+export function bumpImageStamp(key: string) {
+  extraStamps.set(key, ++epoch);
+  notifyEligibility = true;
+  notifyTimer ??= setTimeout(() => {
+    notifyTimer = null;
+    const elig = notifyEligibility;
+    notifyEligibility = false;
+    listeners.forEach(l => l(elig));
+  }, 16);
+}
+
+/** Forgets the pictures whose address starts with `prefix` (what they were made from changed). */
+export function forgetImages(prefix: string) {
+  for (const [url, e] of entries) {
+    if (!url.startsWith(prefix)) continue;
+    free(e.small);
+    if (e.big) {
+      free(e.big);
+      bigBytes -= e.bigBytes;
+    }
+    entries.delete(url);
+    sources.delete(url);
+  }
+}
 
 const entries = new Map<string, Entry>();
 let epoch = 0;
@@ -114,6 +161,10 @@ export function imageStamp(urls: Iterable<string>, detail = true): number {
   for (const u of urls) {
     const e = entries.get(u);
     if (e) stamp = Math.max(stamp, detail ? e.stamp : e.smallStamp);
+    else {
+      const x = extraStamps.get(u);
+      if (x) stamp = Math.max(stamp, x);
+    }
   }
   return stamp;
 }
@@ -262,7 +313,7 @@ function decoder(): Worker | null {
 }
 
 /** The picture at `side` pixels on its longest side (or whole, if it is smaller), as something Skia can take. */
-async function decode(blob: Blob, side: number): Promise<{ w0: number; h0: number; make: () => Image | null; discard: () => void }> {
+async function decode(blob: Blob, side: number): Promise<Made> {
   const w = decoder();
   if (w) {
     try {
@@ -314,7 +365,8 @@ async function decode(blob: Blob, side: number): Promise<{ w0: number; h0: numbe
 async function loadSmall(e: Entry) {
   const gen = generation;
   try {
-    const d = await decode(await fetchBlob(e.url), SMALL_SIDE);
+    const made = sources.get(e.url);
+    const d = made ? await made(SMALL_SIDE) : await decode(await fetchBlob(e.url), SMALL_SIDE);
     if (gen !== generation) return d.discard();
     e.w = d.w0;
     e.h = d.h0;
@@ -366,7 +418,8 @@ async function loadBig(e: Entry) {
     return;
   }
   try {
-    got = await decode(await fetchBlob(e.url), side);
+    const made = sources.get(e.url);
+    got = made ? await made(side) : await decode(await fetchBlob(e.url), side);
   } catch {
     // The small version stays; asking again later tries once more.
     e.bigFailures++;
@@ -432,12 +485,13 @@ function queueBig(e: Entry) {
 export function getImage(url: string, detail = true): { status: Entry['status']; image: Image | null; w: number; h: number } {
   let e = entries.get(url);
   if (!e) {
-    e = { url, status: 'loading', small: null, smallSide: 0, smallBytes: 0, w: 0, h: 0, big: null, bigSide: 0, bigBytes: 0, loadingSide: 0, busy: false, bigFailures: 0, wantPass: 0, bigUsed: 0, stamp: 0, smallStamp: 0 };
+    e = { url, status: 'loading', small: null, smallSide: 0, smallBytes: 0, w: 0, h: 0, big: null, bigSide: 0, bigBytes: 0, loadingSide: 0, busy: false, bigFailures: 0, wantPass: 0, bigUsed: 0, stamp: 0, smallStamp: 0, seen: 0 };
     entries.set(url, e);
     const entry = e;
     smallQueue.push(() => loadSmall(entry));
     pump();
   }
+  e.seen = performance.now();
   return { status: e.status, image: (detail ? e.big : null) ?? e.small, w: e.w, h: e.h };
 }
 
@@ -508,6 +562,21 @@ export function trimImages() {
   const cap = maxSide();
   for (const e of entries.values()) if (e.big && (now - e.bigUsed > KEEP_MS || e.bigSide > cap)) dropBig(e);
   evictOver();
+  // Made pictures pile up as their inputs are edited (every position of a dragged slider is another one): beyond a
+  // few hundred, the ones asked for longest ago go. A frame that still shows one keeps it inside its recording.
+  if (sources.size > MADE_KEPT) {
+    const made = [...sources.keys()].map(u => entries.get(u)).filter((e): e is Entry => !!e && e.status !== 'loading' && !e.busy);
+    made.sort((a, b) => a.seen - b.seen);
+    for (const e of made.slice(0, Math.max(0, sources.size - MADE_KEPT))) {
+      free(e.small);
+      if (e.big) {
+        free(e.big);
+        bigBytes -= e.bigBytes;
+      }
+      entries.delete(e.url);
+      sources.delete(e.url);
+    }
+  }
 }
 
 /** Frees every decoded picture (Skia switched off). */
@@ -517,6 +586,8 @@ export function resetImages() {
     free(e.big);
   }
   entries.clear();
+  sources.clear();
+  extraStamps.clear();
   smallQueue.length = 0;
   bigQueue.length = 0;
   for (const w of decoders ?? []) w.terminate();
@@ -549,5 +620,7 @@ export function imageStats() {
     ...stats,
     /** Pictures decoded in a worker, and on the editor's thread (the worker could not be used). */
     decodedOffThread: decodeStats.offThread, decodedOnThread: decodeStats.onThread,
+    /** Pictures that are made, not fetched (still shader fills). */
+    made: sources.size,
   };
 }

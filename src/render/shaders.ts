@@ -514,7 +514,7 @@ export class ShaderRunner {
   private stale = false;
   /** The scale the pixels now on the canvas were drawn for. */
   private drawnScale = 0;
-  private io: IntersectionObserver;
+  private io: IntersectionObserver | null = null;
   private moveHandler = (e: PointerEvent) => {
     const r = this.canvas.getBoundingClientRect();
     if (!this.cfg || !r.width) return;
@@ -527,7 +527,9 @@ export class ShaderRunner {
   private disposed = false;
   private intermediate = document.createElement('canvas');
 
-  constructor(public canvas: HTMLCanvasElement) {
+  /** `offscreen`: the canvas is not on the page (its output is taken as an image): it always counts as visible. */
+  constructor(public canvas: HTMLCanvasElement, offscreen = false) {
+    if (offscreen) return;
     this.io = new IntersectionObserver(es => {
       this.visible = es.some(e => e.isIntersecting);
       if (this.visible) this.catchUp();
@@ -726,7 +728,7 @@ export class ShaderRunner {
     animated.delete(this);
     staleRunners.delete(this);
     oversize.delete(this);
-    this.io.disconnect();
+    this.io?.disconnect();
     window.removeEventListener('pointermove', this.moveHandler);
   }
 }

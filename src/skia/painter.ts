@@ -13,6 +13,7 @@ import { scriptState } from '../editor/scriptHost';
 import { Scope, free, own } from './lifetime';
 import { familyList, fontBlocker, fontCollection, fontEpoch, fontStyleKey } from './fonts';
 import { getImage } from './images';
+import { SHADERS_LOADING, shaderFillBlocker, shaderFillImage, shaderInfoKey } from './shaderFills';
 import { iconLibrarySupported, iconPaths } from './icons';
 import { meshOf, tessellate } from '../render/mesh';
 
@@ -91,7 +92,6 @@ export function skiaEligible(ctx: PaintContext, n: RNode, editingKey?: string | 
   const p = propsOf(ctx, n);
   if (p.enabled === false) return null;
   if (n.key === editingKey) return 'text being edited';
-  if (fillList(p.fill).some(isShaderFill)) return `shader fill on ${n.key}`;
   if (effectList(p.effect).some((e: any) => e.type === 'shader')) return `shader effect on ${n.key}`;
   switch (n.type) {
     case 'frame':
@@ -131,6 +131,15 @@ export function skiaEligible(ctx: PaintContext, n: RNode, editingKey?: string | 
   // Pictures that are still loading do not stop the walk: stopping at the first one asked for a frame's pictures
   // one per try, each only after the one before it had arrived.
   let loading = false;
+  // Shader fills: still ones are drawn from an image of their output (shaderFills.ts); the others, and shader fills
+  // on kinds of node that image cannot be made for, leave the frame to the page-element renderer as before.
+  for (const f of fillList(p.fill)) {
+    if (!isShaderFill(f)) continue;
+    deps?.images.add(shaderInfoKey(ctx.resolveUrl(f.url)));
+    const why = shaderFillBlocker(ctx.resolveUrl, n, p, f);
+    if (why === SHADERS_LOADING) loading = true;
+    else if (why) return why;
+  }
   for (const f of [...fillList(p.fill), ...(normalizeStroke(p, 'inner')?.fills ?? [])]) {
     if (f && typeof f === 'object' && f.type === 'image' && f.url && f.enabled !== false) {
       const url = ctx.resolveUrl(f.url);
@@ -212,7 +221,7 @@ function gradientShader(ck: CanvasKit, f: any, x: number, y: number, w: number, 
 /** Paints one fill of the node at `world` over the rect (x, y, w, h); the caller has clipped to the node's shape. */
 function drawFill(r: Rec, world: Mat, f: any, x: number, y: number, w: number, h: number, svg: boolean) {
   const { c, ck, scope } = r;
-  if (!isEnabled(f)) return;
+  if (!f || !isEnabled(f)) return;
   const paint = scope.own(new ck.Paint(), 'paint');
   paint.setAntiAlias(true);
   const rect = ck.XYWHRect(x, y, w, h);
@@ -251,6 +260,9 @@ function drawFill(r: Rec, world: Mat, f: any, x: number, y: number, w: number, h
     const url = r.ctx.resolveUrl(f.url);
     const got = getImage(url, r.detail);
     const image = got.image;
+    // A made picture (a still shader) is asked for here, at record time: note what is being waited for.
+    if (f.wanted && f.wanted !== url) r.pending?.add(f.wanted);
+    if (f.shader) r.pending?.add(url);
     if (!image) return;
     // The original's size, whichever version is drawn: the picture sits in the same place when a sharper one arrives.
     const iw = got.w || image.width(), ih = got.h || image.height();
@@ -261,7 +273,7 @@ function drawFill(r: Rec, world: Mat, f: any, x: number, y: number, w: number, h
       dw = iw * k;
       dh = ih * k;
     }
-    if (svg) paint.setAlphaf(num(f.opacity, 1));
+    if (svg || f.shader) paint.setAlphaf(num(f.opacity, 1));
     // The crop: the fitted picture transformed in units of the box (see imageTransform).
     const t = imageTransform(f);
     const grow = t ? Math.max(Math.hypot(t[0], t[1]), Math.hypot(t[2], t[3])) : 1;
@@ -302,7 +314,16 @@ const sigma = (blur: number) => Math.max(0, blur) / 2;
 
 // ---------- node painting ----------
 
-type Rec = { c: Canvas; ck: CanvasKit; scope: Scope; ctx: PaintContext; uses?: ImageUse[]; detail: boolean };
+type Rec = {
+  c: Canvas;
+  ck: CanvasKit;
+  scope: Scope;
+  ctx: PaintContext;
+  uses?: ImageUse[];
+  detail: boolean;
+  /** Pictures the recording asked for that were not there yet: the frame records again when they are. */
+  pending?: Set<string>;
+};
 
 function drawNode(r: Rec, pn: PaintNode, parentWorld: Mat) {
   const { c, ck } = r;
@@ -440,7 +461,7 @@ function drawBox(r: Rec, pn: PaintNode, p: any, fx: any[]) {
     // background-blend-mode blends a box's layers with each other only: isolate them.
     const isolate = fills.some((f: any) => f && typeof f === 'object' && f.blendMode && f.blendMode !== 'normal');
     if (isolate) c.saveLayer();
-    for (const f of fills) drawFill(r, pn.world, f, 0, 0, w, h, false);
+    for (const f of fills) drawFill(r, pn.world, isShaderFill(f) ? shaderFillImage(r.ctx.resolveUrl, pn.node, p, f, w, h) : f, 0, 0, w, h, false);
     if (isolate) c.restore();
     c.restore();
   }
@@ -700,7 +721,7 @@ function drawShape(r: Rec, pn: PaintNode, p: any) {
   if (fills.length) {
     c.save();
     c.clipPath(path, ck.ClipOp.Intersect, true);
-    for (const f of fills) drawFill(r, pn.world, f, 0, 0, w, h, true);
+    for (const f of fills) drawFill(r, pn.world, isShaderFill(f) ? shaderFillImage(r.ctx.resolveUrl, pn.node, p, f, w, h) : f, 0, 0, w, h, true);
     c.restore();
   }
   const s = normalizeStroke(p, open ? 'center' : type === 'ellipse' ? 'center' : 'inner');
@@ -806,7 +827,7 @@ function drawNote(r: Rec, pn: PaintNode, p: any) {
  * Records a laid-out top-level frame (or any subtree) as a picture in world coordinates. `uses` collects where it
  * draws pictures; `detail` false draws them from their small versions even when a larger one is loaded.
  */
-export function recordPicture(ctx: PaintContext, root: PaintNode, uses?: ImageUse[], detail = true): SkPicture {
+export function recordPicture(ctx: PaintContext, root: PaintNode, uses?: ImageUse[], detail = true, pending?: Set<string>): SkPicture {
   const { ck } = ctx;
   const scope = new Scope();
   const rec = new ck.PictureRecorder();
@@ -819,7 +840,7 @@ export function recordPicture(ctx: PaintContext, root: PaintNode, uses?: ImageUs
   // cullRect() is what was actually drawn.
   const c = rec.beginRecording(ck.LTRBRect(Math.min(...xs) - m, Math.min(...ys) - m, Math.max(...xs) + m, Math.max(...ys) + m), true);
   try {
-    drawNode({ c, ck, scope, ctx, uses, detail }, root, [1, 0, 0, 1, 0, 0]);
+    drawNode({ c, ck, scope, ctx, uses, detail, pending }, root, [1, 0, 0, 1, 0, 0]);
     return own(rec.finishRecordingAsPicture(), 'picture');
   } finally {
     rec.delete();

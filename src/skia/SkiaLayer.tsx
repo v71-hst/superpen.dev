@@ -13,6 +13,7 @@ import { liveObjects } from './lifetime';
 import { drawScene, invalidateScene, noteViewChange, resetScene, sceneStats, setDrawHooks, setSceneSurface, setSurfaceReady, takeProgramStep } from './scene';
 import { loadBundledFonts, onFontsChanged, fontStats, resetFonts } from './fonts';
 import { onImagesChanged, imageStats, resetImages } from './images';
+import { resetShaderFills } from './shaderFills';
 import { clearFrames, frameStats, onPictureDropped } from './frames';
 import { dropPictureImages, pictureImageStats, resetPictureImages } from './pictureTextures';
 import { registerPictureGeometry } from './pictureFrames';
@@ -299,6 +300,7 @@ export function SkiaLayer() {
       clearParagraphs();
       resetPictureImages();
       resetImages();
+      resetShaderFills();
       resetFonts();
       cancelAnimationFrame(frame);
       clearInterval(idlePurge);
