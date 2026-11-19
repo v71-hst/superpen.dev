@@ -22,7 +22,12 @@ const BUDGET = 128 * 1024 * 1024;
 export const KEEP_MS = 30000;
 /** Needed this recently counts as on screen (the scene reports what is in view every few seconds). */
 const RECENT_MS = 9000;
-const MAX_LOADS = 3;
+/**
+ * Pictures decoded at once. Decoding happens in workers (see decode), so this is how many of those are busy, not
+ * how much the editor's own thread is asked to do: half the processor's cores, between 2 and 4. Performance mode
+ * keeps it at 2 (each decode in flight holds the whole picture for a moment).
+ */
+const maxLoads = () => (maxSide() < 2048 ? 2 : Math.max(2, Math.min(4, Math.floor((navigator.hardwareConcurrency || 4) / 2))));
 
 type Entry = {
   url: string;
@@ -120,7 +125,7 @@ const smallQueue: (() => Promise<void>)[] = [];
 const bigQueue: (() => Promise<void>)[] = [];
 
 function pump() {
-  while (loads < MAX_LOADS) {
+  while (loads < maxLoads()) {
     const task = smallQueue.shift() ?? bigQueue.shift();
     if (!task) return;
     loads++;
@@ -133,30 +138,187 @@ function pump() {
 
 const fetchBlob = (url: string) => fetch(url).then(r => (r.ok ? r.blob() : Promise.reject(new Error(`HTTP ${r.status}`))));
 
-function toImage(bmp: ImageBitmap): Image | null {
-  const ck = kitIfLoaded();
-  try {
-    return ck ? ck.MakeImageFromCanvasImageSource(bmp) : null;
-  } finally {
-    bmp.close();
+// ---------- decoding ----------
+//
+// A picture is decoded straight to the size that is wanted, in a worker, and comes back as plain pixels:
+// - Until 1.0.0 the small version decoded the whole picture and then shrank it (two passes, the first one at full
+//   size), and turning any decoded picture into a Skia image drew it on a canvas and read it back, both on the
+//   editor's own thread: 10-40 ms per large picture, which is why they were converted one at a time, only while the
+//   view was still. Now the worker does the decoding, the shrinking and the reading back; the editor's thread only
+//   copies the finished pixels into Skia's memory (a few ms for the largest).
+// - To decode at a size, the picture's own size has to be known first: it is read from the file's header.
+// The worker is made from text (the webview only allows workers from blob: addresses) and is handed the file's
+// bytes, so it never fetches anything itself. If a worker cannot be made, or one fails, pictures are decoded on the
+// editor's thread as before.
+
+/** Pixels of a decoded picture (RGBA, not premultiplied) and the size of the original. */
+type Decoded = { w0: number; h0: number; width: number; height: number; pixels: ArrayBuffer };
+
+const DECODER = `
+const u16 = (b, o, le) => (le ? b[o] | (b[o + 1] << 8) : (b[o] << 8) | b[o + 1]);
+const u32 = (b, o) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
+// Width and height from the start of a PNG, GIF, WebP or JPEG file; null when it cannot be told.
+function sniff(b) {
+  if (b.length > 24 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return [u32(b, 16), u32(b, 20)];
+  if (b.length > 10 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return [u16(b, 6, true), u16(b, 8, true)];
+  if (b.length > 30 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) {
+    const t = String.fromCharCode(b[12], b[13], b[14], b[15]);
+    if (t === 'VP8X') return [1 + (b[24] | (b[25] << 8) | (b[26] << 16)), 1 + (b[27] | (b[28] << 8) | (b[29] << 16))];
+    if (t === 'VP8 ') return [u16(b, 26, true) & 0x3fff, u16(b, 28, true) & 0x3fff];
+    if (t === 'VP8L') { const n = (b[21] | (b[22] << 8) | (b[23] << 16) | (b[24] << 24)) >>> 0; return [(n & 0x3fff) + 1, ((n >>> 14) & 0x3fff) + 1]; }
+    return null;
   }
+  if (b.length > 4 && b[0] === 0xff && b[1] === 0xd8) {
+    let o = 2;
+    while (o + 9 < b.length) {
+      if (b[o] !== 0xff) { o++; continue; }
+      const m = b[o + 1];
+      if (m === 0xff) { o++; continue; }
+      if (m >= 0xd0 && m <= 0xd9) { o += 2; continue; }
+      if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) return [u16(b, o + 7, false), u16(b, o + 5, false)];
+      o += 2 + u16(b, o + 2, false);
+    }
+  }
+  return null;
+}
+async function decode(blob, side) {
+  let dims = null;
+  try { dims = sniff(new Uint8Array(await blob.slice(0, 262144).arrayBuffer())); } catch (e) {}
+  let bmp = null, w0 = 0, h0 = 0;
+  if (dims && dims[0] > 0 && dims[1] > 0) {
+    const k = Math.min(1, side / Math.max(dims[0], dims[1]));
+    if (k < 1) {
+      // Only the width is given: the decoder keeps the picture's proportions (and applies a photo's rotation). If
+      // the height it comes back with is not what the header promised, the header was misread: decode whole below.
+      const b = await createImageBitmap(blob, { resizeWidth: Math.max(1, Math.round(dims[0] * k)), resizeQuality: 'high' });
+      const want = Math.max(1, Math.round(dims[1] * k));
+      if (Math.abs(b.height - want) <= Math.max(2, want * 0.03)) { bmp = b; w0 = dims[0]; h0 = dims[1]; }
+      else b.close();
+    }
+  }
+  if (!bmp) {
+    let full = await createImageBitmap(blob);
+    w0 = full.width; h0 = full.height;
+    const k = Math.min(1, side / Math.max(w0, h0));
+    if (k < 1) {
+      const s = await createImageBitmap(full, { resizeWidth: Math.max(1, Math.round(w0 * k)), resizeHeight: Math.max(1, Math.round(h0 * k)), resizeQuality: 'high' });
+      full.close();
+      full = s;
+    }
+    bmp = full;
+  }
+  const width = bmp.width, height = bmp.height;
+  const g = new OffscreenCanvas(width, height).getContext('2d', { willReadFrequently: true });
+  g.drawImage(bmp, 0, 0);
+  bmp.close();
+  return { w0, h0, width, height, pixels: g.getImageData(0, 0, width, height).data.buffer };
+}
+onmessage = async e => {
+  const { id, blob, side } = e.data;
+  try { const r = await decode(blob, side); postMessage({ id, ...r }, [r.pixels]); }
+  catch (err) { postMessage({ id, error: String((err && err.message) || err) }); }
+};
+`;
+
+let decoders: Worker[] | null = null;
+let decodersBroken = false;
+let decoderTurn = 0;
+let decodeId = 0;
+const decoding = new Map<number, { resolve: (d: Decoded) => void; reject: (e: Error) => void }>();
+const decodeStats = { offThread: 0, onThread: 0 };
+
+function decoderFailed(why: string) {
+  decodersBroken = true;
+  for (const w of decoders ?? []) w.terminate();
+  decoders = null;
+  const waiting = [...decoding.values()];
+  decoding.clear();
+  for (const w of waiting) w.reject(new Error(why));
+}
+
+function decoder(): Worker | null {
+  if (decodersBroken || typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined') return null;
+  if (!decoders) {
+    try {
+      const src = URL.createObjectURL(new Blob([DECODER], { type: 'text/javascript' }));
+      decoders = Array.from({ length: 4 }, () => {
+        const w = new Worker(src);
+        w.onmessage = ev => {
+          const job = decoding.get(ev.data?.id);
+          if (!job) return;
+          decoding.delete(ev.data.id);
+          if (ev.data.error) job.reject(new Error(ev.data.error));
+          else job.resolve(ev.data as Decoded);
+        };
+        w.onerror = () => decoderFailed('the picture decoder stopped');
+        return w;
+      });
+    } catch {
+      decodersBroken = true;
+      return null;
+    }
+  }
+  return decoders[decoderTurn++ % decoders.length];
+}
+
+/** The picture at `side` pixels on its longest side (or whole, if it is smaller), as something Skia can take. */
+async function decode(blob: Blob, side: number): Promise<{ w0: number; h0: number; make: () => Image | null; discard: () => void }> {
+  const w = decoder();
+  if (w) {
+    try {
+      const d = await new Promise<Decoded>((resolve, reject) => {
+        const id = ++decodeId;
+        decoding.set(id, { resolve, reject });
+        w.postMessage({ id, blob, side });
+      });
+      decodeStats.offThread++;
+      return {
+        w0: d.w0,
+        h0: d.h0,
+        make: () => {
+          const ck = kitIfLoaded();
+          return ck ? ck.MakeImage({ width: d.width, height: d.height, alphaType: ck.AlphaType.Unpremul, colorType: ck.ColorType.RGBA_8888, colorSpace: ck.ColorSpace.SRGB }, new Uint8Array(d.pixels), 4 * d.width) : null;
+        },
+        discard: () => undefined,
+      };
+    } catch {
+      // This picture (or the worker) could not: the editor's own thread tries, as it always did.
+    }
+  }
+  let bmp = await createImageBitmap(blob);
+  const w0 = bmp.width;
+  const h0 = bmp.height;
+  const k = Math.min(1, side / Math.max(w0, h0));
+  if (k < 1) {
+    const s = await createImageBitmap(bmp, { resizeWidth: Math.max(1, Math.round(w0 * k)), resizeHeight: Math.max(1, Math.round(h0 * k)), resizeQuality: 'high' });
+    bmp.close();
+    bmp = s;
+  }
+  decodeStats.onThread++;
+  const got = bmp;
+  return {
+    w0,
+    h0,
+    make: () => {
+      const ck = kitIfLoaded();
+      try {
+        return ck ? ck.MakeImageFromCanvasImageSource(got) : null;
+      } finally {
+        got.close();
+      }
+    },
+    discard: () => got.close(),
+  };
 }
 
 async function loadSmall(e: Entry) {
   const gen = generation;
   try {
-    const blob = await fetchBlob(e.url);
-    let bmp = await createImageBitmap(blob);
-    e.w = bmp.width;
-    e.h = bmp.height;
-    const k = Math.min(1, SMALL_SIDE / Math.max(bmp.width, bmp.height));
-    if (k < 1) {
-      const small = await createImageBitmap(bmp, { resizeWidth: Math.max(1, Math.round(bmp.width * k)), resizeHeight: Math.max(1, Math.round(bmp.height * k)), resizeQuality: 'high' });
-      bmp.close();
-      bmp = small;
-    }
-    if (gen !== generation) return bmp.close();
-    const img = toImage(bmp);
+    const d = await decode(await fetchBlob(e.url), SMALL_SIDE);
+    if (gen !== generation) return d.discard();
+    e.w = d.w0;
+    e.h = d.h0;
+    const img = d.make();
     if (!img) throw new Error('could not decode');
     e.small = own(img, 'image');
     e.smallSide = Math.max(img.width(), img.height());
@@ -170,8 +332,14 @@ async function loadSmall(e: Entry) {
   touch(e, true);
 }
 
-/** Turning a decoded picture into a Skia image copies its pixels on the main thread: one at a time, while still. */
+/**
+ * Larger versions are swapped in one after another, while the view is still: each swap makes the frames that show
+ * the picture record again, which is work on the editor's thread even though the decoding no longer is.
+ */
 let converting: Promise<void> = Promise.resolve();
+/** Bytes of larger versions swapped in since the last pause (see loadBig). */
+let swappedBytes = 0;
+const SWAP_BYTES_PER_FRAME = 5 * 1024 * 1024;
 
 async function untilQuiet() {
   const giveUp = performance.now() + 3000;
@@ -187,7 +355,7 @@ async function loadBig(e: Entry) {
   // The size wanted now, which may be more than when the load was queued.
   const side = e.loadingSide;
   const stale = () => gen !== generation || e.wantPass < pass;
-  let bmp: ImageBitmap | null = null;
+  let got: Awaited<ReturnType<typeof decode>> | null = null;
   // Asked for while passing by, and no longer in view: not worth decoding.
   if (stale()) {
     stats.skipped++;
@@ -198,25 +366,23 @@ async function loadBig(e: Entry) {
     return;
   }
   try {
-    const blob = await fetchBlob(e.url);
-    const k = Math.min(1, side / Math.max(e.w, e.h, 1));
-    bmp = k < 1 ? await createImageBitmap(blob, { resizeWidth: Math.max(1, Math.round(e.w * k)), resizeHeight: Math.max(1, Math.round(e.h * k)), resizeQuality: 'high' }) : await createImageBitmap(blob);
+    got = await decode(await fetchBlob(e.url), side);
   } catch {
     // The small version stays; asking again later tries once more.
     e.bigFailures++;
   }
   // The decoding slot is free for the next picture; the swap waits its turn.
-  const decoded = bmp;
+  const decoded = got;
   converting = converting.then(async () => {
     try {
       if (!decoded) return;
       await untilQuiet();
       if (stale()) {
-        decoded.close();
+        decoded.discard();
         stats.skipped++;
         return;
       }
-      const img = toImage(decoded);
+      const img = decoded.make();
       if (!img) return void e.bigFailures++;
       if (e.big) {
         free(e.big);
@@ -230,6 +396,13 @@ async function loadBig(e: Entry) {
       stats.sharpened++;
       touch(e, false);
       evictOver();
+      // Each new version is handed to the graphics card (with its smaller copies) the next time it is drawn: several
+      // large ones in one draw made a frame of 60 ms. After a few megabytes' worth, the rest wait for the next frames.
+      swappedBytes += e.bigBytes;
+      if (swappedBytes >= SWAP_BYTES_PER_FRAME) {
+        swappedBytes = 0;
+        await sleep(34);
+      }
     } catch {
       // As above.
     } finally {
@@ -346,6 +519,11 @@ export function resetImages() {
   entries.clear();
   smallQueue.length = 0;
   bigQueue.length = 0;
+  for (const w of decoders ?? []) w.terminate();
+  decoders = null;
+  const waiting = [...decoding.values()];
+  decoding.clear();
+  for (const w of waiting) w.reject(new Error('pictures were reset'));
   bigBytes = 0;
   generation++;
   baseEpoch = ++epoch;
@@ -369,5 +547,7 @@ export function imageStats() {
     held: ready + larger,
     decodedMB: Math.round((small + bigBytes) / 1048576), smallMB: mb(small), largerMB: mb(bigBytes), budgetMB: Math.round(budget() / 1048576),
     ...stats,
+    /** Pictures decoded in a worker, and on the editor's thread (the worker could not be used). */
+    decodedOffThread: decodeStats.offThread, decodedOnThread: decodeStats.onThread,
   };
 }

@@ -36,9 +36,14 @@ export function levelSide(size: number, zoom: number, dpr: number) {
   return side;
 }
 
-/** The size copies are made at ahead of need: enough for a frame a few centimetres across on screen. */
+/**
+ * The size copies are made at ahead of need: enough for a frame a few centimetres across on screen. The same in
+ * performance mode: at 128 px there, frames needed a larger copy as soon as they were a little bigger on screen,
+ * which meant recording and rasterising them again while zooming (12% more recordings and 25% more rasterising time
+ * than normal mode on a 320-frame design) to save about 30 MB.
+ */
 export function baseSide() {
-  return lowMemory() ? 128 : 256;
+  return 256;
 }
 
 /** The level of a copy to draw at `side` pixels: never more than twice that size, or the largest there is. */

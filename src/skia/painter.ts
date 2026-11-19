@@ -84,6 +84,9 @@ const BASIC_TEXT = new RegExp(`^[${BASIC_RANGES.split(' ').map(r => r.split('-')
  * null if Skia can draw this whole subtree now, else the first reason it can't (that frame stays DOM). `deps` collects
  * what the answer depends on, up to the node that gave the reason.
  */
+/** Why a frame cannot be drawn yet when only its pictures are missing (the frame is tried again when they arrive). */
+const PICTURES_LOADING = 'pictures loading';
+
 export function skiaEligible(ctx: PaintContext, n: RNode, editingKey?: string | null, deps?: FrameDeps): string | null {
   const p = propsOf(ctx, n);
   if (p.enabled === false) return null;
@@ -125,18 +128,22 @@ export function skiaEligible(ctx: PaintContext, n: RNode, editingKey?: string | 
     default:
       return `${n.type} node`;
   }
+  // Pictures that are still loading do not stop the walk: stopping at the first one asked for a frame's pictures
+  // one per try, each only after the one before it had arrived.
+  let loading = false;
   for (const f of [...fillList(p.fill), ...(normalizeStroke(p, 'inner')?.fills ?? [])]) {
     if (f && typeof f === 'object' && f.type === 'image' && f.url && f.enabled !== false) {
       const url = ctx.resolveUrl(f.url);
       deps?.images.add(url);
-      if (getImage(url).status === 'loading') return 'pictures loading';
+      if (getImage(url).status === 'loading') loading = true;
     }
   }
   for (const c of n.children) {
     const why = skiaEligible(ctx, c, editingKey, deps);
-    if (why) return why;
+    if (why === PICTURES_LOADING) loading = true;
+    else if (why) return why;
   }
-  return null;
+  return loading ? PICTURES_LOADING : null;
 }
 
 // ---------- paint helpers ----------

@@ -18,6 +18,8 @@ if (process.env.PEN_CPU_SLOW) {
 }
 page.on('pageerror', e => console.log('[pageerror]', String(e).slice(0, 300)));
 await page.evaluateOnNewDocument(p => localStorage.setItem('pen.perfMode', p), perf);
+// PEN_NO_WARM=1: without the close-up warm-up (scene.ts takeProgramStep), to see what it costs right after opening.
+if (process.env.PEN_NO_WARM) await page.evaluateOnNewDocument(() => localStorage.setItem('pen.debug.noProgramWarm', '1'));
 await page.goto(`${url}${url.includes('?') ? '&' : '?'}renderer=${renderer}`, { waitUntil: 'domcontentloaded', timeout: 180000 });
 await page.waitForSelector('#pen-world [data-k]', { timeout: 180000 });
 await page.waitForFunction(() => window.__penStore && window.__penAgent, { timeout: 60000 });

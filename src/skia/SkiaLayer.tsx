@@ -10,7 +10,7 @@ import { loadKit } from './kit';
 import { failRenderer } from './renderer';
 import { perfLimits } from '../editor/perfLimits';
 import { liveObjects } from './lifetime';
-import { drawScene, invalidateScene, noteViewChange, resetScene, sceneStats, setDrawHooks, setSceneSurface, setSurfaceReady } from './scene';
+import { drawScene, invalidateScene, noteViewChange, resetScene, sceneStats, setDrawHooks, setSceneSurface, setSurfaceReady, takeProgramStep } from './scene';
 import { loadBundledFonts, onFontsChanged, fontStats, resetFonts } from './fonts';
 import { onImagesChanged, imageStats, resetImages } from './images';
 import { clearFrames, frameStats, onPictureDropped } from './frames';
@@ -175,6 +175,13 @@ export function SkiaLayer() {
       fitCache();
       const t0 = performance.now();
       const c = surface.getCanvas();
+      // A step of the close-up warm-up (scene.ts takeProgramStep), sent to the graphics card now: the clear below
+      // would otherwise cancel it. Nothing of it is shown; the canvas is drawn properly before this draw ends.
+      try {
+        if (takeProgramStep(c, state.dpr)) surface.flush();
+      } catch {
+        // The real draw below finds out if Skia is in trouble.
+      }
       c.clear(ck.TRANSPARENT);
       const { x, y, zoom } = useStore.getState().view;
       c.save();

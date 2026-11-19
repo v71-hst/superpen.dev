@@ -70,6 +70,8 @@ const stats = {
   /** Frames drawn as their colour because the picture wasn't recorded yet. */
   placeholders: 0,
   slowestDrawMs: 0,
+  /** Steps of the close-up warm-up drawn (see takeProgramStep). */
+  programSteps: 0,
 };
 let version = 0;
 const listeners = new Set<() => void>();
@@ -439,6 +441,93 @@ function warm() {
   }
   if (redraw) hooks.requestDraw();
   if (left) scheduleWarm();
+  else {
+    // Every frame there is now is recorded and has its copy: one step of the close-up warm-up (see takeProgramStep).
+    if (programsWarmedFor !== surface) {
+      programsWarmedFor = surface;
+      programWarmed.clear();
+      programSamples = 0;
+      programSteps = [];
+    }
+    if (!programSteps.length) planProgramSteps();
+    if (programSteps.length) {
+      programStepDue = true;
+      hooks.requestDraw();
+    }
+  }
+}
+
+// ---------- the graphics card's programs, ahead of need ----------
+//
+// The first time Skia draws a kind of thing (a picture, a rounded clip, a gradient, text at a new size...) the
+// graphics driver compiles a program for it, and the draw waits: 150-200 ms measured on a fast card, on the first
+// zoom-in after opening a design, longer on a slow one. Zoomed out nothing of the kind happens, because frames are
+// drawn from their copies. So once a design is open and everything is recorded, a few of its frames are drawn close
+// up, one step per draw while the editor is idle, onto the canvas itself (programs can differ between the canvas and
+// an offscreen texture), and the canvas is cleared and drawn properly straight after, in the same draw: nothing of it
+// is ever shown. After that the programs are there.
+
+/** The surface whose programs are being compiled (a new graphics context starts over). */
+let programsWarmedFor: object | null = null;
+/** Frames (by key) that have had their warm-up steps planned on this surface. */
+const programWarmed = new Set<string>();
+let programSteps: { key: string; zoom: number; ox: number; oy: number }[] = [];
+let programStepDue = false;
+/** This many frames are drawn at several sizes; the rest, up to PROGRAM_FRAMES, once. */
+const PROGRAM_SAMPLES = 8;
+const PROGRAM_FRAMES = 400;
+let programSamples = 0;
+
+/** Steps for the frames that have none yet (frames keep arriving while a design opens, and later as it is edited). */
+/** Diagnostic switch: localStorage pen.debug.noProgramWarm = 1 turns the warm-up off (to measure what it costs). */
+let programWarmOff: boolean | null = null;
+
+function planProgramSteps() {
+  if (programWarmOff === null) {
+    try {
+      programWarmOff = localStorage.getItem('pen.debug.noProgramWarm') === '1';
+    } catch {
+      programWarmOff = false;
+    }
+  }
+  if (programWarmOff || programWarmed.size >= PROGRAM_FRAMES) return;
+  const fresh = frames.filter(f => f.record && !programWarmed.has(f.key));
+  // The several-sizes treatment goes to frames spread through what is there: neighbours tend to be made of the same things.
+  const every = Math.max(1, Math.floor(fresh.length / Math.max(1, PROGRAM_SAMPLES - programSamples)));
+  fresh.forEach((f, i) => {
+    if (programWarmed.size >= PROGRAM_FRAMES) return;
+    programWarmed.add(f.key);
+    if (programSamples < PROGRAM_SAMPLES && i % every === 0) {
+      programSamples++;
+      // Small (pictures shrunk, which reads them through their smaller copies: another program), at a size that
+      // puts edges between pixels (rounded clips are then drawn another way), whole at 100%, then its top and its
+      // middle at 200% (clips and pictures are drawn differently when large).
+      programSteps.push({ key: f.key, zoom: 0.4, ox: 0, oy: 0 }, { key: f.key, zoom: 0.77, ox: 0.013, oy: 0.007 }, { key: f.key, zoom: 1, ox: 0, oy: 0 }, { key: f.key, zoom: 2, ox: 0, oy: 0 }, { key: f.key, zoom: 2, ox: 0.25, oy: 0.4 });
+    } else {
+      // Once, whole: a kind of thing only some frames have (a gradient, a blur, a dashed line) gets its program too.
+      programSteps.push({ key: f.key, zoom: 1, ox: 0, oy: 0 });
+    }
+  });
+}
+
+/**
+ * Called by the layer at the start of a draw, before it clears the canvas: draws one warm-up step if one is due.
+ * Returns whether it drew (the layer then sends it to the graphics card before clearing, or the clear would cancel it).
+ */
+export function takeProgramStep(c: SkCanvas, dpr: number): boolean {
+  if (!programStepDue || !programSteps.length) return false;
+  programStepDue = false;
+  const step = programSteps.shift()!;
+  const f = frames.find(x => x.key === step.key);
+  const pic = f?.record ? (f.peek?.() ?? f.record()) : null;
+  if (!f || !pic) return false;
+  c.save();
+  c.scale(dpr * step.zoom, dpr * step.zoom);
+  c.translate(-f.x - step.ox * f.w, -f.y - step.oy * f.h);
+  c.drawPicture(pic);
+  c.restore();
+  stats.programSteps++;
+  return true;
 }
 
 /** Throws away every texture (new file, or Skia switched off). */
@@ -449,6 +538,12 @@ export function resetScene() {
   frames = [];
   pictureKeys = new Set();
   bytes = 0;
+  // Another design may be made of other things: its close-up drawing is warmed up again.
+  programsWarmedFor = null;
+  programWarmed.clear();
+  programSamples = 0;
+  programSteps = [];
+  programStepDue = false;
   bump();
 }
 
