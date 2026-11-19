@@ -43,6 +43,7 @@ import {
   Type as TypeIcon,
   ALargeSmall,
   Baseline,
+  Crop,
 } from 'lucide-react';
 import { rasterize } from '../render/rasterize';
 import { useStore, applyProps, keySource } from '../editor/store';
@@ -555,6 +556,9 @@ function AppearanceSection({ n, p, r, set }: Ctx) {
         </div>
       )}
       {n.type === 'frame' && <CheckRow checked={r.clip === true} label="Clip Content" onChange={v => set({ clip: v || undefined })} />}
+      {['rectangle', 'ellipse', 'polygon', 'path', 'frame'].includes(n.type) && (
+        <CheckRow checked={r.mask === true} label="Use as mask (clips the layers above it)" onChange={v => set({ mask: v || undefined })} />
+      )}
       {n.type === 'ellipse' && (
         <>
           <div className="sub-label">Ellipse</div>
@@ -679,6 +683,11 @@ function PaintSection({ n, p, set, theme, prop, title }: Ctx & { prop: 'fill' | 
                   </span>
                 )}
               </div>
+              {prop === 'fill' && typeof f === 'object' && f.type === 'image' && f.url && (
+                <button className={'icon-btn' + (f.transform ? ' on' : '')} title={f.transform ? 'Edit crop' : 'Crop'} onClick={() => useStore.setState({ crop: { key: n.key, index: i } })}>
+                  <Crop />
+                </button>
+              )}
               {prop === 'fill' && typeof f === 'object' && f.type === 'image' && f.url && (
                 <button
                   className="icon-btn"

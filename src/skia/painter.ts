@@ -6,7 +6,7 @@
 import type { Canvas, CanvasKit, Paint, Paragraph, Path, SkPicture, Shader } from 'canvaskit-wasm';
 import type { PenDoc, RNode } from '../model/types';
 import { resolveProps } from '../render/NodeView';
-import { effectList, fillList, isEnabled, linearEndpoints, normalizeStroke, parseColor, primaryColor, type StrokeInfo } from '../render/paint';
+import { effectList, fillList, imageTransform, isEnabled, linearEndpoints, normalizeStroke, parseColor, primaryColor, type StrokeInfo } from '../render/paint';
 import { ellipseGeometry, pathGeometry, polygonGeometry } from '../render/geometry';
 import { weightNum } from '../render/fonts';
 import { scriptState } from '../editor/scriptHost';
@@ -257,15 +257,24 @@ function drawFill(r: Rec, world: Mat, f: any, x: number, y: number, w: number, h
       dh = ih * k;
     }
     if (svg) paint.setAlphaf(num(f.opacity, 1));
+    // The crop: the fitted picture transformed in units of the box (see imageTransform).
+    const t = imageTransform(f);
+    const grow = t ? Math.max(Math.hypot(t[0], t[1]), Math.hypot(t[2], t[3])) : 1;
     if (r.uses) {
       const [a, b, cc, d, e, g] = world;
       const xs = [x, x + w].flatMap(px => [y, y + h].map(py => a * px + cc * py + e));
       const ys = [x, x + w].flatMap(px => [y, y + h].map(py => b * px + d * py + g));
       const x0 = Math.min(...xs), y0 = Math.min(...ys);
-      r.uses.push({ url, x: x0, y: y0, w: Math.max(...xs) - x0, h: Math.max(...ys) - y0, side: Math.max(dw, dh) * Math.sqrt(Math.abs(a * d - b * cc)) });
+      r.uses.push({ url, x: x0, y: y0, w: Math.max(...xs) - x0, h: Math.max(...ys) - y0, side: Math.max(dw, dh) * grow * Math.sqrt(Math.abs(a * d - b * cc)) });
     }
     c.save();
     c.clipRect(rect, ck.ClipOp.Intersect, true);
+    if (t) {
+      const W = w || 1, H = h || 1;
+      c.translate(x, y);
+      c.concat([t[0], (t[2] * W) / H, t[4] * W, (t[1] * H) / W, t[3], t[5] * H, 0, 0, 1]);
+      c.translate(-x, -y);
+    }
     c.drawImageRectOptions(image, ck.XYWHRect(0, 0, image.width(), image.height()), ck.XYWHRect(x + (w - dw) / 2, y + (h - dh) / 2, dw, dh), ck.FilterMode.Linear, ck.MipmapMode.Linear, paint);
     c.restore();
   }
@@ -293,7 +302,8 @@ type Rec = { c: Canvas; ck: CanvasKit; scope: Scope; ctx: PaintContext; uses?: I
 function drawNode(r: Rec, pn: PaintNode, parentWorld: Mat) {
   const { c, ck } = r;
   const p = propsOf(r.ctx, pn.node);
-  if (p.enabled === false) return;
+  // A mask is a shape that clips its later siblings (drawChildren); it paints nothing itself.
+  if (p.enabled === false || p.mask === true) return;
   c.save();
   c.concat(skMat(mul(invert(parentWorld), pn.world)));
   let layers = 0;
@@ -335,10 +345,38 @@ function drawNode(r: Rec, pn: PaintNode, parentWorld: Mat) {
       break;
     default:
       // group, script: just their children
-      for (const ch of pn.children) drawNode(r, ch, pn.world);
+      drawChildren(r, pn, true);
   }
   for (let i = 0; i < layers; i++) c.restore();
   c.restore();
+}
+
+/**
+ * Draws a node's children. Where they are placed freely (`masks`: groups, frames without auto layout), a child with
+ * `mask: true` clips the siblings after it to its outline, as NodeView's Children does with clip-path.
+ */
+function drawChildren(r: Rec, pn: PaintNode, masks: boolean) {
+  const { c, ck } = r;
+  let saved = 0;
+  for (const ch of pn.children) {
+    const p = propsOf(r.ctx, ch.node);
+    if (masks && p.mask === true && p.enabled !== false) {
+      const local = mul(invert(pn.world), ch.world);
+      c.save();
+      saved++;
+      // Clip in the mask's own coordinates, then go back: the clip stays, in device space.
+      c.concat(skMat(local));
+      const type = ch.node.type;
+      if (type === 'ellipse' || type === 'polygon' || type === 'path') {
+        const { path } = shapePath(ck, r.scope, type, p, ch.w, ch.h);
+        if (path) c.clipPath(path, ck.ClipOp.Intersect, true);
+      } else c.clipRRect(rrect(0, 0, ch.w, ch.h, radii(p.cornerRadius).map(v => Math.min(v, ch.w / 2, ch.h / 2))), ck.ClipOp.Intersect, true);
+      c.concat(skMat(invert(local)));
+      continue;
+    }
+    drawNode(r, ch, pn.world);
+  }
+  for (let i = 0; i < saved; i++) c.restore();
 }
 
 function paintWith(ck: CanvasKit, fn: (p: Paint) => void): Paint {
@@ -428,7 +466,7 @@ function drawBox(r: Rec, pn: PaintNode, p: any, fx: any[]) {
       c.save();
       c.clipRRect(box, ck.ClipOp.Intersect, true);
     }
-    for (const ch of pn.children) drawNode(r, ch, pn.world);
+    drawChildren(r, pn, p.layout === 'none');
     if (p.clip === true) c.restore();
   }
   boxStroke(r, pn.world, normalizeStroke(p, 'inner'), w, h, rad);

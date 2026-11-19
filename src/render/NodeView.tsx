@@ -5,7 +5,8 @@ import * as Lucide from 'lucide-react';
 import feather from 'feather-icons';
 import type { PenDoc, RNode } from '../model/types';
 import { deepResolve } from '../model/resolve';
-import { colorCss, effectList, fillList, fillsToBackground, isEnabled, linearEndpoints, normalizeStroke, primaryColor, type StrokeInfo, type UrlResolver } from './paint';
+import { colorCss, effectList, fillList, fillsToBackground, imageTransform, isEnabled, linearEndpoints, normalizeStroke, primaryColor, type StrokeInfo, type UrlResolver } from './paint';
+import svgpath from 'svgpath';
 import { imageFillUrls, useImageEpoch, useImageVisibility } from './imageLod';
 import { ellipseGeometry, pathGeometry, polygonGeometry } from './geometry';
 import { ensureFont, ensureIconFont, weightNum } from './fonts';
@@ -131,6 +132,11 @@ function boxStyle(n: RNode, p: any, parentLayout: ParentLayout, opts: { autoW?: 
     st.transformOrigin = '0 0';
   }
   if (p.opacity !== undefined && p.opacity !== 1) st.opacity = num(p.opacity, 1);
+  // A mask is a shape, not a picture: it is laid out and can be selected from the layers panel, but paints nothing.
+  if (p.mask === true) {
+    st.opacity = 0;
+    st.pointerEvents = 'none';
+  }
   return st;
 }
 
@@ -243,19 +249,37 @@ function renderView(n: RNode, p: any, parentLayout: ParentLayout) {
 }
 
 const isShaderFill = (f: any) => f && typeof f === 'object' && f.type === 'shader' && f.enabled !== false && f.url;
+const isCroppedImage = (f: any) => f && typeof f === 'object' && f.type === 'image' && f.enabled !== false && f.url && !!imageTransform(f);
+/** Fills a CSS background can't express: they get a layer of their own, and so does every fill after them. */
+const isLayerFill = (f: any) => isShaderFill(f) || isCroppedImage(f);
+
+/** CSS for an image fill's crop matrix on a layer the size of the box (translation in %, so it needs no box size). */
+function cropCss(t: [number, number, number, number, number, number], w: number, h: number): string {
+  const [a, b, c, d, tx, ty] = t;
+  return `translate(${tx * 100}%, ${ty * 100}%) matrix(${a}, ${(b * h) / (w || 1)}, ${(c * w) / (h || 1)}, ${d}, 0, 0)`;
+}
 
 /**
- * Fill layers for a box: plain fills become CSS backgrounds; shader fills become canvas layers stacked in order
- * (the first plain group stays on the element itself so the common case adds no extra DOM).
+ * Fill layers for a box: plain fills become CSS backgrounds; shader fills become canvas layers, and cropped pictures
+ * a clipped layer with the crop as its transform, stacked in order (the first plain group stays on the element itself
+ * so the common case adds no extra DOM).
  */
 function FillLayers({ n, fills, w, h, radius, resolveUrl }: { n: RNode; fills: any[]; w: number; h: number; radius: string | undefined; resolveUrl: UrlResolver }) {
   const out: React.ReactNode[] = [];
   const shape: ShapeSpec = { kind: 'rect', radius: radiusArray(n.props.cornerRadius) };
-  let i = fills.findIndex(isShaderFill);
+  let i = fills.findIndex(isLayerFill);
   while (i >= 0 && i < fills.length) {
-    out.push(<ShaderFillCanvas key={'s' + i} nodeKey={n.key} fill={fills[i]} below={fills.slice(0, i)} shape={shape} style={{ borderRadius: radius }} />);
+    const f = fills[i];
+    const t = imageTransform(f);
+    if (isShaderFill(f)) out.push(<ShaderFillCanvas key={'s' + i} nodeKey={n.key} fill={f} below={fills.slice(0, i)} shape={shape} style={{ borderRadius: radius }} />);
+    else if (t)
+      out.push(
+        <div key={'c' + i} data-crop style={{ position: 'absolute', inset: 0, overflow: 'hidden', borderRadius: radius, pointerEvents: 'none', mixBlendMode: f.blendMode && f.blendMode !== 'normal' ? f.blendMode : undefined }}>
+          <div style={{ position: 'absolute', inset: 0, transformOrigin: '0 0', transform: cropCss(t, w, h), ...fillsToBackground([{ ...f, transform: undefined, blendMode: undefined }], w * Math.max(1, Math.abs(t[0])), h * Math.max(1, Math.abs(t[3])), resolveUrl) }} />
+        </div>,
+      );
     let j = i + 1;
-    while (j < fills.length && !isShaderFill(fills[j])) j++;
+    while (j < fills.length && !isLayerFill(fills[j])) j++;
     const group = fills.slice(i + 1, j);
     if (group.length) out.push(<div key={'g' + i} style={{ position: 'absolute', inset: 0, borderRadius: radius, pointerEvents: 'none', ...fillsToBackground(group, w, h, resolveUrl) }} />);
     i = j;
@@ -305,14 +329,69 @@ function ScriptView({ n, p, parentLayout }: ViewProps) {
 
 type ViewProps = { n: RNode; p: any; parentLayout: ParentLayout };
 
+/**
+ * The outline of a mask layer in its parent's coordinates, as CSS clip-path, or null if it has no fixed box.
+ * `mask: true` is Superpencil's own key (pen.dev's format has no masks): the layer masks the siblings after it.
+ */
+function maskClip(doc: Pick<PenDoc, 'variables'>, m: RNode): string | null {
+  const p = resolveProps(doc, m.props, m.theme);
+  const sw = parseSizing(p.width), sh = parseSizing(p.height);
+  if (sw.mode !== 'fixed' || sh.mode !== 'fixed') return null;
+  const w = sw.px, h = sh.px;
+  let d: string;
+  let evenodd = false;
+  if (m.type === 'ellipse') {
+    d = ellipseGeometry(w, h, num(p.innerRadius), num(p.startAngle), p.sweepAngle === undefined ? 360 : num(p.sweepAngle, 360));
+    evenodd = num(p.innerRadius) > 0;
+  } else if (m.type === 'polygon') d = polygonGeometry(w, h, num(p.polygonCount, 3), num(p.cornerRadius));
+  else if (m.type === 'path') {
+    d = pathGeometry(typeof p.geometry === 'string' ? p.geometry : '', w, h, p.viewBox);
+    evenodd = p.fillRule === 'evenodd';
+  } else {
+    const r = radiusArray(p.cornerRadius).map(v => Math.min(v, w / 2, h / 2));
+    d = `M${r[0]} 0H${w - r[1]}A${r[1]} ${r[1]} 0 0 1 ${w} ${r[1]}V${h - r[2]}A${r[2]} ${r[2]} 0 0 1 ${w - r[2]} ${h}H${r[3]}A${r[3]} ${r[3]} 0 0 1 0 ${h - r[3]}V${r[0]}A${r[0]} ${r[0]} 0 0 1 ${r[0]} 0Z`;
+  }
+  if (!d) return null;
+  let sp = svgpath(d);
+  if (p.flipX === true || p.flipY === true) sp = sp.translate(-w / 2, -h / 2).scale(p.flipX === true ? -1 : 1, p.flipY === true ? -1 : 1).translate(w / 2, h / 2);
+  if (num(p.rotation)) sp = sp.rotate(-num(p.rotation));
+  return `path(${evenodd ? 'evenodd, ' : ''}'${sp.translate(num(p.x), num(p.y)).round(2).toString()}')`;
+}
+
+const isMask = (c: RNode) => c.props.mask === true && c.props.enabled !== false;
+
 function Children({ n, layout }: { n: RNode; layout: ParentLayout }) {
-  return (
-    <>
-      {n.children.map(c => (
-        <NodeView key={c.key} n={c} parentLayout={layout} />
-      ))}
-    </>
-  );
+  const ctx = useContext(RenderCtx);
+  const kids = n.children;
+  // Masks work where children are placed freely (groups, frames without auto layout): each one clips the siblings
+  // after it, so later masks nest inside earlier ones.
+  if (layout !== 'none' || !kids.some(isMask)) {
+    return (
+      <>
+        {kids.map(c => (
+          <NodeView key={c.key} n={c} parentLayout={layout} />
+        ))}
+      </>
+    );
+  }
+  const from = (i: number): React.ReactNode[] => {
+    const out: React.ReactNode[] = [];
+    for (; i < kids.length; i++) {
+      const c = kids[i];
+      out.push(<NodeView key={c.key} n={c} parentLayout={layout} />);
+      const clip = isMask(c) ? maskClip(ctx.doc, c) : null;
+      if (clip) {
+        out.push(
+          <div key={c.key + ':masked'} data-masked-by={c.key} style={{ position: 'absolute', inset: 0, clipPath: clip }}>
+            {from(i + 1)}
+          </div>,
+        );
+        break;
+      }
+    }
+    return out;
+  };
+  return <>{from(0)}</>;
 }
 
 function BoxView({ n, p, parentLayout }: ViewProps) {
@@ -328,7 +407,7 @@ function BoxView({ n, p, parentLayout }: ViewProps) {
   const fx = effectList(p.effect);
   const stroke = boxStroke(normalizeStroke(p, 'inner'), ctx.resolveUrl, radius, w, h);
   const fills = fillList(p.fill);
-  const firstShader = fills.findIndex(isShaderFill);
+  const firstShader = fills.findIndex(isLayerFill);
   const style: CSSProperties = {
     ...st,
     ...fillsToBackground(firstShader >= 0 ? fills.slice(0, firstShader) : fills, w, h, ctx.resolveUrl),
@@ -501,9 +580,10 @@ function SvgPaint({ id, fill, w, h, resolveUrl }: { id: string; fill: any; w: nu
   }
   if (fill.type === 'image' && fill.url) {
     const mode = fill.mode ?? 'cover';
+    const t = imageTransform(fill);
     return (
       <pattern id={id} patternUnits="userSpaceOnUse" width={w} height={h}>
-        <image href={resolveUrl(fill.url, { w, h, mode })} width={w} height={h} opacity={op} preserveAspectRatio={mode === 'stretch' ? 'none' : mode === 'contain' ? 'xMidYMid meet' : 'xMidYMid slice'} />
+        <image href={resolveUrl(fill.url, { w: w * Math.max(1, Math.abs(t?.[0] ?? 1)), h: h * Math.max(1, Math.abs(t?.[3] ?? 1)), mode })} width={w} height={h} opacity={op} transform={t ? `matrix(${t[0]} ${(t[1] * h) / (w || 1)} ${(t[2] * w) / (h || 1)} ${t[3]} ${t[4] * w} ${t[5] * h})` : undefined} preserveAspectRatio={mode === 'stretch' ? 'none' : mode === 'contain' ? 'xMidYMid meet' : 'xMidYMid slice'} />
       </pattern>
     );
   }

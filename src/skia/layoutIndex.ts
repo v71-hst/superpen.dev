@@ -88,7 +88,7 @@ export function hitChain(root: LayoutNode, wx: number, wy: number): string[] {
   const ctx = { doc: useStore.getState().doc! };
   const visit = (n: LayoutNode): string[] | null => {
     const p = propsOf(ctx, n.node);
-    if (p.enabled === false) return null;
+    if (p.enabled === false || p.mask === true) return null;
     const inside = contains(n, wx, wy);
     const clips = (n.node.type === 'frame' && p.clip === true) || n.node.type === 'note';
     if (!clips || inside) {

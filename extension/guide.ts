@@ -34,11 +34,16 @@ Optional fallback: "fit_content(200)". Children of layout frames ignore x/y unle
 ## Paint
 fill / stroke: "#RRGGBB" | "#RRGGBBAA" | "$variable" | array of paints (last paints on top) |
   { type: "gradient", gradientType: "linear"|"radial"|"angular", rotation (deg, CCW, 0 = up), colors: [{color, position 0..1}] } |
-  { type: "image", url: "./relative.png", mode: "cover"|"contain"|"stretch" }.
+  { type: "image", url: "./relative.png", mode: "cover"|"contain"|"stretch", transform?: [a,b,c,d,tx,ty] }.
+  Image crop: transform is applied to the picture after it is fitted to the box, in units of the box
+  ([2,0,0,2,-0.5,-0.5] zooms into the middle 2x; [2,0,0,1,-1,0] shows the right half). Omit it for no crop.
 strokeWidth (n or {top,right,bottom,left}), strokeAlignment: inner|center|outer.
 effect: { type: "shadow", shadowType: "outer"|"inner", offset: {x,y}, blur, spread, color } | { type: "blur", radius } |
         { type: "background_blur", radius } — or an array of these.
 opacity 0..1, rotation (deg CCW), flipX/flipY, enabled: false hides a node.
+mask: true (rectangle, ellipse, polygon, path or frame with fixed size, inside a group or a layout:"none" frame) makes
+  the layer a mask: it paints nothing and clips every sibling AFTER it in the children list to its outline.
+  To mask a photo into a circle: group [ ellipse {mask:true}, rectangle {image fill} ].
 
 ## Variables & themes
 variables: { "brand": { "type": "color", "value": "#3366FF" } }. Reference anywhere as "$brand".

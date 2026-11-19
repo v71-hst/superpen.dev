@@ -3,7 +3,9 @@
 // layers to whatever file is open (in memory, far from the file's content), so any design works; nothing is saved.
 // Usage: node v1.mjs <url> [shot dir]     (needs the dev server: it imports /src modules)
 import puppeteer from 'puppeteer-core';
+import pngjs from 'pngjs';
 import { launchOptions } from './browser.mjs';
+const { PNG } = pngjs;
 const [, , url, shots] = process.argv;
 const browser = await puppeteer.launch(launchOptions({ headless: true }));
 const page = await browser.newPage();
@@ -18,7 +20,15 @@ const ok = (name, cond, info = '') => console.log(`${cond ? 'PASS' : 'FAIL'} ${n
 const ev = (fn, ...a) => page.evaluate(fn, ...a);
 const frames = () => ev(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
 const node = id => ev(id => window.__penAgent('nodes', { ids: [id], depth: 5 }).then(r => r[0] ?? r.nodes?.[0] ?? r), id);
-const rect = k => ev(async k => { const m = await import('/src/editor/measure.ts'); const r = m.nodeScreenRect(k); return r && { x: r.x, y: r.y, w: r.width, h: r.height }; }, k);
+// A layer's box on screen. In the Skia renderer a frame has no geometry until its fonts and pictures are in: wait for it.
+const rect = async k => {
+  for (let i = 0; i < 40; i++) {
+    const r = await ev(async k => { const m = await import('/src/editor/measure.ts'); const r = m.nodeScreenRect(k); return r && { x: r.x, y: r.y, w: r.width, h: r.height }; }, k);
+    if (r) return r;
+    await sleep(150);
+  }
+  return null;
+};
 const ops = operations => ev(operations => window.__penAgent('applyOps', { operations }), operations);
 const X = 60000, Y = 60000; // where this script's layers go
 
@@ -106,6 +116,70 @@ await page.keyboard.up('Alt');
 await page.mouse.move(o.x + o.w / 2, o.y + o.h / 2);
 await frames();
 ok('releasing Alt hides them', (await ev(() => document.querySelectorAll('.measure-label').length)) === 0);
+
+// ---------- Image crop and masking (looked at as pixels, so the same checks cover both renderers) ----------
+const px = async (wx, wy) => {
+  await frames();
+  const png = PNG.sync.read(Buffer.from(await page.screenshot({ clip: { x: Math.round(200 + wx), y: Math.round(120 + wy), width: 1, height: 1 } })));
+  return [png.data[0], png.data[1], png.data[2]];
+};
+const isRed = c => c[0] > 200 && c[1] < 60 && c[2] < 60, isBlue = c => c[2] > 200 && c[0] < 60 && c[1] < 60, isGreen = c => c[1] > 200 && c[0] < 60 && c[2] < 60;
+// A 200×100 picture: left half red, right half blue.
+const picture = await ev(() => { const c = document.createElement('canvas'); c.width = 200; c.height = 100; const g = c.getContext('2d'); g.fillStyle = '#ff0000'; g.fillRect(0, 0, 100, 100); g.fillStyle = '#0000ff'; g.fillRect(100, 0, 100, 100); return c.toDataURL('image/png'); });
+await ops([
+  { op: 'insert', parent: 'v1', node: { type: 'rectangle', id: 'v1img', x: 40, y: 300, width: 200, height: 100, fill: { type: 'image', url: picture, mode: 'stretch' } } },
+  { op: 'insert', parent: 'v1', node: { type: 'group', id: 'v1grp', x: 320, y: 300, children: [
+    { type: 'ellipse', id: 'v1mask', x: 0, y: 0, width: 100, height: 100, fill: '#FF0000', mask: true },
+    { type: 'rectangle', id: 'v1masked', x: 50, y: 0, width: 50, height: 100, fill: '#00FF00' },
+  ] } },
+]);
+await ev(() => window.__penStore.setState({ selection: [], hover: null }));
+await sleep(1200);
+let left = await px(60, 350), right = await px(220, 350);
+ok('an image fill without a crop shows the whole picture', isRed(left) && isBlue(right), `${left} | ${right}`);
+await ops([{ op: 'update', id: 'v1img', props: { fill: { type: 'image', url: picture, mode: 'stretch', transform: [2, 0, 0, 1, -1, 0] } } }]);
+await sleep(500);
+left = await px(60, 350); right = await px(220, 350);
+ok('transform [2,0,0,1,-1,0] shows the right half', isBlue(left) && isBlue(right), `${left} | ${right}`);
+await ops([{ op: 'update', id: 'v1img', props: { fill: { type: 'image', url: picture, mode: 'stretch' } } }]);
+
+// Crop on the canvas: drag the left handle to the picture's middle; the picture stays where it is.
+await ev(() => window.__penStore.setState({ selection: ['v1img'], crop: { key: 'v1img', index: 0 } }));
+await page.waitForSelector('.crop-handle.w', { timeout: 5000 });
+let hb = await ev(() => { const r = document.querySelector('.crop-handle.w').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+await page.mouse.move(hb.x, hb.y);
+await page.mouse.down();
+await page.mouse.move(hb.x + 60, hb.y, { steps: 3 });
+await page.mouse.move(hb.x + 100, hb.y, { steps: 3 });
+await page.mouse.up();
+await frames();
+let im = await node('v1img');
+ok('dragging a crop handle resizes the layer and writes the crop', im.x === 140 && im.width === 100 && JSON.stringify(im.fill.transform) === '[2,0,0,1,-1,0]', JSON.stringify({ x: im.x, w: im.width, t: im.fill.transform }));
+// Dragging inside slides the picture: 50 px to the right brings the red half back in.
+const win = await ev(() => { const r = document.querySelector('.crop-window').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+await page.mouse.move(win.x, win.y);
+await page.mouse.down();
+await page.mouse.move(win.x + 50, win.y, { steps: 4 });
+await page.mouse.up();
+await frames();
+im = await node('v1img');
+ok('dragging inside the crop window slides the picture', JSON.stringify(im.fill.transform) === '[2,0,0,1,-0.5,0]', JSON.stringify(im.fill.transform));
+if (shots) await page.screenshot({ path: `${shots}/v1-crop.png` });
+await ev(() => [...document.querySelectorAll('.crop-bar button')].find(b => /Reset/.test(b.textContent)).click());
+await frames();
+im = await node('v1img');
+ok('Reset crop removes it', im.fill.transform === undefined, JSON.stringify(im.fill));
+await page.keyboard.press('Escape');
+await frames();
+ok('Escape ends cropping', (await ev(() => !document.querySelector('.crop-overlay') && window.__penStore.getState().crop === null)));
+
+// Masking: the ellipse clips the green box after it and paints nothing itself.
+await ev(() => window.__penStore.setState({ selection: [], hover: null }));
+await sleep(300);
+const inside = await px(320 + 75, 350), corner = await px(320 + 97, 303), maskOnly = await px(320 + 25, 350);
+ok('a mask clips the layers after it', isGreen(inside) && !isGreen(corner), `inside ${inside} | corner ${corner}`);
+ok('the mask layer itself paints nothing', !isRed(maskOnly) && !isGreen(maskOnly), String(maskOnly));
+if (shots) await page.screenshot({ path: `${shots}/v1-mask.png` });
 
 ok('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();

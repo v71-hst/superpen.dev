@@ -88,6 +88,8 @@ type State = {
   pickColor: ((color: string) => void) | null;
   /** Tool to return to after a color-field pick. */
   prevTool: Tool | null;
+  /** The image fill being cropped on the canvas: the layer and the fill's index among its fills (ui/Crop.tsx). */
+  crop: { key: string; index: number } | null;
 };
 
 type Actions = {
@@ -147,6 +149,7 @@ export const useStore = create<State & Actions>((set, get) => ({
   openComment: null,
   pickColor: null,
   prevTool: null,
+  crop: null,
 
   openDoc: (doc, file) =>
     set({ doc, savedDoc: doc, file, past: [], future: [], selection: [], hover: null, editingKey: null, previewTheme: null, expanded: {}, lastMerge: null, view: fitViewForDoc(doc), stateView: null, pending: null, openComment: null }),

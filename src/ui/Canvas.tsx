@@ -26,6 +26,7 @@ import { ErrorBoundary, NodeErrorBox } from './ErrorBoundary';
 import { snapMove, type Guides } from '../editor/snapping';
 import { addComment } from '../editor/comments';
 import { CanvasExtras } from './CanvasExtras';
+import { CropOverlay } from './Crop';
 
 function unionRect(rs: Rect[]): Rect {
   const x0 = Math.min(...rs.map(r => r.x));
@@ -854,6 +855,7 @@ export function Canvas() {
       </div>
       {tree && <Overlay tree={tree} onResizeStart={onResizeStart} draft={draft} />}
       {tree && <CanvasExtras tree={tree} draft={draft} onGapStart={onGapStart} dragging={!!drag.current} />}
+      <CropOverlay />
       <AiPenLayer />
       {tool === 'pen' && penPoints.length > 0 && <PenPreview points={penPoints} hover={penHover} />}
     </div>

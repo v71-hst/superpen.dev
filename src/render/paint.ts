@@ -136,6 +136,19 @@ function meshCss(f: any): string {
   return `linear-gradient(to bottom, transparent, ${br}), linear-gradient(to right, ${tl}, ${tr}), linear-gradient(to right, ${bl}, ${br})`;
 }
 
+/**
+ * An image fill's crop: pen.dev's `transform: [a, b, c, d, tx, ty]`, applied to the picture after it has been fitted
+ * to the box (cover / contain / stretch), in units of the box: x' = a·x + c·y + tx, y' = b·x + d·y + ty with the box
+ * as the unit square. [2, 0, 0, 1, -1, 0] shows the picture's right half. null when there is none (or the identity).
+ */
+export function imageTransform(f: any): [number, number, number, number, number, number] | null {
+  const t = f && typeof f === 'object' && f.type === 'image' ? f.transform : null;
+  if (!Array.isArray(t) || t.length !== 6 || !t.every(v => typeof v === 'number' && isFinite(v))) return null;
+  const [a, b, c, d, tx, ty] = t;
+  if (a === 1 && b === 0 && c === 0 && d === 1 && tx === 0 && ty === 0) return null;
+  return [a, b, c, d, tx, ty];
+}
+
 export type CssLayer = { image: string; size?: string; position?: string; repeat?: string; blend?: string };
 
 /** Turns a fill's url into something loadable; given the box an image fill covers, it may return a copy sized for it. */

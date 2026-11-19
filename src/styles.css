@@ -1411,6 +1411,73 @@ button.tb-file:hover,
   padding: 0 12px;
 }
 
+/* Image crop (ui/Crop.tsx): the whole picture faded, the layer's box as the window over it. */
+.crop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  overflow: hidden;
+}
+.crop-ghost {
+  position: absolute;
+  opacity: 0.35;
+  pointer-events: none;
+  user-select: none;
+  outline: 1px dashed var(--sel);
+}
+.crop-window {
+  position: absolute;
+  outline: 1.5px solid var(--sel);
+  cursor: move;
+}
+.crop-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  background: #fff;
+  border: 1.5px solid var(--sel);
+  border-radius: 2px;
+}
+.crop-handle.n,
+.crop-handle.s {
+  cursor: ns-resize;
+}
+.crop-handle.e,
+.crop-handle.w {
+  cursor: ew-resize;
+}
+.crop-handle.nw,
+.crop-handle.se {
+  cursor: nwse-resize;
+}
+.crop-handle.ne,
+.crop-handle.sw {
+  cursor: nesw-resize;
+}
+.crop-bar {
+  position: absolute;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--island);
+  box-shadow: inset 0 0 0 1px var(--rim), var(--shadow);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.crop-bar .rp-btn {
+  padding: 0 10px;
+}
+.crop-bar .rp-btn.primary {
+  background: var(--primary);
+  color: var(--primary-fg);
+}
+.crop-bar .rp-btn:disabled {
+  opacity: 0.45;
+}
+
 /* Alt + hover: distances from the selection to the hovered layer. */
 .measure-line {
   position: absolute;
