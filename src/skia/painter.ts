@@ -11,7 +11,7 @@ import { ellipseGeometry, pathGeometry, polygonGeometry } from '../render/geomet
 import { weightNum } from '../render/fonts';
 import { scriptState } from '../editor/scriptHost';
 import { Scope, free, own } from './lifetime';
-import { familyList, fontBlocker, fontCollection, fontEpoch } from './fonts';
+import { familyList, fontBlocker, fontCollection, fontEpoch, fontStyleKey } from './fonts';
 import { getImage } from './images';
 import { iconLibrarySupported, iconPaths } from './icons';
 
@@ -56,8 +56,28 @@ export function propsOf(ctx: Pick<PaintContext, 'doc'>, n: RNode): any {
 
 const isShaderFill = (f: any) => f && typeof f === 'object' && f.type === 'shader' && f.enabled !== false && f.url;
 
-/** null if Skia can draw this whole subtree now, else the first reason it can't (that frame stays DOM). */
-export function skiaEligible(ctx: PaintContext, n: RNode, editingKey?: string | null): string | null {
+/**
+ * What a frame's eligibility and picture depend on besides its own nodes: the font styles and pictures it uses. When
+ * one of those arrives the frame is checked and recorded again; other frames keep their pictures.
+ */
+export type FrameDeps = {
+  fonts: Set<string>;
+  /** Text with characters outside the bundled font's range, or a note: any font that arrives may supply its glyphs. */
+  anyFont: boolean;
+  images: Set<string>;
+};
+
+export const newDeps = (): FrameDeps => ({ fonts: new Set(), anyFont: false, images: new Set() });
+
+/** Characters the bundled Inter (latin) has: text made only of these never needs a glyph from a later font. */
+const BASIC_RANGES = '0000-00FF 0131 0152 0153 02C6 02DA 02DC 2000-206F 20AC 2122 2191 2193 2212 2215 FEFF FFFD';
+const BASIC_TEXT = new RegExp(`^[${BASIC_RANGES.split(' ').map(r => r.split('-').map(h => String.fromCharCode(92) + 'u' + h).join('-')).join('')}]*$`);
+
+/**
+ * null if Skia can draw this whole subtree now, else the first reason it can't (that frame stays DOM). `deps` collects
+ * what the answer depends on, up to the node that gave the reason.
+ */
+export function skiaEligible(ctx: PaintContext, n: RNode, editingKey?: string | null, deps?: FrameDeps): string | null {
   const p = propsOf(ctx, n);
   if (p.enabled === false) return null;
   if (n.key === editingKey) return 'text being edited';
@@ -76,7 +96,13 @@ export function skiaEligible(ctx: PaintContext, n: RNode, editingKey?: string | 
     case 'note':
     case 'prompt':
     case 'context': {
-      const why = fontBlocker(typeof p.fontFamily === 'string' && p.fontFamily ? p.fontFamily : 'Inter', p.fontWeight, p.fontStyle === 'italic');
+      const family = typeof p.fontFamily === 'string' && p.fontFamily ? p.fontFamily : 'Inter';
+      if (deps) {
+        deps.fonts.add(fontStyleKey(family, p.fontWeight, p.fontStyle === 'italic'));
+        // Notes also draw a heading in another weight.
+        if (n.type !== 'text' || !BASIC_TEXT.test(typeof p.content === 'string' ? p.content : String(p.content ?? ''))) deps.anyFont = true;
+      }
+      const why = fontBlocker(family, p.fontWeight, p.fontStyle === 'italic');
       if (why) return why;
       break;
     }
@@ -94,12 +120,13 @@ export function skiaEligible(ctx: PaintContext, n: RNode, editingKey?: string | 
   }
   for (const f of [...fillList(p.fill), ...(normalizeStroke(p, 'inner')?.fills ?? [])]) {
     if (f && typeof f === 'object' && f.type === 'image' && f.url && f.enabled !== false) {
-      const st = getImage(ctx.ck, ctx.resolveUrl(f.url)).status;
-      if (st === 'loading') return 'pictures loading';
+      const url = ctx.resolveUrl(f.url);
+      deps?.images.add(url);
+      if (getImage(ctx.ck, url).status === 'loading') return 'pictures loading';
     }
   }
   for (const c of n.children) {
-    const why = skiaEligible(ctx, c, editingKey);
+    const why = skiaEligible(ctx, c, editingKey, deps);
     if (why) return why;
   }
   return null;
@@ -725,7 +752,9 @@ export function recordPicture(ctx: PaintContext, root: PaintNode): SkPicture {
   const ys = [f, f + b * root.w, f + d * root.h, f + b * root.w + d * root.h];
   // Generous bounds: shadows, outer strokes and overflowing children reach past the frame.
   const m = 2000;
-  const c = rec.beginRecording(ck.LTRBRect(Math.min(...xs) - m, Math.min(...ys) - m, Math.max(...xs) + m, Math.max(...ys) + m));
+  // computeBounds: the picture keeps a spatial index, so zoomed in only what is on screen is replayed, and its
+  // cullRect() is what was actually drawn.
+  const c = rec.beginRecording(ck.LTRBRect(Math.min(...xs) - m, Math.min(...ys) - m, Math.max(...xs) + m, Math.max(...ys) + m), true);
   try {
     drawNode({ c, ck, scope, ctx }, root, [1, 0, 0, 1, 0, 0]);
     return own(rec.finishRecordingAsPicture(), 'picture');

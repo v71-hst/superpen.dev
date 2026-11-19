@@ -5,8 +5,8 @@
 // A frame is only handed to Skia once its texture is ready and the surface can draw; until then, or if anything
 // fails, Roots keeps showing the snapshot <img>, so a frame is never left with nothing.
 import { useSyncExternalStore } from 'react';
-import type { Canvas as SkCanvas, CanvasKit, Image as SkImage, Paint, SkPicture } from 'canvaskit-wasm';
-import { levelSide, pictureImage } from './pictureTextures';
+import type { Canvas as SkCanvas, CanvasKit, Image as SkImage, Paint, SkPicture, Surface } from 'canvaskit-wasm';
+import { baseSide, hasPictureCopy, levelSide, pictureCopy } from './pictureTextures';
 import { kitIfLoaded } from './kit';
 import { free, own } from './lifetime';
 import { activeRenderer } from './renderer';
@@ -26,6 +26,8 @@ export type SceneFrame = {
   h: number;
   /** Picture frames: records (or returns) the picture; until it exists the placeholder colour is shown. */
   record?: () => SkPicture | null;
+  /** The picture if it is already recorded (no work). */
+  peek?: () => SkPicture | null;
   placeholder?: string;
   /** Changes with the frame's content. */
   token?: object;
@@ -43,7 +45,18 @@ const textures = new Map<string, Texture>();
 let frames: SceneFrame[] = [];
 let surfaceReady = false;
 let bytes = 0;
-const stats = { uploads: 0, evictions: 0, failures: 0, /** Frames shown as snapshot images at the last render. */ fallbacks: 0 };
+const stats = {
+  uploads: 0,
+  evictions: 0,
+  failures: 0,
+  /** Frames shown as snapshot images at the last render. */
+  fallbacks: 0,
+  /** Whole pictures replayed while zoomed far out (the slow path: no rasterised copy yet). */
+  farReplays: 0,
+  /** Frames drawn as their colour because the picture wasn't recorded yet. */
+  placeholders: 0,
+  slowestDrawMs: 0,
+};
 let version = 0;
 const listeners = new Set<() => void>();
 const queue: string[] = [];
@@ -81,6 +94,13 @@ export function surfaceIsReady() {
   return surfaceReady;
 }
 
+/** The Skia canvas's surface while there is one: far-zoom copies are made in its graphics context. */
+let gpu: Surface | null = null;
+
+export function setSceneSurface(s: Surface | null) {
+  gpu = s;
+}
+
 /** Something a frame's picture depends on changed (a font or picture loaded): Roots re-renders and re-records. */
 export function invalidateScene() {
   bump();
@@ -115,10 +135,32 @@ export function setSceneFrames(next: SceneFrame[], imageFallbacks: number) {
   }
   const same = next.length === frames.length && next.every((f, i) => { const o = frames[i]; return o.key === f.key && o.url === f.url && o.token === f.token && o.x === f.x && o.y === f.y && o.w === f.w && o.h === f.h; });
   frames = next;
+  pictureKeys = new Set(next.filter(f => f.record).map(f => f.key));
   // Draw right away so the canvas changes in the same frame as the <img> elements it replaces. Roots re-renders
   // often (zoom steps, frames going live a few at a time); an unchanged list needs no redraw (view changes redraw
   // on their own).
   if (!same) hooks.drawNow();
+  scheduleWarm();
+}
+
+let pictureKeys = new Set<string>();
+
+/** Whether Skia draws this top-level frame from its own picture now (it needs no snapshot and no DOM). */
+export function drawsFromPicture(key: string) {
+  return pictureKeys.has(key);
+}
+
+let lastViewChange = 0;
+let lastInteraction = 0;
+
+/** SkiaLayer reports view changes: while the view moves, drawing spends less time on new pictures and copies. */
+export function noteViewChange() {
+  lastViewChange = performance.now();
+}
+
+/** The user is panning, zooming or moving the pointer (lod.ts lodInteraction): background work waits. */
+export function noteInteraction() {
+  lastInteraction = performance.now();
 }
 
 /** lod.ts dropped a snapshot (the frame changed or a new file was opened). */
@@ -208,33 +250,46 @@ export function drawScene(c: SkCanvas, ck: CanvasKit, visible: { x: number; y: n
   if (!frames.length) return;
   const now = performance.now();
   const zoom = useStore.getState().view.zoom;
-  // Recording a frame's picture, and rasterising it for far zoom, cost a few ms each: spend at most ~12 ms per draw on
-  // that work, draw the rest from what exists (a recorded picture, or the frame's colour), then draw again.
-  const until = performance.now() + 12;
+  const far = zoom < PICTURE_IMAGE_ZOOM;
+  const dpr = devicePixelRatio || 1;
+  lastVisible = visible;
+  // Recording a frame's picture, and rasterising its far-zoom copy, cost a few ms each. Zoomed out, a draw spends only
+  // a little time on that work (less while the view is moving) and draws every other frame from what already exists:
+  // its copy, even a blurrier one, or failing that its colour. Then it draws again. Close up, the few frames on screen
+  // are recorded on the spot.
+  const until = now + (now - lastViewChange < 150 ? 5 : 14);
   let more = false;
   let placeholderPaint: Paint | null = null;
   for (const f of frames) {
     if (f.x > visible.x + visible.w || f.x + f.w < visible.x || f.y > visible.y + visible.h || f.y + f.h < visible.y) continue;
     if (f.record) {
-      const pic = performance.now() < until || zoom >= PICTURE_IMAGE_ZOOM ? f.record() : null;
-      if (!pic) {
-        // Not recorded yet: the frame's own colour for a moment, never nothing.
-        placeholderPaint ??= new ck.Paint();
-        placeholderPaint.setColor(ck.parseColorString(f.placeholder ?? 'rgba(128,128,128,0.12)'));
-        c.drawRect(ck.XYWHRect(f.x, f.y, f.w, f.h), placeholderPaint);
-        more = true;
+      const pic = !far || performance.now() < until ? f.record() : (f.peek?.() ?? null);
+      if (pic && !far) {
+        c.drawPicture(pic);
         continue;
       }
-      let img: SkImage | null = null;
-      if (zoom < PICTURE_IMAGE_ZOOM) {
-        const side = levelSide(Math.max(f.w, f.h), zoom, devicePixelRatio || 1);
-        img = pictureImage(ck, f.key, pic, f, side, performance.now() < until);
-        if (!img) more = true;
+      if (pic) {
+        const canWork = performance.now() < until;
+        const copy = gpu ? pictureCopy(ck, gpu, f.key, pic, f, levelSide(Math.max(f.w, f.h), zoom, dpr), canWork) : null;
+        if (copy) {
+          const img = copy.image;
+          c.drawImageRectOptions(img, ck.XYWHRect(0, 0, img.width(), img.height()), ck.XYWHRect(f.x, f.y, f.w, f.h), ck.FilterMode.Linear, ck.MipmapMode.None, null);
+          if (!copy.sharp) more = true;
+          continue;
+        }
+        if (canWork) {
+          // A copy can't be made at all: replay the picture.
+          stats.farReplays++;
+          c.drawPicture(pic);
+          continue;
+        }
       }
-      if (img) {
-        const k = Math.max(f.w, f.h) / Math.max(img.width(), img.height());
-        c.drawImageRectOptions(img, ck.XYWHRect(0, 0, img.width(), img.height()), ck.XYWHRect(f.x, f.y, img.width() * k, img.height() * k), ck.FilterMode.Linear, ck.MipmapMode.Linear, null);
-      } else c.drawPicture(pic);
+      // Nothing to draw it from yet: the frame's own colour for a moment, never nothing.
+      placeholderPaint ??= new ck.Paint();
+      placeholderPaint.setColor(ck.parseColorString(f.placeholder ?? 'rgba(128,128,128,0.12)'));
+      c.drawRect(ck.XYWHRect(f.x, f.y, f.w, f.h), placeholderPaint);
+      stats.placeholders++;
+      more = true;
       continue;
     }
     const t = textures.get(f.url);
@@ -244,7 +299,75 @@ export function drawScene(c: SkCanvas, ck: CanvasKit, visible: { x: number; y: n
     c.drawImageRectOptions(img, ck.XYWHRect(0, 0, img.width(), img.height()), ck.XYWHRect(f.x, f.y, f.w, f.h), ck.FilterMode.Linear, ck.MipmapMode.Linear, null);
   }
   placeholderPaint?.delete();
+  stats.slowestDrawMs = Math.max(stats.slowestDrawMs, Math.round(performance.now() - now));
   if (more) setTimeout(() => hooks.requestDraw(), 0);
+  else scheduleWarm();
+}
+
+let lastVisible = { x: 0, y: 0, w: 0, h: 0 };
+let warmHandle: ReturnType<typeof setTimeout> | number | null = null;
+/** Frames (by content token) whose picture could not be recorded ahead of need; drawing deals with them. */
+const warmFailed = new WeakSet<object>();
+const idle: (cb: (d: { timeRemaining(): number }) => void) => number | ReturnType<typeof setTimeout> =
+  typeof requestIdleCallback === 'function' ? cb => requestIdleCallback(cb, { timeout: 2000 }) : cb => setTimeout(() => cb({ timeRemaining: () => 8 }), 50);
+
+/**
+ * Records pictures and makes far-zoom copies ahead of need, in the browser's idle time, nearest the view first. After
+ * that, zooming out or panning to a frame for the first time has nothing left to compute.
+ */
+function scheduleWarm() {
+  if (warmHandle !== null || !surfaceReady || !pictureKeys.size) return;
+  warmHandle = idle(warm);
+}
+
+function warm(deadline: { timeRemaining(): number }) {
+  warmHandle = null;
+  const ck = kitIfLoaded();
+  const surface = gpu;
+  if (!ck || !surface || !surfaceReady || document.hidden) return;
+  // One frame's recording can't be interrupted: not while the view moves or the pointer is busy.
+  const quiet = performance.now() - Math.max(lastViewChange, lastInteraction);
+  if (quiet < 200) {
+    warmHandle = setTimeout(() => {
+      warmHandle = null;
+      scheduleWarm();
+    }, 200 - quiet);
+    return;
+  }
+  const cx = lastVisible.x + lastVisible.w / 2, cy = lastVisible.y + lastVisible.h / 2;
+  let redraw = false;
+  let left = true;
+  for (;;) {
+    let best: SceneFrame | null = null;
+    let bestD = Infinity;
+    for (const f of frames) {
+      if (!f.record || (f.token && warmFailed.has(f.token))) continue;
+      const pic = f.peek?.() ?? null;
+      if (pic && hasPictureCopy(f.key, pic)) continue;
+      const d = Math.hypot(f.x + f.w / 2 - cx, f.y + f.h / 2 - cy);
+      if (d < bestD) {
+        bestD = d;
+        best = f;
+      }
+    }
+    if (!best) {
+      left = false;
+      break;
+    }
+    try {
+      const pic = best.record!();
+      if (pic) pictureCopy(ck, surface, best.key, pic, best, baseSide(), true);
+      if ((!pic || !hasPictureCopy(best.key, pic)) && best.token) warmFailed.add(best.token);
+    } catch (e) {
+      // drawScene's caller turns a CanvasKit failure into the DOM fallback; here, stop and let drawing find it.
+      log('warn', 'Skia could not prepare a frame ahead of need', String(e));
+      return;
+    }
+    if (best.x < lastVisible.x + lastVisible.w && best.x + best.w > lastVisible.x && best.y < lastVisible.y + lastVisible.h && best.y + best.h > lastVisible.y) redraw = true;
+    if (deadline.timeRemaining() < 3) break;
+  }
+  if (redraw) hooks.requestDraw();
+  if (left) scheduleWarm();
 }
 
 /** Throws away every texture (new file, or Skia switched off). */
@@ -253,6 +376,7 @@ export function resetScene() {
   textures.clear();
   queue.length = 0;
   frames = [];
+  pictureKeys = new Set();
   bytes = 0;
   bump();
 }

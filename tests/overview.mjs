@@ -78,10 +78,11 @@ ok('every filled frame on screen is visible', v1.checked >= 10 && v1.invisible.l
 const imgs = await page.evaluate(keys => keys.filter(k => document.querySelector(`#pen-world > img[data-k="${CSS.escape(k)}"]`)).length, v1.skiaKeys);
 const allImgs = await page.evaluate(() => document.querySelectorAll('#pen-world > img[data-bitmap]').length);
 ok('Skia-drawn frames mount no <img>', imgs === 0, `${imgs} of ${v1.skiaKeys.length} Skia frames have an <img>; ${allImgs} snapshot <img>s in the page`);
-// Live images: snapshot textures (stage 1), rasterised copies of frame pictures and decoded picture fills (stage 3).
+// Live images: snapshot textures (stage 1), the levels of the far-zoom copies of frame pictures and decoded picture
+// fills (stage 3).
 const sk = d.renderer.skia;
-const expectImages = sk.overview.textures + (sk.pictureImages?.images ?? 0) + (sk.images?.ready ?? 0);
-ok('every live CanvasKit image is accounted for', (sk.liveObjects.byKind.image ?? 0) === expectImages, `${sk.liveObjects.byKind.image} live = ${sk.overview.textures} snapshot textures + ${sk.pictureImages?.images} picture copies + ${sk.images?.ready} decoded pictures`);
+const expectImages = sk.overview.textures + (sk.pictureImages?.levelImages ?? 0) + (sk.images?.ready ?? 0);
+ok('every live CanvasKit image is accounted for', (sk.liveObjects.byKind.image ?? 0) === expectImages, `${sk.liveObjects.byKind.image} live = ${sk.overview.textures} snapshot textures + ${sk.pictureImages?.levelImages} images in ${sk.pictureImages?.images} picture copies + ${sk.images?.ready} decoded pictures`);
 ok('no scaled snapshot copies are made', d.lod.levels === d.lod.bitmaps, `${d.lod.bitmaps} snapshots, ${d.lod.levels} levels`);
 
 // Move a Skia-drawn frame to an empty spot (the same document edit a drag makes): Skia must draw it there.
@@ -124,7 +125,8 @@ await sleep(6000);
 const waiting2 = (await diag()).renderer.skia.overview.framesDrawn;
 ok('zoomed in, Skia only draws off-screen frames still waiting to go live, fewer over time', waiting2 < waiting1 || waiting2 === 0, `${waiting1} -> ${waiting2} frames drawn by Skia`);
 
-// Back out, then lose the graphics context for good: snapshots come back as images, nothing vanishes.
+// Back out, then lose the graphics context for good: nothing vanishes. Frames Skia drew from their own pictures have
+// no snapshot (none is made for them), so they show their own fills until Skia is back or the DOM renderer takes over.
 await page.evaluate(() => {
   const s = window.__penStore.getState();
   s.setView({ x: 60, y: 40, zoom: 0.06 });
@@ -137,7 +139,7 @@ await page.evaluate(() => {
 });
 await sleep(1500);
 const v5 = await visibility('context_lost');
-ok('while the context is lost, frames show their snapshot images', (v4.kinds.skia ?? 0) > 0 && !v5.kinds.skia && (v5.kinds.bitmap ?? 0) > 0 && v5.invisible.length === 0, `before ${JSON.stringify(v4.kinds)} -> lost ${JSON.stringify(v5.kinds)}; invisible: ${v5.invisible.slice(0, 5).join(', ') || 'none'}`);
+ok('while the context is lost, frames show a snapshot or their own fills', (v4.kinds.skia ?? 0) > 0 && !v5.kinds.skia && (v5.kinds.bitmap ?? 0) + (v5.kinds.placeholder ?? 0) + (v5.kinds.live ?? 0) > 0 && v5.invisible.length === 0, `before ${JSON.stringify(v4.kinds)} -> lost ${JSON.stringify(v5.kinds)}; invisible: ${v5.invisible.slice(0, 5).join(', ') || 'none'}`);
 await sleep(6000);
 d = await diag();
 const v6 = await visibility('fell_back');

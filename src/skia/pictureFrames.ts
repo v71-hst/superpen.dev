@@ -10,11 +10,11 @@ import { setSkiaGeometry } from '../editor/measure';
 import { worldBounds } from '../layout/layout';
 import { fillList, isEnabled, primaryColor } from '../render/paint';
 import { kitIfLoaded } from './kit';
-import { framePicture, frameReason } from './frames';
+import { framePicture, frameReason, pictureBounds, pruneFrames } from './frames';
 import { paintContext } from './testing';
 import { hitChain, layoutOf, layoutWorldRect, rootLayout, rootOf } from './layoutIndex';
 import { propsOf } from './painter';
-import { surfaceIsReady } from './scene';
+import { invalidateScene, surfaceIsReady } from './scene';
 import { activeRenderer, failRenderer } from './renderer';
 
 export type PictureFrame = {
@@ -25,15 +25,27 @@ export type PictureFrame = {
   h: number;
   /** Records (or returns) the frame's picture. */
   record: () => SkPicture | null;
+  /** The picture if it is already recorded (no work). */
+  peek: () => SkPicture | null;
   /** Shown for the moment before the picture is recorded: the frame's own colour. */
   placeholder: string;
   /** Changes whenever the frame's content does (its RNode). */
   token: object;
 };
 
-/** Top-level frames drawn from pictures at the last Roots render, in document order. */
+type Box = { x: number; y: number; w: number; h: number };
+
+/** Top-level frames drawn from pictures at the last Roots render, in document order, and their boxes. */
 let drawn: string[] = [];
 let drawnSet = new Set<string>();
+let boxes = new Map<string, Box>();
+
+/** How long a frame may wait for Skia (its engine, fonts or pictures) as a plain box before its DOM is built instead. */
+const PENDING_MS = 8000;
+const pendingSince = new Map<string, number>();
+let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+/** Whether the Skia surface has been ready since the layer started: a context lost later shows frames as DOM at once. */
+let everReady = false;
 
 function inSubtree(root: RNode, keys: Set<string>): boolean {
   if (keys.has(root.key)) return true;
@@ -55,6 +67,7 @@ const num = (v: any) => (typeof v === 'number' && isFinite(v) ? v : null);
 export function pictureFrameFor(n: RNode): PictureFrame | null {
   const ck = kitIfLoaded();
   if (!ck || !surfaceIsReady() || heldLive(n) || activeRenderer() === 'dom') return null;
+  everReady = true;
   const ctx = paintContext(ck);
   const editing = useStore.getState().editingKey;
   try {
@@ -77,15 +90,55 @@ export function pictureFrameFor(n: RNode): PictureFrame | null {
     key: n.key,
     ...box,
     record: () => framePicture(ctx, n, () => layoutOf(n.key), useStore.getState().editingKey),
+    peek: () => framePicture(ctx, n, () => null, useStore.getState().editingKey, false),
     placeholder: primaryColor(fillList(p.fill).filter(isEnabled)) ?? 'rgba(128,128,128,0.12)',
     token: n,
   };
 }
 
-/** Roots reports which frames it drew from pictures (document order). */
-export function setPictureFrames(keys: string[]) {
-  drawn = keys;
-  drawnSet = new Set(keys);
+/**
+ * Full mode: true while Skia is about to draw this frame but can't yet (the engine is starting, or the frame's fonts
+ * or pictures are still loading). Roots shows the frame's colour meanwhile instead of building its DOM only to throw
+ * it away a moment later. After a few seconds it gives up, so a font that never arrives can't keep a frame empty.
+ */
+export function pictureFramePending(n: RNode): boolean {
+  if (activeRenderer() !== 'full' || heldLive(n)) return false;
+  const ck = kitIfLoaded();
+  let waiting: boolean;
+  if (!ck || !surfaceIsReady()) waiting = !everReady;
+  else {
+    try {
+      waiting = /loading$/.test(frameReason(paintContext(ck), n, useStore.getState().editingKey) ?? '');
+    } catch {
+      return false;
+    }
+  }
+  if (!waiting) {
+    pendingSince.delete(n.key);
+    return false;
+  }
+  const now = performance.now();
+  const since = pendingSince.get(n.key) ?? now;
+  pendingSince.set(n.key, since);
+  if (now - since > PENDING_MS) return false;
+  // Roots renders again when the wait runs out, even if nothing arrived.
+  pendingTimer ??= setTimeout(() => {
+    pendingTimer = null;
+    invalidateScene();
+  }, PENDING_MS - (now - since) + 50);
+  return true;
+}
+
+/**
+ * Roots reports which frames it drew from pictures (document order) and which top-level frames exist; pictures of
+ * frames that are gone are freed.
+ */
+export function setPictureFrames(frames: (Box & { key: string })[], live: Set<string>) {
+  drawn = frames.map(f => f.key);
+  drawnSet = new Set(drawn);
+  boxes = new Map(frames.map(f => [f.key, f]));
+  pruneFrames(live);
+  for (const k of pendingSince.keys()) if (!live.has(k)) pendingSince.delete(k);
 }
 
 export function pictureFrameKeys(): readonly string[] {
@@ -96,8 +149,11 @@ export function pictureFrameKeys(): readonly string[] {
 export function registerPictureGeometry(on: boolean) {
   if (!on) {
     setSkiaGeometry(null);
+    everReady = false;
+    pendingSince.clear();
     return;
   }
+  const within = (b: Box | null | undefined, x: number, y: number) => !!b && x >= b.x && y >= b.y && x <= b.x + b.w && y <= b.y + b.h;
   setSkiaGeometry({
     drawn: root => drawnSet.has(root),
     rootOf,
@@ -108,6 +164,9 @@ export function registerPictureGeometry(on: boolean) {
     },
     chainAt: (wx, wy) => {
       for (let i = drawn.length - 1; i >= 0; i--) {
+        // Only frames the point can be in need their layout: the frame's box, or wherever its picture draws
+        // (children that overflow it).
+        if (!within(boxes.get(drawn[i]), wx, wy) && !within(pictureBounds(drawn[i]), wx, wy)) continue;
         const root = rootLayout(drawn[i])?.get(drawn[i]);
         if (!root) continue;
         const chain = hitChain(root, wx, wy);

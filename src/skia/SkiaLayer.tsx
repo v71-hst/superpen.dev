@@ -3,13 +3,14 @@
 // is rebuilt on restore, and if the context does not come back, or Skia cannot start, the editor falls back to the
 // DOM renderer with one log line and one toast. Frames must never go invisible.
 import React, { useEffect, useRef } from 'react';
-import type { CanvasKit, Surface } from 'canvaskit-wasm';
+import type { CanvasKit, GrDirectContext, Surface } from 'canvaskit-wasm';
 import { useStore } from '../editor/store';
 import { log } from '../editor/diagnostics';
 import { loadKit } from './kit';
 import { failRenderer } from './renderer';
+import { perfLimits } from '../editor/perfLimits';
 import { liveObjects } from './lifetime';
-import { drawScene, invalidateScene, resetScene, sceneStats, setDrawHooks, setSurfaceReady } from './scene';
+import { drawScene, invalidateScene, noteViewChange, resetScene, sceneStats, setDrawHooks, setSceneSurface, setSurfaceReady } from './scene';
 import { loadBundledFonts, onFontsChanged, fontStats, resetFonts } from './fonts';
 import { onImagesChanged, imageStats, resetImages } from './images';
 import { clearFrames, frameStats, onPictureDropped } from './frames';
@@ -34,11 +35,13 @@ const state = {
   restores: 0,
 };
 let debugRects: DebugRect[] = [];
+/** What Skia holds on the graphics card (textures of pictures, copies and glyphs), for diagnose_editor. */
+let gpuUsage: () => { usedMB: number; limitMB: number } | null = () => null;
 let requestDraw: () => void = () => {};
 let readPixel: (x: number, y: number) => number[] | null = () => null;
 
 export function skiaStatus() {
-  return { ...state, debugRects: debugRects.length, liveObjects: liveObjects(), overview: sceneStats(), pictures: frameStats(), pictureImages: pictureImageStats(), fonts: fontStats(), images: imageStats() };
+  return { ...state, debugRects: debugRects.length, gpu: gpuUsage(), liveObjects: liveObjects(), overview: sceneStats(), pictures: frameStats(), pictureImages: pictureImageStats(), fonts: fontStats(), images: imageStats() };
 }
 
 export function setDebugRects(rects: DebugRect[]) {
@@ -58,6 +61,9 @@ export function SkiaLayer() {
     const canvas = ref.current!;
     let ck: CanvasKit | null = null;
     let surface: Surface | null = null;
+    // One graphics context for the life of the WebGL context: a resize only replaces the surface, so everything
+    // already on the graphics card (far-zoom copies, uploaded pictures) stays valid.
+    let gr: GrDirectContext | null = null;
     let frame = 0;
     let lostTimer: ReturnType<typeof setTimeout> | undefined;
     let disposed = false;
@@ -72,6 +78,7 @@ export function SkiaLayer() {
     };
 
     const dropSurface = () => {
+      setSceneSurface(null);
       try {
         surface?.delete();
       } catch {
@@ -80,13 +87,39 @@ export function SkiaLayer() {
       surface = null;
     };
 
+    /** The WebGL context is gone (or the layer is): everything made in it goes too. */
+    const dropContext = () => {
+      // Far-zoom copies are textures of this graphics context.
+      resetPictureImages();
+      dropSurface();
+      try {
+        gr?.releaseResourcesAndAbandonContext();
+        gr?.delete();
+      } catch {
+        // Already gone.
+      }
+      gr = null;
+      cacheLimit = 0;
+    };
+
     const makeSurface = () => {
       dropSurface();
       if (!ck || !canvas.width || !canvas.height) return;
-      surface = ck.MakeWebGLCanvasSurface(canvas, ck.ColorSpace.SRGB, { antialias: 0 });
+      if (!gr) {
+        const handle = ck.GetWebGLContext(canvas, { antialias: 0 });
+        gr = handle ? ck.MakeWebGLContext(handle) : null;
+        if (!gr) return giveUp('could not create a WebGL context');
+      }
+      surface = ck.MakeOnScreenGLSurface(gr, canvas.width, canvas.height, ck.ColorSpace.SRGB);
       if (!surface) return giveUp('could not create a WebGL surface');
+      setSceneSurface(surface);
       state.surface = 'ready';
       setSurfaceReady(true);
+    };
+    // CanvasKit 0.42's own getResourceCache…Bytes() wrappers forget to return the value: call what they wrap.
+    gpuUsage = () => {
+      const g = gr as any;
+      return g ? { usedMB: Math.round(g._getResourceCacheUsageBytes() / 1048576), limitMB: Math.round(g._getResourceCacheLimitBytes() / 1048576) } : null;
     };
 
     const fitCanvas = () => {
@@ -101,9 +134,21 @@ export function SkiaLayer() {
       requestDraw();
     };
 
+    // How much Skia may keep on the graphics card. Its default (256 MB) is less than the pictures of a big design
+    // take once uploaded, so they would be thrown out and uploaded again while moving around; performance mode
+    // (pictures at half size) stays at the default.
+    let cacheLimit = 0;
+    const fitCache = () => {
+      const want = (perfLimits().bitmapSide < 2048 ? 256 : 512) * 1024 * 1024;
+      if (!gr || want === cacheLimit) return;
+      gr.setResourceCacheLimitBytes(want);
+      cacheLimit = want;
+    };
+
     const draw = () => {
       frame = 0;
       if (!ck || !surface || state.surface !== 'ready') return;
+      fitCache();
       const t0 = performance.now();
       const c = surface.getCanvas();
       c.clear(ck.TRANSPARENT);
@@ -157,7 +202,7 @@ export function SkiaLayer() {
       setSurfaceReady(false);
       state.contextLosses++;
       log('warn', 'Skia canvas lost its graphics context');
-      dropSurface();
+      dropContext();
       clearTimeout(lostTimer);
       lostTimer = setTimeout(() => giveUp('the graphics context was lost and did not come back'), RESTORE_TIMEOUT_MS);
     };
@@ -183,6 +228,7 @@ export function SkiaLayer() {
     const unsub = useStore.subscribe(s => {
       if (s.view !== lastView) {
         lastView = s.view;
+        noteViewChange();
         // Synchronously, so the canvas moves in the same frame as the DOM frames above it.
         drawNow();
       }
@@ -230,7 +276,8 @@ export function SkiaLayer() {
       setDrawHooks(null);
       setSurfaceReady(false);
       resetScene();
-      dropSurface();
+      dropContext();
+      gpuUsage = () => null;
       requestDraw = () => {};
       readPixel = () => null;
       if (state.surface !== 'failed') state.surface = 'none';

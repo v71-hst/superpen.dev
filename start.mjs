@@ -5,7 +5,9 @@ import fs from 'node:fs';
 import { exec } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-const here = path.dirname(fileURLToPath(import.meta.url));
+// The path as it is on disk: on Windows a differently-cased drive letter (c: vs C:) makes the dev server serve the
+// app's modules under /@fs/ URLs, and a test that imports /src/... then gets second copies of them.
+const here = fs.realpathSync.native(path.dirname(fileURLToPath(import.meta.url)));
 const arg = process.argv[2] ? path.resolve(process.argv[2]) : path.resolve(here, 'examples');
 let workspace = arg;
 let openFile = '';

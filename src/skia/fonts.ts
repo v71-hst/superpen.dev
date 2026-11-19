@@ -23,6 +23,10 @@ const aliasesByFamily = new Map<string, Map<string, string[]>>();
 const registeredFiles = new Map<string, Promise<void>>();
 let bundled: Promise<void> | null = null;
 let epoch = 0;
+/** The epoch at which each style (`family|weight|italic`) last finished loading or failed. */
+const styleEpochs = new Map<string, number>();
+/** The epoch at which something every text depends on last changed (the bundled fonts arrived, or a reset). */
+let baseEpoch = 0;
 const listeners = new Set<() => void>();
 
 /** Bumped whenever a font finishes loading: pictures recorded before then may have used a fallback. */
@@ -30,13 +34,30 @@ export function fontEpoch() {
   return epoch;
 }
 
+/** The key a text style is tracked under; what fontStamp() takes. */
+export function fontStyleKey(family: string, weight: any = 400, italic = false) {
+  return key(family || DEFAULT_FAMILY, weightNum(weight), italic);
+}
+
+/**
+ * A number that changes when one of these styles finishes loading or fails (or the bundled fonts arrive). A frame
+ * whose text only uses those styles keeps its picture when some other font arrives.
+ */
+export function fontStamp(styles: Iterable<string>): number {
+  let stamp = baseEpoch;
+  for (const k of styles) stamp = Math.max(stamp, styleEpochs.get(k) ?? 0);
+  return stamp;
+}
+
 export function onFontsChanged(fn: () => void): () => void {
   listeners.add(fn);
   return () => listeners.delete(fn);
 }
 
-function changed() {
+function changed(style?: string) {
   epoch++;
+  if (style) styleEpochs.set(style, epoch);
+  else baseEpoch = epoch;
   listeners.forEach(l => l());
 }
 
@@ -142,11 +163,11 @@ export function requestFont(family: string, weight: any = 400, italic = false): 
     if (!known.length) throw new Error('no font files in the stylesheet');
     styles.set(k, known.sort((a, b) => a.order - b.order).map(x => x.alias));
     state.status = 'ready';
-    changed();
+    changed(k);
   })().catch(e => {
     state.status = 'failed';
     state.error = e instanceof Error ? e.message : String(e);
-    changed();
+    changed(k);
   });
   return 'loading';
 }
@@ -216,6 +237,7 @@ export function resetFonts() {
   families.clear();
   aliasesByFamily.clear();
   registeredFiles.clear();
+  styleEpochs.clear();
   bundled = null;
   bundledStyles.length = 0;
   changed();

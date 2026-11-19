@@ -8,10 +8,12 @@ import { perfLimits } from '../editor/perfLimits';
 /** Longest side a picture is decoded at: the snapshot limit, which performance mode halves (2048 / 1024). */
 const maxSide = () => perfLimits().bitmapSide;
 
-type Entry = { status: 'loading' | 'ready' | 'failed'; image: Image | null; bytes: number; used: number; error?: string };
+type Entry = { status: 'loading' | 'ready' | 'failed'; image: Image | null; bytes: number; used: number; /** The epoch at which it finished loading or failed. */ stamp: number; error?: string };
 
 const entries = new Map<string, Entry>();
 let epoch = 0;
+/** The epoch of the last reset (every picture forgotten). */
+let baseEpoch = 0;
 const listeners = new Set<() => void>();
 
 export function imageEpoch() {
@@ -28,11 +30,21 @@ function changed() {
   listeners.forEach(l => l());
 }
 
+/**
+ * A number that changes when one of these pictures finishes loading or fails. A frame keeps its recorded picture when
+ * some other frame's picture arrives.
+ */
+export function imageStamp(urls: Iterable<string>): number {
+  let stamp = baseEpoch;
+  for (const u of urls) stamp = Math.max(stamp, entries.get(u)?.stamp ?? 0);
+  return stamp;
+}
+
 /** The decoded picture, or null while loading / after a failure (the status says which). Starts loading. */
 export function getImage(ck: CanvasKit, url: string): { status: Entry['status']; image: Image | null } {
   let e = entries.get(url);
   if (!e) {
-    e = { status: 'loading', image: null, bytes: 0, used: performance.now() };
+    e = { status: 'loading', image: null, bytes: 0, used: performance.now(), stamp: 0 };
     entries.set(url, e);
     const entry = e;
     (async () => {
@@ -51,10 +63,12 @@ export function getImage(ck: CanvasKit, url: string): { status: Entry['status'];
       entry.image = own(img, 'image');
       entry.bytes = img.width() * img.height() * 4;
       entry.status = 'ready';
+      entry.stamp = epoch + 1;
       changed();
     })().catch(err => {
       entry.status = 'failed';
       entry.error = err instanceof Error ? err.message : String(err);
+      entry.stamp = epoch + 1;
       changed();
     });
   }
@@ -62,21 +76,11 @@ export function getImage(ck: CanvasKit, url: string): { status: Entry['status'];
   return { status: e.status, image: e.image };
 }
 
-/** Frees pictures not used for a while (pictures recorded since keep their own reference inside the SkPicture). */
-export function trimImages(maxAgeMs = 60_000) {
-  const now = performance.now();
-  for (const [url, e] of entries) {
-    if (e.status === 'ready' && now - e.used > maxAgeMs) {
-      free(e.image);
-      entries.delete(url);
-    }
-  }
-}
-
 /** Frees every decoded picture (Skia switched off). */
 export function resetImages() {
   for (const e of entries.values()) free(e.image);
   entries.clear();
+  baseEpoch = ++epoch;
 }
 
 export function imageStats() {

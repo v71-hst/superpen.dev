@@ -320,6 +320,7 @@ to run, what to look at. The owner builds and installs with `npm run package` an
 | 2026-11-13 | Plan | Written | Nothing built. `main` is at 0.3.1. Tests moved from the owner's PC into `tests/`. Next: stage 0. |
 | 2026-11-18 | 0 | Done (cloud) | See the stage 0 notes below. Next: stage 1 (and the owner's `dom` baseline benchmark, below). |
 | 2026-11-19 | 1–4 | Done (cloud) | Owner asked for every stage at once; gates 1–3 become one check on the PC. See the stages 1–4 notes below. Next: the owner's combined gate, then stage 5 on their say-so. |
+| 2026-11-19 | Gate (owner's PC) | Started; full mode tuned | First benchmarks on the owner's PC, then a tuning pass there. See the gate notes at the end. Next: the owner re-runs the benchmark on the tuned build, then memory and the look check. |
 
 ### 2026-11-18, stage 0 notes
 
@@ -495,3 +496,69 @@ For the owner — the combined gate (gates 1–3 in one sitting, on copies of re
 6. Use `full` for real work for a while: select, drag, resize, edit text, comments, AI edits, undo. Then the friend
    on the 16 GB machine tries it.
 7. If anything is off, the fallback is `localStorage.removeItem('pen.renderer')`.
+
+### 2026-11-19, gate notes (owner's PC) and the tuning pass
+
+Machine: RTX 4090, 175 Hz screen (a frame is 5.7 ms), VS Code 1.146. File: a copy of the owner's big design with every
+section shown (319 top-level frames, 22,288 nodes, 107 pictures). Performance mode off. `benchmark` tool, canvas
+896×1268, warmed-up runs (two each for `dom` and `overview`, one for `full`); "slow" is a frame over 33 ms.
+
+| | `dom` | `overview` | `full` |
+|---|---|---|---|
+| Zoom out: slow frames of 120 / worst | 2–5 / 57–63 ms | 10–12 / 91–97 ms | 1 / 34 ms |
+| Zoom in: slow frames of 120 / worst | 2–3 / 749–846 ms | 4–8 / 520–634 ms | 0 / 17 ms |
+| Pan at 50%: slow frames of 120 / worst | 0–4 / 29–40 ms | 4–5 / 40–46 ms | 0 / 5.9 ms |
+| Elements on the page at 50% | 41,265 | 41,266 | 560 |
+
+- `full`: 315 of 319 frames drawn by Skia (3 shader fills, 1 script error fall back). Clearly better than `dom`.
+- `overview` is slightly worse than `dom` on zoom-out. It is a stepping stone; it has not been tuned.
+- With the owner's usual hidden sections (61 frames shown) `dom` already runs at the screen's refresh rate: the
+  difference only shows on the whole file.
+- Not done yet: performance mode on, memory (`tests/memory.mjs`), the look check, real use, the 16 GB machine.
+
+**Tuning pass** (same day, on the PC; measured with the new `tests/skia-prof.mjs`, headless Edge on the same RTX 4090,
+`PEN_PROD=1`, 1400×1000). What the profile showed, and what changed:
+
+| Found | Change |
+|---|---|
+| Every font or picture that arrived re-recorded every frame with text or pictures: 611 recordings for 315 frames | Each frame tracks the font styles and picture URLs it uses (`FrameDeps`, collected by `skiaEligible`); `fontStamp` / `imageStamp` re-record only the frames that depend on what arrived. Text with characters outside the bundled Inter's range still depends on every font |
+| Once a draw's time budget was used up, frames whose picture and copy already existed were drawn as their flat colour: 27,780 placeholder draws in two benchmark runs | `peek()` returns an existing picture without work; a frame is drawn from whatever it has (a copy, even a blurrier one) and only falls to its colour when it has nothing |
+| A far-zoom copy was rasterised again at each of six zoom levels: 604 for 315 frames | One copy per frame, as a chain of halved levels, reused for every smaller zoom; made again only when the zoom needs more pixels |
+| Copies were rasterised on the CPU: 5–9 ms each, up to 106 ms | Copies are drawn by the GPU into textures (`surface.makeSurface`). They die with the graphics context, so `SkiaLayer` drops them on loss and they are remade from the pictures |
+| Resizing the editor rebuilt the graphics context (`MakeWebGLCanvasSurface`) | One `GrDirectContext` for the life of the WebGL context; a resize only replaces the surface |
+| Skia's GPU cache limit (256 MB) was below what the file's pictures need once uploaded (about 350 MB): textures were purged and uploaded again while moving around | Limit 512 MB, 256 MB in performance mode (pictures at half size use about 185 MB). `diagnose_editor` → `renderer.skia.gpu` reports usage |
+| The DOM snapshot maker kept working on frames Skia draws (253 queued) | `lod.ts` skips frames drawn from a picture (`drawsFromPicture`) |
+| At startup every frame went through the DOM path (mounted, queued for a snapshot) until Skia, fonts and pictures were ready | Full mode shows such a frame as its own colour (`PendingRoot`) for up to 8 s instead of building its DOM |
+| Nothing was prepared before it was needed | In idle time (`requestIdleCallback`, not while the view or pointer moves) pictures are recorded and a small copy made, nearest the view first |
+| Hover asked every drawn frame for its layout | `chainAt` only looks at frames whose box, or recorded picture bounds (`cullRect`), contain the point |
+| Pictures of deleted frames were never freed (`pruneFrames` had no caller) | Roots prunes on every render |
+| | Pictures are recorded with `computeBounds` (a spatial index: zoomed in, only what is on screen is replayed) |
+
+Same file, `full`, performance mode off, before → after:
+
+| | Before | After |
+|---|---|---|
+| Cold run, zoom out: slow frames / worst | 10 / 80 ms | 0 / 29 ms |
+| Warm run, zoom out: p95 / worst | 28.7 / 57 ms | 11.5 / 11.5–17 ms |
+| Warm run, zoom in: p95 / worst | 28.5 / 51 ms | 11.5 / 11.5 ms |
+| Pan zoomed out: median | 11.4 ms | 5.7 ms |
+| Pictures recorded for 315 frames | 611 | 318 |
+| Far-zoom copies made | 604 | 318 |
+| Placeholder draws over two runs | 27,780 | 3,105 |
+| DOM snapshots queued | 253 | 0 |
+
+Suites after the pass (dev server, headless Edge): features 20/20, aipen 16/16 in `dom`, `overview` and `full`;
+skia-smoke 11/11; overview 12/12; full 14/14; drawcheck 7/7, subpixel 1/1, hiddentab 6/6 in `full`; layout-diff 0
+offenders (features, layout, showcase); stress (make-big, 120–150 steps) clean in all three modes; blank 6/7 in `dom`
+and 4 pass + 2 skipped + the same known failure in `overview` / `full`.
+
+Behaviour that changed, and the tests that say so:
+- With Skia on, no DOM snapshot exists for a frame Skia draws. If the graphics context is lost, such a frame shows its
+  own fills until Skia is back or the DOM renderer takes over (it used to show a snapshot). `overview.mjs` accepts
+  either; `blank.mjs` skips its two snapshot-detection checks in Skia modes.
+- `start.mjs` resolves its own folder to the on-disk path. Started from a lower-case `c:` on Windows, the dev server
+  served the app under `/@fs/` URLs, and tests importing `/src/...` got second copies of modules (store, measure).
+
+Still open: the first GPU use of a big picture uploads it (tens of ms; now mostly spent in idle time); decoded
+pictures take 243 MB of WebAssembly memory on this file (126 MB in performance mode), all loaded at startup because
+eligibility needs to know they exist; `overview` mode is untuned.

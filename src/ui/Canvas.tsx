@@ -4,7 +4,7 @@ import { NodeView, RenderCtx, type RenderContextValue } from '../render/NodeView
 import { SkiaLayer } from '../skia/SkiaLayer';
 import { activeRenderer, useActiveRenderer } from '../skia/renderer';
 import { elementsAtPoint, nodeChainAtEvent, nodeChainOf as chainFromElement, nodeKeyOf, nodesInScreenRect } from '../editor/measure';
-import { pictureFrameFor, setPictureFrames, type PictureFrame } from '../skia/pictureFrames';
+import { pictureFrameFor, pictureFramePending, setPictureFrames, type PictureFrame } from '../skia/pictureFrames';
 import { canDraw, overviewOn, setSceneFrames, useSceneVersion, type SceneFrame } from '../skia/scene';
 import { pickAt, colorFromChain } from '../editor/eyedropper';
 import { useStore, keySource, applyProps } from '../editor/store';
@@ -1064,13 +1064,11 @@ function Roots({ tree }: { tree: Tree }) {
   // Stages 3–4: frames Skia draws from their own recorded picture (no DOM inside them, no snapshot needed). In full
   // mode that's every frame Skia can draw, at any zoom; in overview mode only far frames.
   const full = activeRenderer() === 'full';
-  const pictureKeys: string[] = [];
   const pictureRoot = (n: RNode, far: boolean) => {
     if (!overview) return null;
     const pf = pictureFrameFor(n);
     if (!pf) return null;
-    skiaFrames.push({ key: n.key, url: '', x: pf.x, y: pf.y, w: pf.w, h: pf.h, record: pf.record, placeholder: pf.placeholder, token: pf.token });
-    pictureKeys.push(n.key);
+    skiaFrames.push({ key: n.key, url: '', x: pf.x, y: pf.y, w: pf.w, h: pf.h, record: pf.record, peek: pf.peek, placeholder: pf.placeholder, token: pf.token });
     return <PictureRoot key={n.key} pf={pf} far={far} />;
   };
   const bitmapRoot = (n: RNode, bm: Bitmap) => {
@@ -1108,6 +1106,11 @@ function Roots({ tree }: { tree: Tree }) {
         byKey.set(n.key, pr);
         continue;
       }
+      // Skia will draw it in a moment (still starting, or the frame's fonts and pictures are loading).
+      if (hasFixedSize(n) && pictureFramePending(n)) {
+        byKey.set(n.key, <PendingRoot key={n.key} n={n} />);
+        continue;
+      }
     }
     const eligible = lodEligible(n);
     const bm = eligible ? getBitmap(n.key) : undefined;
@@ -1143,9 +1146,9 @@ function Roots({ tree }: { tree: Tree }) {
   mounted.current = nextMounted;
   const docIndex = new Map(tree.roots.map((n, i) => [n.key, i]));
   skiaFrames.sort((a, b) => docIndex.get(a.key)! - docIndex.get(b.key)!);
-  pictureKeys.sort((a, b) => docIndex.get(a)! - docIndex.get(b)!);
+  const liveKeys = new Set(docIndex.keys());
   useLayoutEffect(() => {
-    setPictureFrames(pictureKeys);
+    setPictureFrames(skiaFrames.filter(f => f.record), liveKeys);
     setSceneFrames(skiaFrames, imageFallbacks);
   });
   useEffect(() => {
@@ -1186,6 +1189,14 @@ function BitmapRoot({ n, bm, zoom }: { n: RNode; bm: Bitmap; zoom: number }) {
  */
 function PictureRoot({ pf, far }: { pf: PictureFrame; far: boolean }) {
   return <div data-k={pf.key} data-skia data-picture {...(far ? { 'data-bitmap': '' } : {})} style={{ position: 'absolute', left: pf.x, top: pf.y, width: pf.w, height: pf.h }} />;
+}
+
+/** Full mode: a frame Skia is about to draw, shown as its own colour until its fonts and pictures have loaded. */
+function PendingRoot({ n }: { n: RNode }) {
+  const p = n.props;
+  const vars = useStore(s => s.doc?.variables);
+  const fills = fillList(deepResolve({ variables: vars } as any, p.fill, n.theme));
+  return <div data-k={n.key} data-placeholder data-pending style={{ position: 'absolute', left: p.x, top: p.y, width: p.width, height: p.height, background: primaryColor(fills) ?? 'rgba(128,128,128,0.12)' }} />;
 }
 
 /** A zoomed-out frame drawn on the Skia canvas: an empty box that keeps its place for selection and lookups. */

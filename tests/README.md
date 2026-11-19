@@ -46,6 +46,7 @@ closer to the real extension with `PEN_PROD=1 node start.mjs <folder>` (a produc
 |---|---|
 | `make-big.mjs <out.spen> [frames] [seed] [pictures] [pictureSize]` | Writes a seeded synthetic design (320 frames ≈ 40,000 nodes by default) plus generated pictures in `images/`, for big-file tests without anyone's real design |
 | `fixtures/make-layout.mjs [out]` | Regenerates `fixtures/layout.pen`, the layout edge cases (justify/align, fill/fit fallbacks, absolute children, wrapping text, rotation, groups, icons, auto-width roots) |
+| `skia-prof.mjs <url> [renderer=full] [perf=0\|1] [runs=2]` | Where the Skia renderer spends its time on a big file: the editor's benchmark cold and warm, with the Skia counters after each (pictures recorded, far-zoom copies made, placeholder draws, GPU memory). Use `PEN_PROD=1` and a machine with a GPU for the frame times |
 | `bench.mjs <url>` | Frame times for zoom, pan and hover. Headless runs use software graphics: treat single long frames as noise |
 | `memory.mjs <url> [perf=0\|1]` | Process memory without a debugger attached (a debugger inflates it). Windows only |
 | `zoomout.mjs`, `imgzoom.mjs`, `tracezoom.mjs`, `prof2.mjs`, `zoomfast.mjs` | GPU memory, decode work, traces and CPU profiles during zooming |

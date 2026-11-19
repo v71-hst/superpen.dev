@@ -16,7 +16,7 @@ import { nextFrames } from '../render/frames';
 import { SOFT, isBlank } from '../render/pixels';
 import { fillList, isEnabled } from '../render/paint';
 import { canvasRect, nodeKeyOf, topLevelNodeEl, topLevelNodeEls } from './measure';
-import { forgetSnapshot, overviewOn } from '../skia/scene';
+import { drawsFromPicture, forgetSnapshot, noteInteraction, overviewOn } from '../skia/scene';
 
 /** Below this zoom, big frames may be drawn from bitmaps. */
 export const LOD_ZOOM = 1 / 3;
@@ -242,6 +242,7 @@ function schedule(delay = IDLE_MS) {
 /** Postpone background rendering while the user pans, zooms or moves the pointer. */
 export function lodInteraction() {
   lastInteraction = performance.now();
+  noteInteraction();
 }
 
 function pickNext(): string | null {
@@ -278,7 +279,8 @@ async function work() {
   try {
     const n = currentTree()?.byKey.get(key);
     const cur = bitmaps.get(key);
-    if (n && lodEligible(n) && cur?.node !== n) await renderBitmap(n);
+    // A frame Skia draws from its own picture needs no snapshot; it is asked for again if that ever changes.
+    if (n && lodEligible(n) && cur?.node !== n && !drawsFromPicture(key)) await renderBitmap(n);
   } catch (e) {
     stats.renderFailures++;
     log('warn', `bitmap render failed for ${key}`, e);

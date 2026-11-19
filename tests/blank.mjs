@@ -8,6 +8,10 @@ import fs from 'node:fs';
 const [, , url, shotDir] = process.argv;
 const browser = await puppeteer.launch(launchOptions({ headless: true, protocolTimeout: 300000 }));
 const ok = (name, cond, info = '') => console.log(`${cond ? 'PASS' : 'FAIL'} ${name}${info ? ' — ' + info : ''}`);
+// With the Skia renderer (&renderer=overview or full) frames are drawn from their own pictures: no snapshots or scaled
+// copies are made for them, so there is nothing to detect; only "frames stay visible" applies.
+const skia = /[?&]renderer=(overview|full)/.test(url);
+const skip = name => console.log(`SKIP ${name} — the Skia renderer makes no snapshots for the frames it draws`);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 async function run(label, sabotage) {
@@ -82,11 +86,13 @@ ok('baseline: every filled frame is visible', base.checked >= 10 && base.invisib
 ok('baseline: nothing reported blank', base.lod.blankSnapshots === 0 && base.lod.blankLevels === 0 && base.blankSnapshots.blank === 0);
 
 const lv = await run('scaled copies come out blank', 'levels');
-ok('blank copies are detected', lv.lod.blankLevels > 0, `${lv.lod.blankLevels} blank levels refused`);
+if (skia) skip('blank copies are detected');
+else ok('blank copies are detected', lv.lod.blankLevels > 0, `${lv.lod.blankLevels} blank levels refused`);
 ok('frames stay visible (their snapshot is shown instead)', lv.checked >= 10 && lv.invisible.length === 0, `${lv.checked} checked, invisible: ${lv.invisible.slice(0, 5).join(', ') || 'none'}`);
 ok('pictures fall back to the original', lv.images.failed > 0, `${lv.images.failed} pictures shown as-is`);
 
 const sn = await run('snapshots come out blank', 'snapshots');
-ok('blank snapshots are detected and not used', sn.lod.blankSnapshots > 0 && sn.blankSnapshots.blank === 0, `${sn.lod.blankSnapshots} refused, ${sn.lod.liveOnly} frames kept live`);
+if (skia) skip('blank snapshots are detected and not used');
+else ok('blank snapshots are detected and not used', sn.lod.blankSnapshots > 0 && sn.blankSnapshots.blank === 0, `${sn.lod.blankSnapshots} refused, ${sn.lod.liveOnly} frames kept live`);
 ok('frames stay visible (kept live or as their background)', sn.checked >= 10 && sn.invisible.length === 0, `${sn.checked} checked, invisible: ${sn.invisible.slice(0, 5).join(', ') || 'none'}`);
 await browser.close();
