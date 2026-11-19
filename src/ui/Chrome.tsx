@@ -160,6 +160,7 @@ function Tools() {
           })),
           { label: 'Script', icon: <Code />, onClick: () => insertScript() },
           { label: 'Import Image or SVG...', icon: <ImagePlus />, onClick: () => importImage() },
+          { label: 'Import web page or HTML...', icon: <Code />, onClick: () => useStore.setState({ modal: 'importHtml' }) },
         ])}
       >
         <ChevronDown strokeWidth={2.5} />

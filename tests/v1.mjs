@@ -406,5 +406,39 @@ const afterCut = await px(505, 525), keptCut = await px(600, 570);
 const cutFill = (await node('v1cut')).fill;
 ok('remove_background rewrites the fill to a new picture with a transparent background', !cut.error && cut.removed > 0.6 && cutFill.url !== onWhite && beforeCut[0] > 240 && afterCut[0] < 40 && keptCut[2] > 200 && keptCut[0] < 60, JSON.stringify({ cut, url: String(cutFill.url).slice(0, 60), beforeCut, afterCut, keptCut }));
 
+// ---------- HTML import ----------
+const pageHtml = `<style>
+ body{margin:0;background:#101820;font-family:Inter,sans-serif}
+ .card{position:absolute;left:40px;top:30px;width:300px;padding:20px;border-radius:16px;background:#ffffff;box-shadow:0 8px 20px rgba(0,0,0,.3);border:2px solid #ff0000}
+ h1{margin:0 0 10px;font-size:24px;color:#112233}
+ p{margin:0 0 16px;font-size:14px;line-height:20px;color:#445566}
+ .btn{display:inline-block;padding:8px 16px;border-radius:8px;background:linear-gradient(90deg,#0000ff,#00ffff);color:#fff;font-weight:700}
+ img{display:block;width:60px;height:40px;margin-top:10px}
+ .gone{display:none}
+</style>
+<div class="card"><h1>Hello import</h1><p>This paragraph is long enough to wrap onto a second line inside the card for sure.</p><a class="btn">Buy now</a><img src="${picture}" alt="pic"><svg width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#00ff00"/></svg><div class="gone">hidden</div><script>document.body.innerHTML = 'scripts must not run'</script></div>`;
+const imported = await ev(async html => {
+  const m = await import('/src/import/html.ts');
+  const r = await m.htmlToNodes(html, { width: 400, name: 'Test page' });
+  const flat = [];
+  const walk = (n, depth) => { flat.push({ type: n.type, name: n.name, x: n.x, y: n.y, w: n.width, h: n.height, fill: n.fill, stroke: n.stroke, sw: n.strokeWidth, r: n.cornerRadius, effect: n.effect, content: n.content, size: n.fontSize, weight: n.fontWeight, growth: n.textGrowth, depth }); (n.children ?? []).forEach(c => walk(c, depth + 1)); };
+  walk(r.node, 0);
+  return { flat, count: r.count, warnings: r.warnings, looks: [m.looksLikeHtml(html), m.looksLikeHtml('<svg viewBox="0 0 1 1"><path d="M0 0"/></svg>'), m.looksLikeHtml('just some text'), m.looksLikeHtml('<div class="a"><p>Hi there</p></div>')] };
+}, pageHtml);
+const F = imported.flat;
+const card = F.find(n => n.name === '.card'), h1 = F.find(n => n.content === 'Hello import'), para = F.find(n => /^This paragraph/.test(n.content ?? '')), btn = F.find(n => n.name === '.btn'), btnText = F.find(n => n.content === 'Buy now'), pic = F.find(n => n.fill?.type === 'image'), paths = F.filter(n => n.type === 'path');
+ok('HTML becomes a frame of layers with the page\'s boxes and paint',
+  F[0].type === 'frame' && F[0].w === 400 && F[0].fill === '#101820' && !!card && card.x === 40 && card.y === 30 && card.w === 344 && card.fill === '#FFFFFF' && card.stroke === '#FF0000' && card.sw === 2 && card.r === 16 && card.effect?.blur === 20 && card.effect?.offset?.y === 8,
+  JSON.stringify(card));
+ok('text keeps its font, size and colour; long text wraps at the same width', !!h1 && h1.size === 24 && h1.weight === '700' && h1.fill === '#112233' && !!para && para.growth === 'fixed-width' && para.size === 14 && para.fill === '#445566', JSON.stringify({ h1, para }));
+ok('a gradient button, a picture and an inline SVG come across', !!btn && btn.fill?.type === 'gradient' && btn.fill.rotation === 270 && btn.fill.colors?.[0]?.color === '#0000FF' && btn.r === 8 && !!btnText && btnText.fill === '#FFFFFF' && !!pic && pic.w === 60 && pic.h === 40 && paths.length >= 1, JSON.stringify({ btn, pic: pic && { w: pic.w, h: pic.h }, paths: paths.length }));
+ok('hidden elements and scripts are left out', !F.some(n => n.content === 'hidden') && !F.some(n => /scripts must not run/.test(n.content ?? '')), `${imported.count} layers; warnings ${JSON.stringify(imported.warnings)}`);
+ok('pasted markup is recognised as HTML (and SVG or plain text is not)', JSON.stringify(imported.looks) === '[true,false,false,true]', JSON.stringify(imported.looks));
+const topBefore = await ev(() => window.__penStore.getState().doc.children.length);
+const viaAgent = await ev(html => window.__penAgent('importHtml', { html, width: 400, name: 'Imported card' }).catch(e => ({ error: String(e) })), pageHtml);
+await frames();
+const placedPage = await ev(id => { const d = window.__penStore.getState().doc; const n = d.children.find(c => c.id === id); const others = d.children.filter(c => c.id !== id && typeof c.x === 'number'); return n && { count: d.children.length, name: n.name, x: n.x, right: Math.max(...others.map(c => c.x + (typeof c.width === 'number' ? c.width : 0))), kids: n.children.length }; }, viaAgent.id);
+ok('import_html adds one frame to the right of the design', !viaAgent.error && placedPage?.count === topBefore + 1 && placedPage.name === 'Imported card' && placedPage.x >= placedPage.right + 100 && placedPage.kids >= 1 && viaAgent.layers >= 6, JSON.stringify({ viaAgent, placedPage }));
+
 ok('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();

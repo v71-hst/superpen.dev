@@ -7,15 +7,16 @@ import { colorCss } from '../render/paint';
 import { PaintPopover } from './ColorPicker';
 import { CheckRow, Select } from './common';
 import { FindReplace, LintPanel } from './FindLint';
+import { importHtml, zoomToKeys } from '../editor/ops';
 
 export function Modals() {
   const modal = useStore(s => s.modal);
   if (!modal) return null;
   const close = () => useStore.setState({ modal: null });
-  const titles: Record<string, string> = { shortcuts: 'Keyboard Shortcuts', variables: 'Variables & Themes', settings: 'Settings', about: 'About', find: 'Find & Replace', lint: 'Design Lint' };
+  const titles: Record<string, string> = { shortcuts: 'Keyboard Shortcuts', variables: 'Variables & Themes', settings: 'Settings', about: 'About', find: 'Find & Replace', lint: 'Design Lint', importHtml: 'Import a web page or HTML' };
   return (
     <div className="modal-backdrop" onPointerDown={e => e.target === e.currentTarget && close()} onKeyDown={e => e.key === 'Escape' && close()}>
-      <div className="modal" style={modal === 'settings' || modal === 'about' || modal === 'find' || modal === 'lint' ? { width: 560 } : undefined}>
+      <div className="modal" style={modal === 'settings' || modal === 'about' || modal === 'find' || modal === 'lint' || modal === 'importHtml' ? { width: 560 } : undefined}>
         <div className="modal-head">
           {titles[modal]}
           <button className="icon-btn" onClick={close}>
@@ -29,7 +30,67 @@ export function Modals() {
           {modal === 'about' && <About />}
           {modal === 'find' && <FindReplace />}
           {modal === 'lint' && <LintPanel />}
+          {modal === 'importHtml' && <ImportHtml />}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** A web address, pasted markup or an .html file, and the width to lay it out at. */
+function ImportHtml() {
+  const [source, setSource] = useState('');
+  const [width, setWidth] = useState('1280');
+  const [busy, setBusy] = useState(false);
+  const isUrl = /^(https?:\/\/)?[\w.-]+\.[a-z]{2,}(\/\S*)?$/i.test(source.trim()) && !source.includes('<');
+  const run = async () => {
+    const s = useStore.getState();
+    setBusy(true);
+    try {
+      const r = await importHtml(isUrl ? { url: source.trim() } : { html: source }, { width: Number(width) });
+      s.select([r.id]);
+      zoomToKeys([r.id]);
+      s.notify(`Imported ${r.layers} layers${r.warnings.length ? ` (left out: ${r.warnings.join('; ')})` : ''}`);
+      useStore.setState({ modal: null });
+    } catch (e) {
+      s.notify(`Could not import: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const pick = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.html,.htm,text/html';
+    input.onchange = async () => {
+      const f = input.files?.[0];
+      if (f) setSource(await f.text());
+    };
+    input.click();
+  };
+  return (
+    <div style={{ display: 'grid', gap: 10, fontSize: 12 }}>
+      <div style={{ color: 'var(--muted)', lineHeight: 1.5 }}>
+        Type a web address, paste HTML (with its styles), or choose an .html file. Every visible element becomes an editable layer, placed where the browser puts it. Scripts are not run, so pages that are built by JavaScript may import empty.
+      </div>
+      <textarea className="textarea" style={{ minHeight: 150, fontFamily: 'var(--mono)' }} placeholder="https://example.com   or   <div>…</div>" value={source} onChange={e => setSource(e.target.value)} onKeyDown={e => e.stopPropagation()} />
+      <div className="row-flex">
+        <Select
+          value={width}
+          options={[
+            { value: '1440', label: 'Desktop, 1440 wide' },
+            { value: '1280', label: 'Desktop, 1280 wide' },
+            { value: '768', label: 'Tablet, 768 wide' },
+            { value: '390', label: 'Phone, 390 wide' },
+          ]}
+          onChange={setWidth}
+        />
+        <button className="rp-btn" style={{ padding: '0 12px' }} onClick={pick}>
+          Choose file…
+        </button>
+        <button className="rp-btn" style={{ padding: '0 16px', background: 'var(--primary)', color: 'var(--primary-fg)' }} disabled={busy || !source.trim()} onClick={run}>
+          {busy ? 'Importing…' : isUrl ? 'Fetch and import' : 'Import'}
+        </button>
       </div>
     </div>
   );

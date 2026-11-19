@@ -117,6 +117,12 @@ measuring scripts: these tools are the workflow.
 vectorize_image traces an image fill into paths (good for flat logos, poor for photos).
 Prefer icon nodes for standard UI icons and frames/shapes/gradients for decoration; use SVG for custom artwork.
 
+## Bringing things in
+import_html turns a web page (url) or markup (html) into one frame of editable layers at free positions; inline SVG
+becomes paths and <img> becomes picture fills. remove_background cuts a plain background out of an image fill.
+vectorize_image traces a picture into paths. After an import, keep what you need and rebuild it with auto layout,
+variables and components rather than leaving hundreds of absolutely placed layers.
+
 ## Scripts (generated content)
 A script node runs a JavaScript file and draws the nodes it returns inside its box:
 { "type": "script", "scriptUri": "./scripts/bars.js", "width": 400, "height": 300, "inputs": { "count": 8 }, "clip": true }

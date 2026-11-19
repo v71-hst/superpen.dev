@@ -1,6 +1,7 @@
 // VS Code extension: opens *.spen / *.pen files in the visual editor (a custom text editor backed by the JSON document).
 // .spen is Superpencil's own extension (the default for new files); .pen is pen.dev's. Both hold the same JSON.
 import * as vscode from 'vscode';
+import { fetchPage } from './fetchPage';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -354,6 +355,17 @@ class PenEditorProvider implements vscode.CustomTextEditorProvider {
               ok = false;
             }
             post({ type: 'response', id: m.id, result: ok });
+            break;
+          }
+          case 'fetchPage': {
+            // HTML import from a web address: the webview cannot read other sites, the extension host can.
+            let result: any;
+            try {
+              result = await fetchPage(String(m.url));
+            } catch (e) {
+              result = { error: e instanceof Error ? e.message : String(e) };
+            }
+            post({ type: 'response', id: m.id, result });
             break;
           }
           case 'listDesigns': {

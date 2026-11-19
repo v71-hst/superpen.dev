@@ -544,6 +544,17 @@ tool(
 );
 
 tool(
+  'import_html',
+  'Turn HTML into editable layers: pass html (markup, with its <style> if any) or url (a web address; the page and its stylesheets are fetched, scripts are never run, so pages built by JavaScript import empty or partly). The markup is laid out at width (default 1280; use 390 for a phone layout) and every visible element is read back: boxes become frames with their fills, borders, radii and shadows, text becomes text layers, <img> becomes picture fills, inline <svg> becomes paths. The result is ONE new top-level frame placed to the right of the existing content, with layers at free positions (layout "none"), like the page looks. Use it to bring an existing site or a code mock-up into the design, then restructure what you keep into auto layout and components. Returns the frame id, the number of layers and what could not be imported.',
+  { html: z.string().optional(), url: z.string().optional(), width: z.number().int().min(240).max(3840).optional(), name: z.string().optional() },
+  async a => {
+    if (!a.html && !a.url) throw new Error('import_html needs html or url');
+    const r = await callEditor('importHtml', a, true);
+    return text(`Imported ${r.layers} layers into frame #${r.id}.${r.warnings.length ? ' Not imported: ' + r.warnings.join('; ') + '.' : ''} Screenshot it to check, then restructure what you keep.`);
+  },
+);
+
+tool(
   'remove_background',
   'Make the background of a node\'s image fill transparent. Built in, nothing is downloaded: it removes what can be reached from the picture\'s border without crossing a clear change of colour, so it works on plain or gently graded backgrounds (icons, product shots, renders, generated art) and NOT on photos with busy backgrounds. The result is saved as a new PNG next to the design (the original stays) and the fill points at it. tolerance 0-100 (default: chosen from the picture) widens or narrows what counts as background; keep_enclosed: true leaves enclosed areas of the background colour (the hole of a ring) in place. Screenshot the node afterwards on a contrasting background to check the edges.',
   { id: z.string(), tolerance: z.number().min(0).max(100).optional(), keep_enclosed: z.boolean().optional() },

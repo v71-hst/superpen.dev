@@ -1,5 +1,6 @@
 // Vite plugin exposing a tiny local file API so the browser editor can open/save .spen/.pen files on disk.
 import fs from 'node:fs';
+import { fetchPage } from '../extension/fetchPage';
 import path from 'node:path';
 import type { Plugin } from 'vite';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -86,6 +87,14 @@ export function penFsPlugin(workspace: string): Plugin {
           fs.mkdirSync(path.dirname(full), { recursive: true });
           fs.writeFileSync(full, body);
           return send(res, 200, JSON.stringify({ ok: true, mtime: fs.statSync(full).mtimeMs }));
+        }
+      }
+      if (url.pathname === '/api/fetch-page') {
+        // The browser build's stand-in for the extension's 'fetchPage' request (HTML import from a web address).
+        try {
+          return send(res, 200, JSON.stringify(await fetchPage(url.searchParams.get('url') ?? '')));
+        } catch (e) {
+          return send(res, 200, JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
         }
       }
       if (url.pathname === '/api/stat') {

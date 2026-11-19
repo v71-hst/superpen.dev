@@ -1,5 +1,7 @@
 // Editing commands shared by keyboard shortcuts, menus, panels and canvas gestures.
 import type { PenDoc, PenNode } from '../model/types';
+import { htmlToNodes, looksLikeHtml } from '../import/html';
+import { inVsCode, request } from './host';
 import { removeBackground, type RemoveBgOptions } from './removeBg';
 import { SOFT } from '../render/pixels';
 import { saveAsset } from './fileio';
@@ -153,6 +155,20 @@ export async function paste() {
       useStore.getState().notify(`Pasted SVG as ${r.paths} vector path${r.paths === 1 ? '' : 's'}${r.skipped.length ? ` (skipped ${r.skipped.join(', ')})` : ''}`);
     } catch (e) {
       useStore.getState().notify(`Could not paste SVG: ${e instanceof Error ? e.message : e}`);
+    }
+    return;
+  }
+  // Pasted HTML markup becomes editable layers.
+  if (looksLikeHtml(text)) {
+    const notify = useStore.getState().notify;
+    notify('Importing the pasted HTML…');
+    try {
+      const r = await importHtml({ html: text });
+      useStore.getState().select([r.id]);
+      zoomToKeys([r.id]);
+      notify(`Imported ${r.layers} layers from HTML${r.warnings.length ? ` (left out: ${r.warnings.join('; ')})` : ''}`);
+    } catch (e) {
+      notify(`Could not import the HTML: ${e instanceof Error ? e.message : e}`);
     }
     return;
   }
@@ -485,6 +501,45 @@ export async function removeBackgroundOf(key: string, opts: RemoveBgOptions & { 
   const next = { ...fill, url };
   useStore.getState().edit(d => applyProps(d, key, { fill: isList ? fills.map((f, i) => (i === index ? next : f)) : next }));
   return { url: url.startsWith('data:') ? '(embedded)' : url, removed: r.removed, background: r.background, tolerance: r.tolerance, note: r.note };
+}
+
+/**
+ * HTML import (import/html.ts): markup, or a web address that is fetched outside the webview, becomes a top-level
+ * frame of editable layers placed to the right of what the design already has.
+ */
+export async function importHtml(source: { html?: string; url?: string }, opts: { width?: number; name?: string } = {}): Promise<{ id: string; layers: number; warnings: string[] }> {
+  let html = source.html ?? '';
+  let extra: { baseUrl?: string; styles?: Record<string, string> } = {};
+  if (source.url) {
+    const page: any = inVsCode
+      ? await request('fetchPage', { url: source.url })
+      : await fetch(`/api/fetch-page?url=${encodeURIComponent(source.url)}`)
+          .then(r => r.json())
+          .catch(() => ({ error: 'the page could not be fetched from here' }));
+    if (!page || page.error || !page.html) throw new Error(page?.error ?? 'the page could not be fetched');
+    html = page.html;
+    extra = { baseUrl: page.baseUrl, styles: page.styles };
+  }
+  if (!html.trim()) throw new Error('there is no HTML to import');
+  const made = await htmlToNodes(html, { ...opts, ...extra });
+  if (!made.node.children?.length) throw new Error('nothing visible was found in that HTML');
+  const s = useStore.getState();
+  let id = '';
+  s.edit(d => {
+    const copy = cloneWithNewIds(made.node, allIds(d));
+    id = copy.id;
+    // To the right of everything that has a place on the canvas.
+    let right = -Infinity, top = Infinity;
+    for (const n of d.children) {
+      if (typeof n.x !== 'number' || typeof n.y !== 'number') continue;
+      right = Math.max(right, n.x + (typeof n.width === 'number' ? n.width : 0));
+      top = Math.min(top, n.y);
+    }
+    copy.x = isFinite(right) ? Math.round(right + 120) : 0;
+    copy.y = isFinite(top) ? Math.round(top) : 0;
+    d.children.push(copy);
+  });
+  return { id, layers: made.count, warnings: made.warnings };
 }
 
 // ---------- viewport ----------
