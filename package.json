@@ -186,6 +186,8 @@
     "@fontsource/inter": "5.3.0",
     "canvaskit-wasm": "0.42.0",
     "feather-icons": "4.29.2",
+    "fflate": "0.8.3",
+    "fzstd": "0.1.1",
     "imagetracerjs": "1.2.6",
     "immer": "10.1.1",
     "lucide-react": "0.577.0",
