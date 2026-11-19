@@ -408,7 +408,7 @@ function line(n: FNode, parentLayout: Layout, ctx: ConvertCtx): PenNode {
   return pen;
 }
 
-type Piece = { d: string; evenodd: boolean; paints: any; strokeOnly?: boolean };
+type Piece = { d: string; evenodd: boolean; paints: any };
 
 /**
  * True when a stroke can be drawn by the editor itself (a centred line with plain ends), instead of as an outline.

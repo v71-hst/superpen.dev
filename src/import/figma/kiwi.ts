@@ -3,8 +3,7 @@
 // interpreter rather than generated code (the kiwi-schema package compiles a schema with `new Function`), and it can
 // leave out fields the importer never reads, which saves a lot of memory on big files.
 
-const BUILTIN = ['bool', 'byte', 'int', 'uint', 'float', 'string', 'int64', 'uint64'] as const;
-
+// Built-in types are numbered from -1 down: bool, byte, int, uint, float, string, int64, uint64.
 const KIND_ENUM = 0;
 const KIND_STRUCT = 1;
 const KIND_MESSAGE = 2;
@@ -275,5 +274,3 @@ export function decodeKiwi(schema: KiwiSchema, bytes: Uint8Array, root: string, 
   if (rootIndex === undefined) throw new Error(`Kiwi schema has no "${root}" type`);
   return reader(rootIndex)(new Reader(bytes));
 }
-
-export const KIWI_BUILTINS = BUILTIN;

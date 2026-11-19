@@ -4,6 +4,8 @@
 //
 // For each file it prints the pages, node counts by type, the number of images and the warnings, checks the
 // invariants below, and writes <out>/<file name>/<file name>.spen (plus images/) to open in the editor.
+// It also replays every auto layout frame with the converted gap / padding / alignment and reports how many
+// children land where Figma had them (information, not a pass/fail check: a few of Figma's rules have no .pen twin).
 // The default output folder is <temp>/superpen-fig-import. Exit code 1 when an invariant fails or a file cannot be read.
 // No dev server or browser is needed; the module is bundled with esbuild the way the webview gets it.
 import fs from 'node:fs';
@@ -130,6 +132,55 @@ function check(result) {
   return { problems, counts, total: ids.size, imageFills };
 }
 
+/**
+ * Lays out the children of every auto layout frame the way a .pen layout does (using the sizes Figma gave them) and
+ * compares the positions with Figma's own. Needs the import's `debug` option, which records Figma's box per node.
+ */
+function layoutAgreement(result) {
+  let same = 0, off = 0;
+  const examples = [];
+  const pad = p => (Array.isArray(p) ? (p.length === 2 ? [p[0], p[1], p[0], p[1]] : p) : [p ?? 0, p ?? 0, p ?? 0, p ?? 0]);
+  const walk = n => {
+    if (n.enabled === false) return; // Figma does not keep the layout of hidden layers up to date
+    if (n.type === 'frame' && n.layout !== 'none' && n.figmaBox) {
+      const horizontal = n.layout === 'horizontal';
+      const [top, right, bottom, left] = pad(n.padding);
+      const kids = (n.children ?? []).filter(c => c.enabled !== false && c.layoutPosition !== 'absolute' && c.figmaBox);
+      const main = c => (horizontal ? c.figmaBox[2] : c.figmaBox[3]);
+      const cross = c => (horizontal ? c.figmaBox[3] : c.figmaBox[2]);
+      const innerMain = (horizontal ? n.figmaBox[2] - left - right : n.figmaBox[3] - top - bottom);
+      const innerCross = (horizontal ? n.figmaBox[3] - top - bottom : n.figmaBox[2] - left - right);
+      let gap = n.gap ?? 0;
+      const free = innerMain - kids.reduce((s, c) => s + main(c), 0) - gap * Math.max(0, kids.length - 1);
+      let at = horizontal ? left : top;
+      if (n.justifyContent === 'center') at += free / 2;
+      else if (n.justifyContent === 'end') at += free;
+      else if (n.justifyContent === 'space_between' && kids.length > 1) gap += Math.max(0, free) / (kids.length - 1);
+      for (const c of kids) {
+        let other = horizontal ? top : left;
+        if (n.alignItems === 'center') other += (innerCross - cross(c)) / 2;
+        else if (n.alignItems === 'end') other += innerCross - cross(c);
+        const [fx, fy] = c.figmaBox;
+        const ok = Math.abs((horizontal ? fx : fy) - at) <= 1 && Math.abs((horizontal ? fy : fx) - other) <= 1;
+        if (ok) same++;
+        else {
+          off++;
+          if (examples.length < 3) examples.push(`${n.id} "${n.name ?? ''}" > "${c.name ?? ''}": Figma ${fx.toFixed(1)},${fy.toFixed(1)}, layout ${(horizontal ? at : other).toFixed(1)},${(horizontal ? other : at).toFixed(1)}`);
+        }
+        at += main(c) + gap;
+      }
+    }
+    for (const c of n.children ?? []) walk(c);
+  };
+  result.nodes.forEach(walk);
+  return { same, off, examples };
+}
+
+function stripDebug(n) {
+  delete n.figmaBox;
+  for (const c of n.children ?? []) stripDebug(c);
+}
+
 const safeName = s => s.replace(/[^\w.-]+/g, '_').slice(0, 80);
 let failed = false;
 
@@ -144,7 +195,7 @@ for (const file of files) {
     if (isHtml && !mod.figmaClipboard(input)) throw new Error('figmaClipboard() says this is not a Figma copy');
     const run = async pg => {
       const t0 = performance.now();
-      const opts = { sections };
+      const opts = { sections, debug: true };
       if (pg !== undefined) opts.page = pg;
       const result = isHtml ? await mod.importFigmaClipboard(input, opts) : await mod.importFigFile(input, opts);
       return { result, ms: performance.now() - t0 };
@@ -160,11 +211,15 @@ for (const file of files) {
     if (!isHtml) console.log(`pages: ${first.result.pages.map(p => `${JSON.stringify(p.name)} (${p.frames})`).join(', ')}`);
     fs.mkdirSync(outDir, { recursive: true });
     for (const { result, ms } of runs) {
+      const agreement = layoutAgreement(result);
+      result.nodes.forEach(stripDebug);
       const c = check(result);
       const label = isHtml ? 'clipboard' : `page ${JSON.stringify(result.page)}`;
       console.log(`${label}: ${result.nodes.length} top-level, ${c.total} nodes in ${ms.toFixed(0)} ms`);
       console.log(`  types: ${Object.entries(c.counts).sort((a, b) => b[1] - a[1]).map(([t, n]) => `${t} ${n}`).join(', ') || '(none)'}`);
       console.log(`  images: ${result.images.length} files (${(result.images.reduce((s, i) => s + i.bytes.length, 0) / 1024).toFixed(0)} KB) used by ${c.imageFills} fills; sections: ${result.sections.length}`);
+      if (agreement.same + agreement.off) console.log(`  auto layout: ${agreement.same} of ${agreement.same + agreement.off} children land where Figma had them`);
+      for (const e of agreement.examples) console.log(`    differs: ${e}`);
       for (const w of result.warnings) console.log(`  warning: ${w}`);
       if (c.problems.length) {
         failed = true;

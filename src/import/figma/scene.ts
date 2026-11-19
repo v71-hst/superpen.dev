@@ -204,6 +204,14 @@ function applyOverrides(scene: Scene, node: FNode, list: any[]) {
   }
 }
 
+/** Applies what Figma worked out for a layer inside an instance: its size, position, outlines, text layout. */
+function applyDerived(node: FNode, d: any) {
+  for (const k of Object.keys(d)) if (k !== 'guidPath' && k !== '__path') node[k] = d[k];
+  // A text layer's new size often comes only as the size of its laid-out text.
+  const laidOut = d.derivedTextData?.layoutSize;
+  if (!d.size && laidOut && typeof laidOut.x === 'number' && typeof laidOut.y === 'number') node.size = { x: laidOut.x, y: laidOut.y };
+}
+
 const SKIPPED_IN_OVERRIDES = new Set(['guidPath', '__path', 'overriddenSymbolID', 'guid', 'parentIndex', 'type']);
 
 export type Expanded = { children: FNode[]; master: FNode | null };
@@ -275,9 +283,8 @@ export function instanceChildren(scene: Scene, inst: FNode, notes: Notes): Expan
     }
     if (own.length) applyOverrides(scene, c, own);
     for (const { path, o } of collect(dvIndex)) {
-      if (path.length === 1) {
-        for (const k of Object.keys(o)) if (k !== 'guidPath' && k !== '__path') c[k] = o[k];
-      } else (passedDerived ??= []).push({ ...o, __path: path.slice(1) });
+      if (path.length === 1) applyDerived(c, o);
+      else (passedDerived ??= []).push({ ...o, __path: path.slice(1) });
     }
     if (c.type === 'INSTANCE') {
       // Expanded later, when this layer is converted; until then it keeps what was meant for its insides.
@@ -300,9 +307,7 @@ export function instanceChildren(scene: Scene, inst: FNode, notes: Notes): Expan
       }
     }
     for (const { path, o } of (inst.passedDerived ?? []).map(o => ({ path: (o.__path ?? pathOf(o)) as string[], o }))) {
-      if (path.length === 1 && path[0] === key) {
-        for (const k of Object.keys(o)) if (k !== 'guidPath' && k !== '__path') inst[k] = o[k];
-      }
+      if (path.length === 1 && path[0] === key) applyDerived(inst, o);
     }
   }
 
