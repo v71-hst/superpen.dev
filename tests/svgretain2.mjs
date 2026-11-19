@@ -2,13 +2,14 @@
 // inflates the numbers): Edge is started plain, the page runs the test itself and reports over HTTP, and memory is
 // read from Windows. Usage: node svgretain2.mjs [count=120] [payloadKB=1500] [mode=data|subset]
 import http from 'node:http';
-import { BROWSER } from './browser.mjs';
+import { BROWSER, guardSignIns, newProfile } from './browser.mjs';
 import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, execFileSync } from 'node:child_process';
 const [, , count = '120', kb = '1500', mode = 'data', waitS = '20'] = process.argv;
-const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'pen-retain-'));
+guardSignIns();
+const profile = newProfile('pen-retain-', true); // never a bare new profile: see the lockout note in browser.mjs
 const html = `<!doctype html><meta charset="utf-8"><body><script>
 const q = new URLSearchParams(location.search);
 const count = +q.get('count'), kb = +q.get('kb'), mode = q.get('mode');

@@ -4,13 +4,14 @@
 // PEN_PROD=1 builds only) and after each step this script reads the processes' memory from Windows.
 // Usage: PEN_PROD=1 node start.mjs <folder>, then: node memory.mjs <url> [perf=0|1] [label] [showAll=1]
 import http from 'node:http';
-import { BROWSER } from './browser.mjs';
+import { BROWSER, guardSignIns, newProfile } from './browser.mjs';
 import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, execFileSync } from 'node:child_process';
 const [, , url, perf = '0', label = perf === '1' ? 'performance mode' : 'normal', showAll = '1'] = process.argv;
-const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'pen-mem-'));
+guardSignIns();
+const profile = newProfile('pen-mem-', true); // never a bare new profile: see the lockout note in browser.mjs
 const tag = path.basename(profile);
 
 // ---- runs inside the page ----
