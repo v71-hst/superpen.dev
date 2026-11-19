@@ -49,7 +49,8 @@ import { useStore, applyProps, keySource } from '../editor/store';
 import { useTree } from '../editor/tree';
 import type { RNode } from '../model/types';
 import { deepResolve, isVarRef, resolveVariable } from '../model/resolve';
-import { displayName } from '../model/doc';
+import { displayName, locate } from '../model/doc';
+import { scaleSubtree } from '../model/scale';
 import { fillList, parseColor, toHex } from '../render/paint';
 import { parseSizing } from '../render/NodeView';
 import { align, detachInstance, elFor, goToComponent, parentLayoutOf, toggleComponent, vectorizeNode, worldRectOf } from '../editor/ops';
@@ -185,6 +186,37 @@ function ancestorRoot(tree: ReturnType<typeof useTree>, key: string): string | n
     k = tree.parent.get(k)?.key;
   }
   return last;
+}
+
+/**
+ * With the Scale tool (K): type a factor to scale the layer and everything in it (sizes, text, strokes, radii,
+ * effects). The field goes back to 1 afterwards: it is something you apply, not a property of the layer.
+ */
+function ScaleField({ nodeKey }: { nodeKey: string }) {
+  const tool = useStore(s => s.tool);
+  const src = keySource(nodeKey);
+  if (tool !== 'scale' || src.kind !== 'real') return null;
+  return (
+    <>
+      <div className="sub-label">Scale</div>
+      <div className="row2">
+        <NumberField
+          label="×"
+          value={1}
+          min={0.01}
+          step={0.1}
+          title="Scale this layer and everything in it by a factor (2 doubles it)"
+          onChange={(v, scrubbing) => {
+            if (scrubbing || !isFinite(v) || v <= 0 || v === 1) return;
+            useStore.getState().edit(d => {
+              const loc = locate(d, src.id);
+              if (loc) scaleSubtree(loc.node, v);
+            });
+          }}
+        />
+      </div>
+    </>
+  );
 }
 
 export function Section({ title, children, onAdd, extra, collapsible, empty }: { title: string; children?: React.ReactNode; onAdd?: () => void; extra?: React.ReactNode; collapsible?: boolean; empty?: boolean }) {
@@ -454,6 +486,7 @@ function LayoutSection({ n, p, r, set }: Ctx) {
               <CheckRow checked={false} label="Fill Height" onChange={v => v && set({ height: 'fill_container' })} />
             )}
           </div>
+          <ScaleField nodeKey={n.key} />
           {isText && (
             <>
               <div className="sub-label">Resizing</div>

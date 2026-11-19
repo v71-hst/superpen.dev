@@ -250,7 +250,7 @@ tool(
 
 tool(
   'apply_operations',
-  'Edit the selected file with an atomic batch of operations (insert, update, delete, move, duplicate, replace, instantiate). All succeed or none apply; the batch is one undo step for the user. Requires the edit lock. See get_guide for the syntax.',
+  'Edit the selected file with an atomic batch of operations (insert, update, delete, move, duplicate, replace, scale, instantiate). All succeed or none apply; the batch is one undo step for the user. Requires the edit lock. See get_guide for the syntax.',
   { operations: z.array(z.record(z.any())).min(1), description: z.string().optional() },
   async ({ operations, description }) => {
     const r = await callEditor('applyOps', { operations, description }, true);

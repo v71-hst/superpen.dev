@@ -1411,6 +1411,25 @@ button.tb-file:hover,
   padding: 0 12px;
 }
 
+/* Alt + hover: distances from the selection to the hovered layer. */
+.measure-line {
+  position: absolute;
+  background: #f24822;
+}
+.measure-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  background: #f24822;
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 16px;
+  padding: 0 4px;
+  border-radius: 3px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 /* F8: frame rate, bottom left, out of the way. */
 .fps {
   position: fixed;

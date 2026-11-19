@@ -1,5 +1,6 @@
 // Agent-facing document operations (atomic batches) and compact read views (outline, search, node JSON).
 import type { PenDoc, PenNode, RNode } from './types';
+import { scaleSubtree } from './scale';
 import { allIds, cloneWithNewIds, displayName, indexDoc, locate, newId } from './doc';
 import { applyProps, keySource } from '../editor/store';
 import { isGeneratedKey } from './resolve';
@@ -16,6 +17,7 @@ export type Operation =
   | { op: 'move'; id: string; parent?: string | null; index?: number; x?: number; y?: number }
   | { op: 'duplicate'; id: string; parent?: string | null; index?: number; props?: Record<string, any> }
   | { op: 'replace'; id: string; node: PenNode }
+  | { op: 'scale'; id: string; factor: number }
   | { op: 'instantiate'; component: string; parent?: string | null; index?: number; props?: Record<string, any>; overrides?: Record<string, any> };
 
 export type OpResult = { op: string; id?: string; ids?: string[]; note?: string };
@@ -143,6 +145,16 @@ export function applyOperations(d: PenDoc, ops: Operation[]): { results: OpResul
         else loc.siblings.splice(o.index ?? loc.index + 1, 0, copy);
         results.push({ op: 'duplicate', id: copy.id });
         touched.push(copy.id);
+        break;
+      }
+      case 'scale': {
+        if (typeof o.id !== 'string' || o.id.includes('/')) fail(i, 'scale needs the "id" of a document node');
+        if (typeof o.factor !== 'number' || !isFinite(o.factor) || o.factor <= 0) fail(i, 'scale needs a positive "factor" (2 doubles the size)');
+        const loc = locate(d, o.id);
+        if (!loc) fail(i, `node "${o.id}" not found`);
+        scaleSubtree(loc.node, o.factor);
+        results.push({ op: 'scale', id: o.id });
+        touched.push(o.id);
         break;
       }
       case 'replace': {

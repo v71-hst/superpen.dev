@@ -75,6 +75,7 @@ canvas to the Sections viewer, which shows one section at a time; tool notes say
   { "op": "move", "id": "<id>", "parent": "<new parent>", "index": 2, "x": 10, "y": 20 },
   { "op": "duplicate", "id": "<id>", "props": { "x": 400 } },
   { "op": "replace", "id": "<id>", "node": { ...full node... } },
+  { "op": "scale", "id": "<id>", "factor": 1.5 },   // the layer and everything in it: sizes, positions, gaps, padding, radii, strokes, font sizes, shadows
   { "op": "instantiate", "component": "<component id>", "parent": "<frame>", "props": { "x": 0 }, "overrides": { "<childId>": { "content": "Buy" } } }
 ]
 If any operation is invalid the whole batch is rejected and nothing changes.

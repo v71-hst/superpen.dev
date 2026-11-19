@@ -1,6 +1,6 @@
-// Canvas overlays beyond selection: smart guides, auto-layout gap handles, prototype links, comment pins, and the
-// banners for component-state editing and pending AI changes (review mode).
-import React, { useLayoutEffect, useState } from 'react';
+// Canvas overlays beyond selection: smart guides, auto-layout gap handles, distances to the hovered layer (Alt),
+// prototype links, comment pins, and the banners for component-state editing and pending AI changes (review mode).
+import React, { useEffect, useLayoutEffect, useState } from 'react';
 import { Check, Trash2, Undo2 } from 'lucide-react';
 import { useStore } from '../editor/store';
 import type { Tree } from '../editor/tree';
@@ -31,6 +31,8 @@ export function CanvasExtras({ tree, draft, onGapStart, dragging }: { tree: Tree
       <div className="overlay" style={{ zIndex: 3 }}>
         {draft?.guides && <GuideLines guides={draft.guides} toScreen={toScreen} />}
         {draft?.gapLabel && <GapLabel {...draft.gapLabel} />}
+        {draft?.scaleLabel && <ScaleLabel {...draft.scaleLabel} />}
+        {!dragging && <Measurements />}
         {!dragging && <GapHandles tree={tree} onGapStart={onGapStart} />}
         <PrototypeArrows tree={tree} />
         <CommentPins tree={tree} />
@@ -73,6 +75,89 @@ function GapLabel({ value, x, y }: { value: number; x: number; y: number }) {
     <div className="gap-label" style={{ left: x - c.left, top: y - c.top - 18 }}>
       gap {value}
     </div>
+  );
+}
+
+function ScaleLabel({ value, x, y }: { value: number; x: number; y: number }) {
+  const c = canvasRect();
+  return (
+    <div className="gap-label" style={{ left: x - c.left, top: y - c.top - 18 }}>
+      {Math.round(value * 100) / 100}x
+    </div>
+  );
+}
+
+type Distance = { x1: number; y1: number; x2: number; y2: number; value: number };
+
+/**
+ * The distances worth reading between two boxes. Along each axis: the gap between them if they are apart, else how
+ * far their matching edges are from each other (left to left, right to right), which is the inset when one contains
+ * the other.
+ */
+export function distancesBetween(a: Rect, b: Rect): Distance[] {
+  const out: Distance[] = [];
+  const ax2 = a.x + a.w, ay2 = a.y + a.h, bx2 = b.x + b.w, by2 = b.y + b.h;
+  // Lines run through the stretch both boxes share on the other axis, or through the first box's middle.
+  const mid = (lo1: number, hi1: number, lo2: number, hi2: number) => (Math.max(lo1, lo2) < Math.min(hi1, hi2) ? (Math.max(lo1, lo2) + Math.min(hi1, hi2)) / 2 : (lo1 + hi1) / 2);
+  const cy = mid(a.y, ay2, b.y, by2), cx = mid(a.x, ax2, b.x, bx2);
+  const h = (x1: number, x2: number) => x1 !== x2 && out.push({ x1: Math.min(x1, x2), y1: cy, x2: Math.max(x1, x2), y2: cy, value: Math.abs(x2 - x1) });
+  const v = (y1: number, y2: number) => y1 !== y2 && out.push({ x1: cx, y1: Math.min(y1, y2), x2: cx, y2: Math.max(y1, y2), value: Math.abs(y2 - y1) });
+  if (bx2 <= a.x) h(bx2, a.x);
+  else if (b.x >= ax2) h(ax2, b.x);
+  else (h(a.x, b.x), h(ax2, bx2));
+  if (by2 <= a.y) v(by2, a.y);
+  else if (b.y >= ay2) v(ay2, b.y);
+  else (v(a.y, b.y), v(ay2, by2));
+  return out;
+}
+
+/** Hold Alt and hover another layer: red lines with the distances from the selection to it. */
+function Measurements() {
+  const selection = useStore(s => s.selection);
+  const hover = useStore(s => s.hover);
+  const view = useStore(s => s.view);
+  const doc = useStore(s => s.doc);
+  const [alt, setAlt] = useState(false);
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => e.key === 'Alt' && setAlt(true);
+    const up = (e: KeyboardEvent) => e.key === 'Alt' && setAlt(false);
+    const off = () => setAlt(false);
+    // Pointer events carry the key's state too: the key may go down or up while another window has the focus.
+    const move = (e: PointerEvent) => setAlt(e.altKey);
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    window.addEventListener('blur', off);
+    window.addEventListener('pointermove', move);
+    return () => {
+      window.removeEventListener('keydown', down);
+      window.removeEventListener('keyup', up);
+      window.removeEventListener('blur', off);
+      window.removeEventListener('pointermove', move);
+    };
+  }, []);
+  const on = alt && selection.length > 0 && !!hover && !selection.includes(hover);
+  const lines = useMeasured(() => {
+    if (!on) return null;
+    const rects = selection.map(k => worldRectOf(k)).filter((r): r is Rect => !!r);
+    const b = worldRectOf(hover!);
+    if (!rects.length || !b) return null;
+    const x = Math.min(...rects.map(r => r.x)), y = Math.min(...rects.map(r => r.y));
+    const a = { x, y, w: Math.max(...rects.map(r => r.x + r.w)) - x, h: Math.max(...rects.map(r => r.y + r.h)) - y };
+    return distancesBetween(a, b);
+  }, [on, selection, hover, view, doc]);
+  if (!on || !lines) return null;
+  const sx = (v: number) => view.x + v * view.zoom, sy = (v: number) => view.y + v * view.zoom;
+  return (
+    <>
+      {lines.map((l, i) => (
+        <React.Fragment key={i}>
+          <div className="measure-line" style={{ left: sx(l.x1), top: sy(l.y1), width: Math.max(1, (l.x2 - l.x1) * view.zoom), height: Math.max(1, (l.y2 - l.y1) * view.zoom) }} />
+          <div className="measure-label" style={{ left: sx((l.x1 + l.x2) / 2), top: sy((l.y1 + l.y2) / 2) }}>
+            {Math.round(l.value * 100) / 100}
+          </div>
+        </React.Fragment>
+      ))}
+    </>
   );
 }
 

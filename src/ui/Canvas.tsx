@@ -19,6 +19,7 @@ import { AiPenLayer } from './AiPen';
 import { canvasHiddenIds } from '../editor/sections';
 import { LOD_ZOOM, bitmapUrl, getBitmap, hasFixedSize, lodEligible, lodInteraction, requestBitmap, type Bitmap } from '../editor/lod';
 import { deepResolve } from '../model/resolve';
+import { scaleSubtree } from '../model/scale';
 import { fillList, fillsToBackground, primaryColor, type UrlResolver } from '../render/paint';
 import { pickImageUrl, useImageEpoch } from '../render/imageLod';
 import { ErrorBoundary, NodeErrorBox } from './ErrorBoundary';
@@ -51,7 +52,7 @@ type Drag =
     }
   | { kind: 'gap'; key: string; sx: number; sy: number; start: number; horiz: boolean }
   | { kind: 'marquee'; sx: number; sy: number; scope: string | null; base: string[] }
-  | { kind: 'resize'; key: string; handle: string; sx: number; sy: number; start: Rect; props: any; abs: boolean }
+  | { kind: 'resize'; key: string; handle: string; sx: number; sy: number; start: Rect; props: any; abs: boolean; /** Scale tool: the document node as it was when the drag began. */ scale?: { id: string; orig: PenNode } }
   | { kind: 'draw'; tool: string; sx: number; sy: number; parent: string | null };
 
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
@@ -123,6 +124,7 @@ export function Canvas() {
     target?: string | null;
     guides?: Guides;
     gapLabel?: { key: string; value: number; x: number; y: number };
+    scaleLabel?: { value: number; x: number; y: number };
   } | null>(null);
   const [penPoints, setPenPoints] = useState<{ x: number; y: number }[]>([]);
   const [penHover, setPenHover] = useState<{ x: number; y: number } | null>(null);
@@ -566,6 +568,29 @@ export function Canvas() {
       }
       w = Math.max(1, w);
       h = Math.max(1, h);
+      if (d.scale && d.start.w && d.start.h) {
+        // One factor for both axes: the handle's own axis for an edge, the larger change for a corner.
+        const kx = w / d.start.w, ky = h / d.start.h;
+        const k = hd === 'n' || hd === 's' ? ky : hd === 'e' || hd === 'w' ? kx : Math.abs(kx - 1) > Math.abs(ky - 1) ? kx : ky;
+        const sw = d.start.w * k, sh = d.start.h * k;
+        // The opposite edge or corner stays put (Alt: the centre does); an edge handle keeps the other axis centred.
+        const ax = e.altKey || hd === 'n' || hd === 's' ? 0.5 : hd.includes('w') ? 1 : 0;
+        const ay = e.altKey || hd === 'e' || hd === 'w' ? 0.5 : hd.includes('n') ? 1 : 0;
+        const nx = d.start.x + (d.start.w - sw) * ax, ny = d.start.y + (d.start.h - sh) * ay;
+        const sc = d.scale;
+        s.edit(dd => {
+          const loc = locate(dd, sc.id);
+          if (!loc) return;
+          const copy = scaleSubtree(JSON.parse(JSON.stringify(sc.orig)), k);
+          if (d.abs) {
+            copy.x = Math.round((d.props.x + (nx - d.start.x)) * 100) / 100;
+            copy.y = Math.round((d.props.y + (ny - d.start.y)) * 100) / 100;
+          }
+          loc.siblings[loc.index] = copy;
+        }, 'resize-' + d.key);
+        setDraft({ scaleLabel: { value: k, x: e.clientX, y: e.clientY } });
+        return;
+      }
       const changes: any = {};
       const horiz = hd.includes('e') || hd.includes('w') || e.shiftKey;
       const vert = hd.includes('n') || hd.includes('s') || e.shiftKey;
@@ -796,6 +821,13 @@ export function Canvas() {
       props: { x: n.props.x ?? 0, y: n.props.y ?? 0 },
       abs: isAbsolutelyPositioned(key),
     };
+    // Scale tool: the layer and everything in it scale together, from a copy of how it was when the drag began.
+    const src = keySource(key);
+    const doc = useStore.getState().doc;
+    if (tool === 'scale' && src.kind === 'real' && doc) {
+      const orig = locate(doc, src.id)?.node;
+      if (orig) drag.current.scale = { id: src.id, orig: JSON.parse(JSON.stringify(orig)) };
+    }
     canvasRef.current!.setPointerCapture(e.pointerId);
   };
 
