@@ -16,8 +16,11 @@ export type ImageBox = { w: number; h: number; mode?: string };
 /** Shown until a picture's first level is ready (transparent pixel). */
 const BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
 const MIN_SIDE = 256;
-/** Pictures nowhere near the viewport are kept at this level at most (enough for snapshots and a first glimpse). */
-const OFFSCREEN_SIDE = 512;
+/**
+ * Pictures nowhere near the viewport are kept at this level at most (enough for a first glimpse; the right size is
+ * made when the picture comes near). 256, like the small versions of the Skia renderer; it was 512 until 1.0.0.
+ */
+const OFFSCREEN_SIDE = 256;
 /** The level key of the picture itself. */
 const FULL = Infinity;
 

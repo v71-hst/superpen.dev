@@ -446,6 +446,33 @@ const staleRunners = new Set<ShaderRunner>();
 export function flushStaleShaders(root: Element) {
   for (const r of [...staleRunners]) if (root.contains(r.canvas)) r.catchUp();
 }
+/**
+ * Canvases drawn sharper than the zoom now needs. Zooming out used to re-render every visible shader canvas at each
+ * zoom step, which made the longest frames of a zoom-out; the sharper picture already on the canvas looks the same
+ * scaled down. They are redrawn smaller, one per frame, once the view has been still for a moment (to give the
+ * memory back).
+ */
+const oversize = new Set<ShaderRunner>();
+const SHRINK_AFTER_MS = 400;
+let shrinkTimer: ReturnType<typeof setTimeout> | undefined;
+function shrinkLater(r: ShaderRunner) {
+  oversize.add(r);
+  if (shrinkTimer !== undefined) return;
+  watchView();
+  const tick = () => {
+    shrinkTimer = undefined;
+    if (!oversize.size) return;
+    if (performance.now() - viewMovedAt < SHRINK_AFTER_MS) {
+      shrinkTimer = setTimeout(tick, 150);
+      return;
+    }
+    const next = oversize.values().next().value as ShaderRunner;
+    oversize.delete(next);
+    next.shrink();
+    if (oversize.size) shrinkTimer = setTimeout(tick, 24);
+  };
+  shrinkTimer = setTimeout(tick, SHRINK_AFTER_MS);
+}
 let rafId = 0;
 const t0 = performance.now();
 /** Animation runs at most this often; the canvas keeps the last frame in between. */
@@ -454,15 +481,17 @@ const SETTLE_MS = 140;
 let lastFrame = 0;
 let viewMovedAt = 0;
 let watchingView = false;
+/** Notes when the view last moved. Subscribed lazily: the store module is still initializing when this module loads (import cycle). */
+function watchView() {
+  if (watchingView) return;
+  watchingView = true;
+  useStore.subscribe((s, p) => {
+    if (s.view !== p.view) viewMovedAt = performance.now();
+  });
+}
 function loop(now: number) {
   rafId = 0;
-  // Subscribed lazily: the store module is still initializing when this module loads (import cycle).
-  if (!watchingView) {
-    watchingView = true;
-    useStore.subscribe((s, p) => {
-      if (s.view !== p.view) viewMovedAt = performance.now();
-    });
-  }
+  watchView();
   if (document.hidden) {
     setTimeout(() => !rafId && animated.size && (rafId = requestAnimationFrame(loop)), 500);
     return;
@@ -483,6 +512,8 @@ export class ShaderRunner {
   private visible = true;
   /** The zoom changed while this canvas was off screen: it re-renders when it comes into view. */
   private stale = false;
+  /** The scale the pixels now on the canvas were drawn for. */
+  private drawnScale = 0;
   private io: IntersectionObserver;
   private moveHandler = (e: PointerEvent) => {
     const r = this.canvas.getBoundingClientRect();
@@ -609,7 +640,20 @@ export class ShaderRunner {
     this.cfg = { ...this.cfg, scale };
     if (this.needsAnim) return;
     // Every shader canvas used to re-render on each zoom step, on screen or not: with many of them that was the
-    // longest frame of a zoom-out. One that is off screen keeps its old pixels until it is seen.
+    // longest frame of a zoom-out. One that is off screen keeps its old pixels until it is seen...
+    if (!this.visible) {
+      this.stale = true;
+      staleRunners.add(this);
+      return;
+    }
+    // ...and zooming out keeps the sharper pixels it has (see shrinkLater).
+    if (this.drawnScale > 0 && scale < this.drawnScale) shrinkLater(this);
+    else this.render();
+  }
+
+  /** Redraws at the scale the zoom needs now, when the canvas holds more pixels than that. */
+  shrink() {
+    if (this.disposed || this.needsAnim || !this.cfg || this.cfg.scale >= this.drawnScale) return;
     if (this.visible) this.render();
     else {
       this.stale = true;
@@ -642,6 +686,7 @@ export class ShaderRunner {
     if (this.needsAnim && this.canvas.width > 1 && Math.max(fullW, fullH) * useStore.getState().view.zoom < 16) return;
     const pxW = Math.max(1, Math.round(fullW * scale));
     const pxH = Math.max(1, Math.round(fullH * scale));
+    this.drawnScale = cfg.scale;
     const time = (performance.now() - t0) / 1000;
     let prevOut: HTMLCanvasElement | null = null;
     this.srcs.forEach((src, i) => {
@@ -680,6 +725,7 @@ export class ShaderRunner {
     this.disposed = true;
     animated.delete(this);
     staleRunners.delete(this);
+    oversize.delete(this);
     this.io.disconnect();
     window.removeEventListener('pointermove', this.moveHandler);
   }
