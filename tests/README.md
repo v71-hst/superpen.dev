@@ -12,8 +12,10 @@ node tests/<script>.mjs "http://127.0.0.1:5178/?file=<name>.pen" [more arguments
 Always work on copies: several scripts edit the file they open. `browser.mjs` picks the browser (Edge or Chrome if
 installed, or the executable named in `PEN_BROWSER`).
 
-**Renderer modes.** Add `&renderer=overview` (or `full`) to any test URL to run a suite with the Skia renderer
-(docs/SKIA_REWORK.md); without it the editor uses `localStorage['pen.renderer']`, `dom` by default. Only test builds
+**Renderer modes.** Add `&renderer=dom` (or `overview`, `full`) to any test URL to run a suite with that renderer
+(docs/SKIA_REWORK.md); without it the editor uses `localStorage['pen.renderer']`, `full` (Skia) by default since
+0.4.0. Suites about the DOM renderer's own machinery (snapshots, picture levels: `images.mjs`, `lodswitch.mjs`,
+`invisible.mjs`, `zoomout.mjs`, `imgzoom.mjs`, the snapshot checks of `blank.mjs`) need `&renderer=dom`. Only test builds
 (the dev server, or `PEN_PROD=1`) read the URL parameter. On Linux `browser.mjs` turns on software WebGL
 (SwiftShader), so the Skia canvas and shaders also run in containers without a GPU.
 

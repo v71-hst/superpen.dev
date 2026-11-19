@@ -581,7 +581,7 @@ tool(
 
 tool(
   'set_renderer',
-  'Developer switch for the renderer rework (docs/SKIA_REWORK.md), for comparing renderers with the benchmark. Use it ONLY when the user asks. dom = the standard renderer (default); overview = Skia draws zoomed-out frames; full = Skia draws every frame it can. Takes effect at once and is remembered for this editor. Changes no design.',
+  'Switches how the canvas is drawn. Use it ONLY when the user asks (for example because something looks wrong, or to compare with the benchmark). full = the GPU renderer (Skia) draws every frame it can (default since 0.4.0); dom = the renderer before 0.4.0, the browser draws every layer; overview = Skia draws zoomed-out frames only. Takes effect at once and is remembered for this editor. Changes no design.',
   { mode: z.enum(['dom', 'overview', 'full']) },
   async ({ mode }) => json(await callEditor('setRenderer', { mode })),
 );

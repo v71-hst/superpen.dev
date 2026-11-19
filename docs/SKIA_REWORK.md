@@ -322,6 +322,7 @@ to run, what to look at. The owner builds and installs with `npm run package` an
 | 2026-11-19 | 1–4 | Done (cloud) | Owner asked for every stage at once; gates 1–3 become one check on the PC. See the stages 1–4 notes below. Next: the owner's combined gate, then stage 5 on their say-so. |
 | 2026-11-19 | Gate (owner's PC) | Started; full mode tuned | First benchmarks on the owner's PC, then a tuning pass there. See the gate notes at the end. Next: the owner re-runs the benchmark on the tuned build, then memory and the look check. |
 | 2026-11-19 | Gate (owner's PC) | Memory fixed | Pictures in two sizes; `full` now uses less memory than `dom` in normal mode at every step. See the last section. Next: the owner tries it in VS Code, then the look check, real use and the 16 GB machine. |
+| 2026-11-19 | 5 | Default switched (owner's decision) | Merged to `main` as 0.4.0 with `full` as the default; the `skia-rework` branch is gone. `dom` and `overview` stay selectable. The clean-up half of stage 5 is not started. See the last section. |
 
 ### 2026-11-18, stage 0 notes
 
@@ -675,3 +676,22 @@ Still open:
   while nothing moves; moving it to a worker would let pictures sharpen during a slow zoom.
 - Not measured in VS Code yet (these are headless and plain-Edge numbers), nor on the 16 GB machine.
 - `overview` mode is still untuned.
+
+### 2026-11-19, merged to main as 0.4.0, `full` is the default
+
+The owner tried the build with two-size pictures, called it good and asked for it to become the main version:
+`skia-rework` was fast-forwarded into `main`, `full` made the default (`DEFAULT` in `src/skia/renderer.ts`), the
+version set to 0.4.0, and the branch deleted. The rules near the top of this file about the branch and the default
+renderer describe the work up to here; from now on Skia work happens on `main` under the usual rules (ask before
+pushing).
+
+What was not done before the switch, by the owner's choice: the look check frame by frame in VS Code, a period of real
+use, and the 16 GB machine. The safety net is the automatic fallback to `dom` when Skia cannot start or loses its
+graphics context for good, and `set_renderer` (there is no button for it yet).
+
+For tests: a URL without `&renderer=` now runs in `full`. The suites about the DOM renderer's own machinery need
+`&renderer=dom` (tests/README.md).
+
+Left of stage 5: nothing of the DOM renderer has been removed (`lod.ts`, `imageLod.ts`, `subpixel.ts`, `culling.ts`
+are all still needed by `dom` mode, by frames Skia cannot draw, and by screenshots and exports). Removing any of it
+waits until `full` has been the default for a while without reports.

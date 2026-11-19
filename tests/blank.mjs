@@ -10,7 +10,7 @@ const browser = await puppeteer.launch(launchOptions({ headless: true, protocolT
 const ok = (name, cond, info = '') => console.log(`${cond ? 'PASS' : 'FAIL'} ${name}${info ? ' — ' + info : ''}`);
 // With the Skia renderer (&renderer=overview or full) frames are drawn from their own pictures: no snapshots or scaled
 // copies are made for them, so there is nothing to detect; only "frames stay visible" applies.
-const skia = /[?&]renderer=(overview|full)/.test(url);
+const skia = !/[?&]renderer=dom/.test(url);
 const skip = name => console.log(`SKIP ${name} — the Skia renderer makes no snapshots for the frames it draws`);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 

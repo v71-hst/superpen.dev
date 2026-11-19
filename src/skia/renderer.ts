@@ -1,12 +1,14 @@
-// Which renderer draws the canvas (docs/SKIA_REWORK.md). `pen.renderer` in localStorage picks it: `dom` (the default,
-// the browser draws every node), `overview` (Skia draws far frames) or `full` (Skia draws everything). If Skia cannot
-// start, or loses its graphics context for good, the editor falls back to `dom` for the rest of the session.
+// Which renderer draws the canvas (docs/SKIA_REWORK.md). `pen.renderer` in localStorage picks it: `full` (the default
+// since 0.4.0: Skia draws every frame it can), `overview` (Skia draws far frames only) or `dom` (the browser draws every
+// node, the renderer before 0.4.0). If Skia cannot start, or loses its graphics context for good, the editor falls back
+// to `dom` for the rest of the session.
 import { useSyncExternalStore } from 'react';
 
 export type RendererMode = 'dom' | 'overview' | 'full';
 
 const KEY = 'pen.renderer';
 const MODES: RendererMode[] = ['dom', 'overview', 'full'];
+const DEFAULT: RendererMode = 'full';
 
 function readMode(): RendererMode {
   // Test builds only (dev server or PEN_PROD=1): `?renderer=overview` in the URL, so every suite in tests/ can run in
@@ -17,9 +19,9 @@ function readMode(): RendererMode {
   }
   try {
     const v = localStorage.getItem(KEY) as RendererMode | null;
-    return v && MODES.includes(v) ? v : 'dom';
+    return v && MODES.includes(v) ? v : DEFAULT;
   } catch {
-    return 'dom';
+    return DEFAULT;
   }
 }
 
