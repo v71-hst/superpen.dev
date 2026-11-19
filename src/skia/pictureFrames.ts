@@ -15,6 +15,7 @@ import { paintContext } from './testing';
 import { hitChain, layoutOf, layoutWorldRect, rootLayout, rootOf } from './layoutIndex';
 import { propsOf } from './painter';
 import { surfaceIsReady } from './scene';
+import { activeRenderer, failRenderer } from './renderer';
 
 export type PictureFrame = {
   key: string;
@@ -53,10 +54,17 @@ const num = (v: any) => (typeof v === 'number' && isFinite(v) ? v : null);
 /** Whether Skia draws this top-level frame now, and where; null if it stays DOM (or a snapshot) for now. */
 export function pictureFrameFor(n: RNode): PictureFrame | null {
   const ck = kitIfLoaded();
-  if (!ck || !surfaceIsReady() || heldLive(n)) return null;
+  if (!ck || !surfaceIsReady() || heldLive(n) || activeRenderer() === 'dom') return null;
   const ctx = paintContext(ck);
   const editing = useStore.getState().editingKey;
-  if (frameReason(ctx, n, editing)) return null;
+  try {
+    if (frameReason(ctx, n, editing)) return null;
+  } catch (e) {
+    // Runs while the canvas renders: a CanvasKit failure here must not take the editor down. The DOM renderer takes
+    // over for the rest of the session.
+    failRenderer(`Skia failed while preparing frames (${e instanceof Error ? e.message : e})`);
+    return null;
+  }
   const p = propsOf(ctx, n);
   // A fixed-size, unrotated frame's box comes straight from its props; anything else from the layout engine.
   let box = num(p.x) !== null && num(p.y) !== null && num(p.width) !== null && num(p.height) !== null && !p.rotation ? { x: p.x, y: p.y, w: p.width, h: p.height } : null;

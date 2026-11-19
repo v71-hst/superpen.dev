@@ -11,7 +11,7 @@ import { ellipseGeometry, pathGeometry, polygonGeometry } from '../render/geomet
 import { weightNum } from '../render/fonts';
 import { scriptState } from '../editor/scriptHost';
 import { Scope, free, own } from './lifetime';
-import { familyList, fontBlocker, fontEpoch, fontProvider } from './fonts';
+import { familyList, fontBlocker, fontCollection, fontEpoch } from './fonts';
 import { getImage } from './images';
 import { iconLibrarySupported, iconPaths } from './icons';
 
@@ -437,7 +437,7 @@ function normalLineHeight(ck: CanvasKit, textStyle: any): number {
   let v = normalCache.get(k);
   if (v === undefined) {
     const style = new ck.ParagraphStyle({ textStyle: { ...textStyle, heightMultiplier: undefined, halfLeading: undefined, shadows: [], decoration: 0 }, applyRoundingHack: false });
-    const b = ck.ParagraphBuilder.MakeFromFontProvider(style, fontProvider(ck));
+    const b = ck.ParagraphBuilder.MakeFromFontCollection(style, fontCollection(ck));
     b.addText('Hg');
     const para = b.build();
     b.delete();
@@ -485,7 +485,7 @@ export function textParagraph(ck: CanvasKit, p: any, maxWidth: number | null, fo
     // Skia rounds line heights to whole pixels by default; browsers don't.
     applyRoundingHack: false,
   });
-  const builder = ck.ParagraphBuilder.MakeFromFontProvider(style, fontProvider(ck));
+  const builder = ck.ParagraphBuilder.MakeFromFontCollection(style, fontCollection(ck));
   if (foreground) builder.pushPaintStyle({ ...textStyle, color: undefined } as any, foreground, foreground);
   const content = typeof p.content === 'string' ? p.content : p.content === undefined ? '' : String(p.content);
   builder.addText(content || '​');
@@ -510,7 +510,7 @@ function layoutParagraph(para: Paragraph, maxWidth: number | null) {
  */
 const paragraphs = new Map<object, { para: Paragraph; width: number | null | undefined }>();
 let paragraphFonts = -1;
-const MAX_PARAGRAPHS = 3000;
+const MAX_PARAGRAPHS = 1500;
 
 function sharedParagraph(ck: CanvasKit, p: any, maxWidth: number | null): Paragraph {
   if (paragraphFonts !== fontEpoch()) {

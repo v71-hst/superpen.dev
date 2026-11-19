@@ -2,7 +2,7 @@
 // TypefaceFontProvider: Google Fonts families on demand (each @font-face subset of a family is registered under its
 // own alias, so a paragraph's family list falls back through the subsets), and Inter bundled with the extension so
 // text always draws. A family that cannot be fetched makes the frames using it fall back to the DOM renderer.
-import type { CanvasKit, TypefaceFontProvider } from 'canvaskit-wasm';
+import type { CanvasKit, FontCollection, TypefaceFontProvider } from 'canvaskit-wasm';
 import { free, own } from './lifetime';
 import { weightNum } from '../render/fonts';
 
@@ -38,6 +38,24 @@ export function onFontsChanged(fn: () => void): () => void {
 function changed() {
   epoch++;
   listeners.forEach(l => l());
+}
+
+let collection: { fc: FontCollection; epoch: number } | null = null;
+
+/**
+ * The one font collection every paragraph is built with. A collection caches typefaces and shaping data per font, so
+ * one per paragraph (MakeFromFontProvider) costs megabytes per frame once a family has a dozen subset files; this one
+ * is rebuilt only when a font arrives (its family lookups may have missed it).
+ */
+export function fontCollection(kit: CanvasKit): FontCollection {
+  if (!collection || collection.epoch !== epoch) {
+    if (collection) free(collection.fc);
+    const fc = own(kit.FontCollection.Make(), 'fontCollection');
+    fc.setDefaultFontManager(fontProvider(kit));
+    fc.enableFontFallback();
+    collection = { fc, epoch };
+  }
+  return collection.fc;
 }
 
 export function fontProvider(kit: CanvasKit): TypefaceFontProvider {
@@ -191,6 +209,8 @@ export function fontStats() {
 
 /** Frees the font provider and forgets every registered font (Skia switched off); they load again when needed. */
 export function resetFonts() {
+  if (collection) free(collection.fc);
+  collection = null;
   if (provider) free(provider);
   provider = null;
   families.clear();

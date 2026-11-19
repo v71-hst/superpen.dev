@@ -112,7 +112,12 @@ export function SkiaLayer() {
       c.scale(state.dpr, state.dpr);
       c.translate(x, y);
       c.scale(zoom, zoom);
-      drawScene(c, ck, { x: -x / zoom, y: -y / zoom, w: canvas.clientWidth / zoom, h: canvas.clientHeight / zoom });
+      try {
+        drawScene(c, ck, { x: -x / zoom, y: -y / zoom, w: canvas.clientWidth / zoom, h: canvas.clientHeight / zoom });
+      } catch (e) {
+        // A CanvasKit failure (an abort leaves it unusable): the DOM renderer takes over; frames never go missing.
+        return giveUp(`Skia failed while drawing (${e instanceof Error ? e.message : e})`);
+      }
       if (debugRects.length) {
         const paint = new ck.Paint();
         for (const r of debugRects) {
@@ -163,6 +168,11 @@ export function SkiaLayer() {
       makeSurface();
       requestDraw();
     };
+    // CanvasKit aborting (e.g. out of WebAssembly memory) can surface as an uncaught error from inside the kit.
+    const onError = (e: ErrorEvent) => {
+      if (/Aborted\(/.test(String(e.message ?? e.error))) giveUp('CanvasKit aborted');
+    };
+    window.addEventListener('error', onError);
     canvas.addEventListener('webglcontextlost', onLost);
     canvas.addEventListener('webglcontextrestored', onRestored);
 
@@ -214,6 +224,7 @@ export function SkiaLayer() {
       ro.disconnect();
       window.removeEventListener('resize', fitCanvas);
       canvas.removeEventListener('webglcontextlost', onLost);
+      window.removeEventListener('error', onError);
       canvas.removeEventListener('webglcontextrestored', onRestored);
       unsub();
       setDrawHooks(null);

@@ -78,7 +78,10 @@ ok('every filled frame on screen is visible', v1.checked >= 10 && v1.invisible.l
 const imgs = await page.evaluate(keys => keys.filter(k => document.querySelector(`#pen-world > img[data-k="${CSS.escape(k)}"]`)).length, v1.skiaKeys);
 const allImgs = await page.evaluate(() => document.querySelectorAll('#pen-world > img[data-bitmap]').length);
 ok('Skia-drawn frames mount no <img>', imgs === 0, `${imgs} of ${v1.skiaKeys.length} Skia frames have an <img>; ${allImgs} snapshot <img>s in the page`);
-ok('textures are counted as live CanvasKit images', (d.renderer.skia.liveObjects.byKind.image ?? 0) === d.renderer.skia.overview.textures, JSON.stringify(d.renderer.skia.liveObjects));
+// Live images: snapshot textures (stage 1), rasterised copies of frame pictures and decoded picture fills (stage 3).
+const sk = d.renderer.skia;
+const expectImages = sk.overview.textures + (sk.pictureImages?.images ?? 0) + (sk.images?.ready ?? 0);
+ok('every live CanvasKit image is accounted for', (sk.liveObjects.byKind.image ?? 0) === expectImages, `${sk.liveObjects.byKind.image} live = ${sk.overview.textures} snapshot textures + ${sk.pictureImages?.images} picture copies + ${sk.images?.ready} decoded pictures`);
 ok('no scaled snapshot copies are made', d.lod.levels === d.lod.bitmaps, `${d.lod.bitmaps} snapshots, ${d.lod.levels} levels`);
 
 // Move a Skia-drawn frame to an empty spot (the same document edit a drag makes): Skia must draw it there.
