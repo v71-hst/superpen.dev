@@ -10,11 +10,11 @@ import { setSkiaGeometry } from '../editor/measure';
 import { worldBounds } from '../layout/layout';
 import { fillList, isEnabled, primaryColor } from '../render/paint';
 import { kitIfLoaded } from './kit';
-import { framePicture, frameReason, pictureBounds, pruneFrames } from './frames';
+import { framePicture, frameReason, frameSeen, pictureBounds, pruneFrames, relaxFrames } from './frames';
 import { paintContext } from './testing';
 import { hitChain, layoutOf, layoutWorldRect, rootLayout, rootOf } from './layoutIndex';
 import { propsOf } from './painter';
-import { invalidateScene, surfaceIsReady } from './scene';
+import { invalidateScene, setRelaxHook, surfaceIsReady } from './scene';
 import { activeRenderer, failRenderer } from './renderer';
 
 export type PictureFrame = {
@@ -27,6 +27,8 @@ export type PictureFrame = {
   record: () => SkPicture | null;
   /** The picture if it is already recorded (no work). */
   peek: () => SkPicture | null;
+  /** On screen at `scale` device pixels per world px: asks for sharper versions of its pictures inside `visible`. */
+  seen: (scale: number, visible: Box | null) => void;
   /** Shown for the moment before the picture is recorded: the frame's own colour. */
   placeholder: string;
   /** Changes whenever the frame's content does (its RNode). */
@@ -91,6 +93,7 @@ export function pictureFrameFor(n: RNode): PictureFrame | null {
     ...box,
     record: () => framePicture(ctx, n, () => layoutOf(n.key), useStore.getState().editingKey),
     peek: () => framePicture(ctx, n, () => null, useStore.getState().editingKey, false),
+    seen: (scale, visible) => frameSeen(n.key, scale, visible),
     placeholder: primaryColor(fillList(p.fill).filter(isEnabled)) ?? 'rgba(128,128,128,0.12)',
     token: n,
   };
@@ -147,6 +150,7 @@ export function pictureFrameKeys(): readonly string[] {
 
 /** measure.ts answers for picture-drawn frames from the layout tree. */
 export function registerPictureGeometry(on: boolean) {
+  setRelaxHook(on ? relaxFrames : () => {});
   if (!on) {
     setSkiaGeometry(null);
     everReady = false;

@@ -321,6 +321,7 @@ to run, what to look at. The owner builds and installs with `npm run package` an
 | 2026-11-18 | 0 | Done (cloud) | See the stage 0 notes below. Next: stage 1 (and the owner's `dom` baseline benchmark, below). |
 | 2026-11-19 | 1–4 | Done (cloud) | Owner asked for every stage at once; gates 1–3 become one check on the PC. See the stages 1–4 notes below. Next: the owner's combined gate, then stage 5 on their say-so. |
 | 2026-11-19 | Gate (owner's PC) | Started; full mode tuned | First benchmarks on the owner's PC, then a tuning pass there. See the gate notes at the end. Next: the owner re-runs the benchmark on the tuned build, then memory and the look check. |
+| 2026-11-19 | Gate (owner's PC) | Memory fixed | Pictures in two sizes; `full` now uses less memory than `dom` in normal mode at every step. See the last section. Next: the owner tries it in VS Code, then the look check, real use and the 16 GB machine. |
 
 ### 2026-11-18, stage 0 notes
 
@@ -601,3 +602,76 @@ for eligibility and for every far-zoom copy; the full-size picture decoded only 
 a least-recently-used budget, with the frame drawn from the small ones until it arrives.
 
 `tests/memory.mjs` used to stay alive for 15 minutes after a run ended (the losing timer of a `Promise.race`); fixed.
+
+### 2026-11-19, pictures in two sizes (the memory fix)
+
+Built the planned fix, on the owner's PC. `src/skia/images.ts` now keeps each picture in two sizes:
+
+- **Small** (256 px on the longest side), decoded as soon as a frame asks. It decides eligibility, and it is all a
+  zoomed-out frame and every ahead-of-need copy uses.
+- **Larger**, only while a frame in view shows the picture bigger than the small version: sizes double from 512 px up
+  to the original or the decode limit (2048 px, 1024 px in performance mode). Dropped when nothing in view has needed
+  it for 30 s, or least recently needed first over a 128 MB budget (64 MB in performance mode); never one that is on
+  screen.
+
+How it fits together:
+
+| Piece | What it does |
+|---|---|
+| `painter.ts` `ImageUse` | A recording notes where it draws each picture and how long its longest side is there |
+| `scene.ts` `noticeVisible` | 150 ms after the view stops, and every 5 s, tells each frame in view (plus a quarter of the view around it) its scale on screen. Not while moving: that would decode pictures that are only passing by |
+| `frames.ts` `frameSeen` / `relaxFrames` | Turns that into `wantImage(url, pixels)`. A frame that shows a picture larger than its small version is marked `detail`: only those frames are recorded with larger versions, and again when one arrives or goes. 30 s after it was last seen that way a frame goes back to the small ones |
+| `images.ts` | Decodes off the main thread, three at a time, small ones first. The swap to a Skia image copies pixels on the main thread, so it waits until the view and pointer have been still for 120 ms, one picture at a time |
+| `pictureTextures.ts` `stalePictureCopy` | A frame's far-zoom copy is kept when its picture is recorded again and drawn until the new one is made: no flash of the frame's flat colour (this also covers edits made while zoomed out) |
+| `SkiaLayer.tsx` | GPU cache limit 256 MB (160 MB in performance mode), down from 512 / 256. After 15 s without a draw the cache is emptied of what nothing holds (offscreen layers, shadow textures, uploaded pictures) by lowering the limit for a moment |
+
+Geometry (`cover` / `contain`) is computed from the original's size whichever version is drawn, so a picture does not
+shift when a sharper one arrives. Agent screenshots and exports copy the DOM, as before, so they never see a small
+version.
+
+**Memory**, same scenario as above (`tests/memory.mjs`, plain Edge 1920×1080, no debugger, the copy of the owner's big
+design with every section shown; total process memory in MB):
+
+| Step | `dom` | `full` before | `full` now | `dom`, performance mode | `full` now, performance mode |
+|---|---|---|---|---|---|
+| Opened, fit to screen | 1,021 | 1,615 | 897 | 853 | 827 |
+| Zoomed to 100% | 1,150 | 1,667 | 1,002 | 890 | 860 |
+| After panning at 100% | 1,076 | 1,518 | 811 | 850 | 762 |
+| Zoomed to 50%, panned | 1,104 | 1,561 | 875 | 942 | 807 |
+| Zoomed out to 12% | 1,037 | 1,563 | 877 | 943 | 828 |
+| Same, 45 s idle | 885 | 1,506 | 831 | 732 | 777 |
+
+`full` is now below `dom` at every step in normal mode (it was 500–600 MB above), and at every step but the idle one
+in performance mode (45 MB above). What is left is the GPU process: about 385 MB in `full` against 220–290 MB in
+`dom`, of which Skia's own cache is 14–130 MB and the copies 13–21 MB; the rest is what a WebGL context of this size
+costs. The renderer process is 100–250 MB smaller in `full`.
+
+Behind those totals (`tests/skia-mem.mjs`, same file): decoded pictures 16.5 MB for all 107 (was 243 MB), plus
+7–16 MB in 1–4 larger versions while zoomed in; GPU cache 49 MB after opening, 127–131 MB while moving around, 14 MB
+after 45 s idle (was 353 MB).
+
+**Speed** (`tests/skia-prof.mjs`, as in the tuning pass): unchanged. First run after opening: zoom out 0 slow frames,
+worst 28.6 ms; warmed up: zoom out and in p95 11.5 ms, worst 17.2 ms; pan at 50% 5.8 ms.
+
+Found on the way:
+- The owner's file shares a few pictures between about 200 frames. When a larger version arrived, every one of those
+  frames was recorded and copied again (684 recordings in the scenario). With the per-frame `detail` mark it is 338.
+- Skia's GPU cache kept 146–171 MB of textures nothing was using while the editor sat still; hence the idle purge.
+
+Suites on the final code (dev server, headless Edge): features 20/20 and aipen 16/16 in `dom`, `overview` and `full`;
+skia-smoke 11/11; overview 12/12; full 14/14; the new `sharpen.mjs` 11/11; drawcheck 7/7, subpixel 1/1, hiddentab
+6/6 in `full`; stress clean in all three modes and on a file with 2048 px pictures; paint-diff on that file 99.98%.
+`layout-diff.mjs` and `blank.mjs` not re-run (layout and the snapshot path are untouched).
+
+New in `tests/`: `sharpen.mjs` (the behaviour above; needs `make-big.mjs big2k.spen 60 3 12 2048`), `skia-mem.mjs`
+(what Skia holds at each step of the memory scenario). `make-big.mjs` gives pictures over 512 px a fine checker
+pattern so a test can tell sharp from blurry; files made with the default 512 px are unchanged.
+
+What the user sees that is new: zooming in on a frame, its pictures are soft for a moment (typically 0.2–0.5 s after
+the view stops) and then sharpen in place.
+
+Still open:
+- The swap to a Skia image is on the main thread (a few ms for a 1024 px picture, tens for 2048 px). It only happens
+  while nothing moves; moving it to a worker would let pictures sharpen during a slow zoom.
+- Not measured in VS Code yet (these are headless and plain-Edge numbers), nor on the 16 GB machine.
+- `overview` mode is still untuned.

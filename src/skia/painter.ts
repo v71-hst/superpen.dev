@@ -69,6 +69,12 @@ export type FrameDeps = {
 
 export const newDeps = (): FrameDeps => ({ fonts: new Set(), anyFont: false, images: new Set() });
 
+/**
+ * One place a recorded frame draws a picture: where (world box of the node it fills) and how long the picture's
+ * longest side is there, in world px. The scene turns that into how many pixels the picture needs at the current zoom.
+ */
+export type ImageUse = { url: string; x: number; y: number; w: number; h: number; side: number };
+
 /** Characters the bundled Inter (latin) has: text made only of these never needs a glyph from a later font. */
 const BASIC_RANGES = '0000-00FF 0131 0152 0153 02C6 02DA 02DC 2000-206F 20AC 2122 2191 2193 2212 2215 FEFF FFFD';
 const BASIC_TEXT = new RegExp(`^[${BASIC_RANGES.split(' ').map(r => r.split('-').map(h => String.fromCharCode(92) + 'u' + h).join('-')).join('')}]*$`);
@@ -122,7 +128,7 @@ export function skiaEligible(ctx: PaintContext, n: RNode, editingKey?: string | 
     if (f && typeof f === 'object' && f.type === 'image' && f.url && f.enabled !== false) {
       const url = ctx.resolveUrl(f.url);
       deps?.images.add(url);
-      if (getImage(ctx.ck, url).status === 'loading') return 'pictures loading';
+      if (getImage(url).status === 'loading') return 'pictures loading';
     }
   }
   for (const c of n.children) {
@@ -195,8 +201,9 @@ function gradientShader(ck: CanvasKit, f: any, x: number, y: number, w: number, 
   return null;
 }
 
-/** Paints one fill over the rect (x, y, w, h); the caller has clipped to the node's shape. */
-function drawFill(c: Canvas, ck: CanvasKit, scope: Scope, f: any, x: number, y: number, w: number, h: number, resolveUrl: (u: string) => string, svg: boolean) {
+/** Paints one fill of the node at `world` over the rect (x, y, w, h); the caller has clipped to the node's shape. */
+function drawFill(r: Rec, world: Mat, f: any, x: number, y: number, w: number, h: number, svg: boolean) {
+  const { c, ck, scope } = r;
   if (!isEnabled(f)) return;
   const paint = scope.own(new ck.Paint(), 'paint');
   paint.setAntiAlias(true);
@@ -236,9 +243,12 @@ function drawFill(c: Canvas, ck: CanvasKit, scope: Scope, f: any, x: number, y: 
     return;
   }
   if (f.type === 'image' && f.url) {
-    const { image } = getImage(ck, resolveUrl(f.url));
+    const url = r.ctx.resolveUrl(f.url);
+    const got = getImage(url, r.detail);
+    const image = got.image;
     if (!image) return;
-    const iw = image.width(), ih = image.height();
+    // The original's size, whichever version is drawn: the picture sits in the same place when a sharper one arrives.
+    const iw = got.w || image.width(), ih = got.h || image.height();
     const mode = f.mode ?? 'cover';
     let dw = w, dh = h;
     if (mode === 'cover' || mode === 'contain') {
@@ -247,9 +257,16 @@ function drawFill(c: Canvas, ck: CanvasKit, scope: Scope, f: any, x: number, y: 
       dh = ih * k;
     }
     if (svg) paint.setAlphaf(num(f.opacity, 1));
+    if (r.uses) {
+      const [a, b, cc, d, e, g] = world;
+      const xs = [x, x + w].flatMap(px => [y, y + h].map(py => a * px + cc * py + e));
+      const ys = [x, x + w].flatMap(px => [y, y + h].map(py => b * px + d * py + g));
+      const x0 = Math.min(...xs), y0 = Math.min(...ys);
+      r.uses.push({ url, x: x0, y: y0, w: Math.max(...xs) - x0, h: Math.max(...ys) - y0, side: Math.max(dw, dh) * Math.sqrt(Math.abs(a * d - b * cc)) });
+    }
     c.save();
     c.clipRect(rect, ck.ClipOp.Intersect, true);
-    c.drawImageRectOptions(image, ck.XYWHRect(0, 0, iw, ih), ck.XYWHRect(x + (w - dw) / 2, y + (h - dh) / 2, dw, dh), ck.FilterMode.Linear, ck.MipmapMode.Linear, paint);
+    c.drawImageRectOptions(image, ck.XYWHRect(0, 0, image.width(), image.height()), ck.XYWHRect(x + (w - dw) / 2, y + (h - dh) / 2, dw, dh), ck.FilterMode.Linear, ck.MipmapMode.Linear, paint);
     c.restore();
   }
 }
@@ -271,7 +288,7 @@ const sigma = (blur: number) => Math.max(0, blur) / 2;
 
 // ---------- node painting ----------
 
-type Rec = { c: Canvas; ck: CanvasKit; scope: Scope; ctx: PaintContext };
+type Rec = { c: Canvas; ck: CanvasKit; scope: Scope; ctx: PaintContext; uses?: ImageUse[]; detail: boolean };
 
 function drawNode(r: Rec, pn: PaintNode, parentWorld: Mat) {
   const { c, ck } = r;
@@ -380,7 +397,7 @@ function drawBox(r: Rec, pn: PaintNode, p: any, fx: any[]) {
     // background-blend-mode blends a box's layers with each other only: isolate them.
     const isolate = fills.some((f: any) => f && typeof f === 'object' && f.blendMode && f.blendMode !== 'normal');
     if (isolate) c.saveLayer();
-    for (const f of fills) drawFill(c, ck, scope, f, 0, 0, w, h, r.ctx.resolveUrl, false);
+    for (const f of fills) drawFill(r, pn.world, f, 0, 0, w, h, false);
     if (isolate) c.restore();
     c.restore();
   }
@@ -414,10 +431,10 @@ function drawBox(r: Rec, pn: PaintNode, p: any, fx: any[]) {
     for (const ch of pn.children) drawNode(r, ch, pn.world);
     if (p.clip === true) c.restore();
   }
-  boxStroke(r, normalizeStroke(p, 'inner'), w, h, rad);
+  boxStroke(r, pn.world, normalizeStroke(p, 'inner'), w, h, rad);
 }
 
-function boxStroke(r: Rec, s: StrokeInfo | null, w: number, h: number, rad: number[]) {
+function boxStroke(r: Rec, world: Mat, s: StrokeInfo | null, w: number, h: number, rad: number[]) {
   if (!s) return;
   const { c, ck, scope } = r;
   const solid = s.fills.length === 1 && (typeof s.fills[0] === 'string' || s.fills[0].type === 'color');
@@ -445,7 +462,7 @@ function boxStroke(r: Rec, s: StrokeInfo | null, w: number, h: number, rad: numb
   c.save();
   c.clipRRect(outer, ck.ClipOp.Intersect, true);
   c.clipRRect(inner, ck.ClipOp.Difference, true);
-  for (const f of s.fills) drawFill(c, ck, scope, f, ox, oy, ow, oh, r.ctx.resolveUrl, false);
+  for (const f of s.fills) drawFill(r, world, f, ox, oy, ow, oh, false);
   c.restore();
 }
 
@@ -640,7 +657,7 @@ function drawShape(r: Rec, pn: PaintNode, p: any) {
   if (fills.length) {
     c.save();
     c.clipPath(path, ck.ClipOp.Intersect, true);
-    for (const f of fills) drawFill(c, ck, scope, f, 0, 0, w, h, r.ctx.resolveUrl, true);
+    for (const f of fills) drawFill(r, pn.world, f, 0, 0, w, h, true);
     c.restore();
   }
   const s = normalizeStroke(p, open ? 'center' : type === 'ellipse' ? 'center' : 'inner');
@@ -742,8 +759,11 @@ function drawNote(r: Rec, pn: PaintNode, p: any) {
 
 // ---------- recording ----------
 
-/** Records a laid-out top-level frame (or any subtree) as a picture in world coordinates. */
-export function recordPicture(ctx: PaintContext, root: PaintNode): SkPicture {
+/**
+ * Records a laid-out top-level frame (or any subtree) as a picture in world coordinates. `uses` collects where it
+ * draws pictures; `detail` false draws them from their small versions even when a larger one is loaded.
+ */
+export function recordPicture(ctx: PaintContext, root: PaintNode, uses?: ImageUse[], detail = true): SkPicture {
   const { ck } = ctx;
   const scope = new Scope();
   const rec = new ck.PictureRecorder();
@@ -756,7 +776,7 @@ export function recordPicture(ctx: PaintContext, root: PaintNode): SkPicture {
   // cullRect() is what was actually drawn.
   const c = rec.beginRecording(ck.LTRBRect(Math.min(...xs) - m, Math.min(...ys) - m, Math.max(...xs) + m, Math.max(...ys) + m), true);
   try {
-    drawNode({ c, ck, scope, ctx }, root, [1, 0, 0, 1, 0, 0]);
+    drawNode({ c, ck, scope, ctx, uses, detail }, root, [1, 0, 0, 1, 0, 0]);
     return own(rec.finishRecordingAsPicture(), 'picture');
   } finally {
     rec.delete();

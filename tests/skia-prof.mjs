@@ -42,6 +42,7 @@ const skia = async () => {
     copies: s.pictureImages,
     scene: s.overview && { farReplays: s.overview.farReplays, placeholders: s.overview.placeholders, slowestDrawMs: s.overview.slowestDrawMs },
     decodedMB: s.images?.decodedMB,
+    images: s.images,
     gpu: s.gpu,
     live: s.liveObjects?.total,
     lod: { bitmaps: d.lod?.bitmaps, queued: d.lod?.queued },

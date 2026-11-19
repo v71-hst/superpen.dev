@@ -37,6 +37,7 @@ closer to the real extension with `PEN_PROD=1 node start.mjs <folder>` (a produc
 | `layout-diff.mjs <url> [more urls]` | `src/layout/layout.ts` against the DOM: every node's world box, text sizes from the browser (0.5px tolerance); also reports how close the canvas text measurer gets and `layoutAll` time | copies of `fixtures/features.pen`, `fixtures/layout.pen`, `examples/showcase.spen`, a `make-big.mjs` file | PASS, 0 offenders each |
 | `overview.mjs <url> <shot dir>` | Skia overview (stage 1): zoomed-out snapshot frames drawn by Skia, all visible, no `<img>` for them, a moved frame follows, zooming in goes live, a lost context puts the snapshot images back | a `make-big.mjs` file | 12 PASS |
 | `full.mjs <url> [shot dir]` | Skia full mode (stage 4): frames drawn from pictures with no DOM inside, same pixels and boxes as the DOM renderer, hover/click/deep-select reach layers, text editing (frame goes DOM while edited), edits re-record, agent screenshot, far-zoom copies, fallback when the context is lost for good with 0 CanvasKit objects left | a `make-big.mjs` file | 14 PASS |
+| `sharpen.mjs <url> [shot dir]` | Skia's two sizes of pictures: zoomed out only the small versions are held, a picture seen close up gets a larger one and matches the DOM renderer, larger ones are let go again when nothing needs them, and no frame flashes its flat colour meanwhile. About 90 s | a `make-big.mjs` file with big pictures (`make-big.mjs big2k.spen 60 3 12 2048`) | 11 PASS |
 | `paint-diff.mjs <url> <out dir> [threshold] [layout=dom\|engine] [max frames]` | Skia painter against the DOM renderer, frame by frame (stage 3), with side-by-side images | copies of `fixtures/features.pen`, `examples/showcase.spen`, a `make-big.mjs` file | see the status log |
 | `stress.mjs <url> [steps] [seed]` | Random pan, zoom, select, drag and MCP actions | a big file | 0 page errors, 0 view jumps, 0 unexpected view changes |
 
@@ -44,9 +45,10 @@ closer to the real extension with `PEN_PROD=1 node start.mjs <folder>` (a produc
 
 | Script | Use |
 |---|---|
-| `make-big.mjs <out.spen> [frames] [seed] [pictures] [pictureSize]` | Writes a seeded synthetic design (320 frames ≈ 40,000 nodes by default) plus generated pictures in `images/`, for big-file tests without anyone's real design |
+| `make-big.mjs <out.spen> [frames] [seed] [pictures] [pictureSize]` | Writes a seeded synthetic design (320 frames ≈ 40,000 nodes by default) plus generated pictures in `images/`, for big-file tests without anyone's real design. Pictures over 512 px get a fine checker pattern, so a test can tell a sharp drawing from a blurry one |
 | `fixtures/make-layout.mjs [out]` | Regenerates `fixtures/layout.pen`, the layout edge cases (justify/align, fill/fit fallbacks, absolute children, wrapping text, rotation, groups, icons, auto-width roots) |
 | `skia-prof.mjs <url> [renderer=full] [perf=0\|1] [runs=2]` | Where the Skia renderer spends its time on a big file: the editor's benchmark cold and warm, with the Skia counters after each (pictures recorded, far-zoom copies made, placeholder draws, GPU memory). Use `PEN_PROD=1` and a machine with a GPU for the frame times |
+| `skia-mem.mjs <url> [renderer=full] [perf=0\|1]` | What the Skia renderer holds at each step of the `memory.mjs` scenario: decoded pictures (small and larger versions), far-zoom copies, recorded pictures, Skia's GPU cache. Says what is behind the process totals `memory.mjs` gives. `PEN_PROD=1` |
 | `bench.mjs <url>` | Frame times for zoom, pan and hover. Headless runs use software graphics: treat single long frames as noise |
 | `memory.mjs <url> [perf=0\|1]` | Process memory without a debugger attached (a debugger inflates it). Windows only |
 | `zoomout.mjs`, `imgzoom.mjs`, `tracezoom.mjs`, `prof2.mjs`, `zoomfast.mjs` | GPU memory, decode work, traces and CPU profiles during zooming |

@@ -4,12 +4,13 @@
 // has; until then the blurrier copy is drawn. Close up, the picture is drawn directly and stays sharp at any zoom.
 // Copies are made by the graphics card (the processor takes several times longer for the same picture), so they are
 // lost with the graphics context: SkiaLayer drops them all then, and they are made again from the pictures, which
-// live on the CPU side. A least-recently-used byte budget bounds them.
+// live on the CPU side. A least-recently-used byte budget bounds them. When a frame's picture is recorded again (an
+// edit, or a sharper version of one of its pictures arrived) the old copy is drawn until the new one is made.
 import type { CanvasKit, Image as SkImage, SkPicture, Surface } from 'canvaskit-wasm';
 import { free, own } from './lifetime';
 import { perfLimits } from '../editor/perfLimits';
 
-/** levels[i] is the copy at side / 2^i. */
+/** levels[i] is the copy at side / 2^i. `picture`: what it was made from, only ever compared (it may be freed). */
 type Entry = { picture: SkPicture; side: number; levels: SkImage[]; bytes: number; used: number };
 
 /** Byte budget for copies; performance mode halves it. */
@@ -40,6 +41,17 @@ export function baseSide() {
   return lowMemory() ? 128 : 256;
 }
 
+/** The level of a copy to draw at `side` pixels: never more than twice that size, or the largest there is. */
+const levelFor = (e: Entry, side: number) => e.levels[Math.max(0, Math.min(e.levels.length - 1, Math.round(Math.log2(e.side / side))))];
+
+/** The frame's copy when its picture isn't recorded right now: out of date, but better than nothing. */
+export function stalePictureCopy(key: string, side: number): { image: SkImage; sharp: boolean } | null {
+  const hit = entries.get(key);
+  if (!hit) return null;
+  hit.used = performance.now();
+  return { image: levelFor(hit, side), sharp: false };
+}
+
 /** Whether the frame has a copy of this picture (of any size). */
 export function hasPictureCopy(key: string, picture: SkPicture) {
   return entries.get(key)?.picture === picture;
@@ -48,20 +60,17 @@ export function hasPictureCopy(key: string, picture: SkPicture) {
 /**
  * The image to draw for a frame at `side` pixels (bounds: the frame's world box; callers draw it scaled into that
  * box with plain linear filtering: the level returned is never more than twice the size asked for), and whether the
- * copy has that many pixels. A copy that is too small is made again when `create` allows; otherwise its largest level
- * is returned. null: there is no copy and none could be made now. `surface`: the Skia canvas's own surface, whose
+ * copy has that many pixels and shows this picture. A copy that is too small, or of an earlier recording, is made
+ * again when `create` allows; otherwise the copy there is is returned. null: there is no copy and none could be made now. `surface`: the Skia canvas's own surface, whose
  * graphics context the copies are made in.
  */
 export function pictureCopy(ck: CanvasKit, surface: Surface, key: string, picture: SkPicture, bounds: { x: number; y: number; w: number; h: number }, side: number, create = true): { image: SkImage; sharp: boolean } | null {
-  let hit = entries.get(key);
-  if (hit && hit.picture !== picture) {
-    drop(key, hit);
-    hit = undefined;
-  }
+  const hit = entries.get(key);
+  const fresh = hit?.picture === picture;
   if (hit) hit.used = performance.now();
-  if (hit && hit.side >= side) return { image: hit.levels[Math.min(hit.levels.length - 1, Math.round(Math.log2(hit.side / side)))], sharp: true };
+  if (hit && fresh && hit.side >= side) return { image: levelFor(hit, side), sharp: true };
   const made = create ? rasterise(ck, surface, picture, bounds, side) : null;
-  if (!made) return hit ? { image: hit.levels[0], sharp: false } : null;
+  if (!made) return hit ? { image: levelFor(hit, side), sharp: false } : null;
   if (hit) drop(key, hit);
   entries.set(key, made);
   bytes += made.bytes;
@@ -137,7 +146,7 @@ function evict(keep: string) {
   }
 }
 
-/** Forgets a frame's copy (its picture was re-recorded or the frame is gone). */
+/** Forgets a frame's copy (the frame is gone). */
 export function dropPictureImages(key: string) {
   const e = entries.get(key);
   if (e) drop(key, e);

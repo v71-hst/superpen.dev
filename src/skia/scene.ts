@@ -6,7 +6,8 @@
 // fails, Roots keeps showing the snapshot <img>, so a frame is never left with nothing.
 import { useSyncExternalStore } from 'react';
 import type { Canvas as SkCanvas, CanvasKit, Image as SkImage, Paint, SkPicture, Surface } from 'canvaskit-wasm';
-import { baseSide, hasPictureCopy, levelSide, pictureCopy } from './pictureTextures';
+import { baseSide, hasPictureCopy, levelSide, pictureCopy, stalePictureCopy } from './pictureTextures';
+import { beginWantPass, setImageQuietSource, trimImages } from './images';
 import { kitIfLoaded } from './kit';
 import { free, own } from './lifetime';
 import { activeRenderer } from './renderer';
@@ -17,6 +18,12 @@ import { log } from '../editor/diagnostics';
  * A frame drawn by Skia: its snapshot (url) or its recorded picture (stages 3–4, url ''), and where it sits in the
  * world.
  */
+/** After the frames in view were seen: lets frames that are no longer shown large go back to small pictures. */
+let relax: () => void = () => {};
+export function setRelaxHook(fn: () => void) {
+  relax = fn;
+}
+
 export type SceneFrame = {
   key: string;
   url: string;
@@ -28,10 +35,17 @@ export type SceneFrame = {
   record?: () => SkPicture | null;
   /** The picture if it is already recorded (no work). */
   peek?: () => SkPicture | null;
+  /**
+   * The frame is on screen at `scale` device pixels per world px: it asks for sharper versions of the pictures it
+   * shows inside `visible` (null: all of them).
+   */
+  seen?: (scale: number, visible: Box | null) => void;
   placeholder?: string;
   /** Changes with the frame's content. */
   token?: object;
 };
+
+type Box = { x: number; y: number; w: number; h: number };
 
 /** Below this zoom (lod.ts LOD_ZOOM) a picture frame is drawn from a rasterised copy instead of replaying it. */
 const PICTURE_IMAGE_ZOOM = 1 / 3;
@@ -141,6 +155,7 @@ export function setSceneFrames(next: SceneFrame[], imageFallbacks: number) {
   // on their own).
   if (!same) hooks.drawNow();
   scheduleWarm();
+  scheduleSweep();
 }
 
 let pictureKeys = new Set<string>();
@@ -152,6 +167,8 @@ export function drawsFromPicture(key: string) {
 
 let lastViewChange = 0;
 let lastInteraction = 0;
+// Decoded pictures are swapped for sharper ones only while the view and pointer are still (it costs a few ms each).
+setImageQuietSource(() => performance.now() - Math.max(lastViewChange, lastInteraction));
 
 /** SkiaLayer reports view changes: while the view moves, drawing spends less time on new pictures and copies. */
 export function noteViewChange() {
@@ -268,21 +285,22 @@ export function drawScene(c: SkCanvas, ck: CanvasKit, visible: { x: number; y: n
         c.drawPicture(pic);
         continue;
       }
-      if (pic) {
-        const canWork = performance.now() < until;
-        const copy = gpu ? pictureCopy(ck, gpu, f.key, pic, f, levelSide(Math.max(f.w, f.h), zoom, dpr), canWork) : null;
-        if (copy) {
-          const img = copy.image;
-          c.drawImageRectOptions(img, ck.XYWHRect(0, 0, img.width(), img.height()), ck.XYWHRect(f.x, f.y, f.w, f.h), ck.FilterMode.Linear, ck.MipmapMode.None, null);
-          if (!copy.sharp) more = true;
-          continue;
-        }
-        if (canWork) {
-          // A copy can't be made at all: replay the picture.
-          stats.farReplays++;
-          c.drawPicture(pic);
-          continue;
-        }
+      // Zoomed out: from the frame's copy. If the picture has to be recorded again first (an edit, or a sharper
+      // version of one of its pictures arrived) and there is no time left in this draw, the copy made before.
+      const canWork = performance.now() < until;
+      const side = levelSide(Math.max(f.w, f.h), zoom, dpr);
+      const copy = !gpu ? null : pic ? pictureCopy(ck, gpu, f.key, pic, f, side, canWork) : stalePictureCopy(f.key, side);
+      if (copy) {
+        const img = copy.image;
+        c.drawImageRectOptions(img, ck.XYWHRect(0, 0, img.width(), img.height()), ck.XYWHRect(f.x, f.y, f.w, f.h), ck.FilterMode.Linear, ck.MipmapMode.None, null);
+        if (!copy.sharp) more = true;
+        continue;
+      }
+      if (pic && canWork) {
+        // A copy can't be made at all: replay the picture.
+        stats.farReplays++;
+        c.drawPicture(pic);
+        continue;
       }
       // Nothing to draw it from yet: the frame's own colour for a moment, never nothing.
       placeholderPaint ??= new ck.Paint();
@@ -302,6 +320,59 @@ export function drawScene(c: SkCanvas, ck: CanvasKit, visible: { x: number; y: n
   stats.slowestDrawMs = Math.max(stats.slowestDrawMs, Math.round(performance.now() - now));
   if (more) setTimeout(() => hooks.requestDraw(), 0);
   else scheduleWarm();
+  scheduleSettle();
+}
+
+// ---------- which pictures need to be sharp ----------
+
+let settleHandle: ReturnType<typeof setTimeout> | null = null;
+let sweepHandle: ReturnType<typeof setTimeout> | null = null;
+const SETTLE_MS = 150;
+const SWEEP_MS = 5000;
+
+/**
+ * Tells every frame in view (and a little around it) how large it is on screen, so the pictures it shows get versions
+ * with enough pixels. Zoomed out a frame is drawn whole from its copy, so all its pictures count; close up only the
+ * ones in view.
+ */
+function noticeVisible() {
+  if (!lastVisible.w || !surfaceReady) return;
+  const zoom = useStore.getState().view.zoom;
+  const far = zoom < PICTURE_IMAGE_ZOOM;
+  const scale = zoom * (devicePixelRatio || 1);
+  const v = lastVisible;
+  const near = { x: v.x - v.w / 4, y: v.y - v.h / 4, w: v.w * 1.5, h: v.h * 1.5 };
+  beginWantPass();
+  for (const f of frames) {
+    if (!f.seen || f.x > near.x + near.w || f.x + f.w < near.x || f.y > near.y + near.h || f.y + f.h < near.y) continue;
+    f.seen(scale, far ? null : near);
+  }
+}
+
+/** Once the view has stopped moving: asking while it moves would decode pictures that are only passing by. */
+function scheduleSettle() {
+  settleHandle ??= setTimeout(() => {
+    settleHandle = null;
+    if (performance.now() - lastViewChange < SETTLE_MS - 10) return scheduleSettle();
+    noticeVisible();
+  }, SETTLE_MS);
+}
+
+/**
+ * Every few seconds: what is in view still needs its sharp pictures (nothing is drawn while the editor sits still),
+ * and the ones nothing has needed for a while are let go.
+ */
+function scheduleSweep() {
+  if (sweepHandle !== null || !pictureKeys.size) return;
+  sweepHandle = setTimeout(() => {
+    sweepHandle = null;
+    if (!document.hidden) noticeVisible();
+    relax();
+    trimImages();
+    // Frames that went back to small pictures, or lost a larger one, are recorded again in the background.
+    scheduleWarm();
+    scheduleSweep();
+  }, SWEEP_MS);
 }
 
 let lastVisible = { x: 0, y: 0, w: 0, h: 0 };
@@ -331,6 +402,8 @@ function warm() {
   // Longer slices once the editor has been still for a while.
   const until = performance.now() + (quiet > 1500 ? 10 : 5);
   const cx = lastVisible.x + lastVisible.w / 2, cy = lastVisible.y + lastVisible.h / 2;
+  const zoom = useStore.getState().view.zoom;
+  const far = zoom < PICTURE_IMAGE_ZOOM;
   let redraw = false;
   let left = true;
   for (;;) {
@@ -350,16 +423,18 @@ function warm() {
       left = false;
       break;
     }
+    const onScreen = best.x < lastVisible.x + lastVisible.w && best.x + best.w > lastVisible.x && best.y < lastVisible.y + lastVisible.h && best.y + best.h > lastVisible.y;
     try {
       const pic = best.record!();
-      if (pic) pictureCopy(ck, surface, best.key, pic, best, baseSide(), true);
+      // A frame that is being drawn from its copy right now gets one at the size it is drawn at, the rest a small one.
+      if (pic) pictureCopy(ck, surface, best.key, pic, best, far && onScreen ? levelSide(Math.max(best.w, best.h), zoom, devicePixelRatio || 1) : baseSide(), true);
       if ((!pic || !hasPictureCopy(best.key, pic)) && best.token) warmFailed.add(best.token);
     } catch (e) {
       // drawScene's caller turns a CanvasKit failure into the DOM fallback; here, stop and let drawing find it.
       log('warn', 'Skia could not prepare a frame ahead of need', String(e));
       return;
     }
-    if (best.x < lastVisible.x + lastVisible.w && best.x + best.w > lastVisible.x && best.y < lastVisible.y + lastVisible.h && best.y + best.h > lastVisible.y) redraw = true;
+    if (onScreen) redraw = true;
     if (performance.now() >= until) break;
   }
   if (redraw) hooks.requestDraw();

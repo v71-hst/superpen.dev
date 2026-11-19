@@ -18,6 +18,9 @@ import { dropPictureImages, pictureImageStats, resetPictureImages } from './pict
 import { registerPictureGeometry } from './pictureFrames';
 import { clearParagraphs } from './painter';
 
+/** Without a draw for this long, Skia's GPU cache is emptied of what nothing holds on to. */
+const IDLE_PURGE_MS = 15000;
+
 /** How long a lost context may take to come back before Skia gives up for this session. */
 const RESTORE_TIMEOUT_MS = 5000;
 
@@ -33,6 +36,8 @@ const state = {
   lastDrawMs: 0,
   contextLosses: 0,
   restores: 0,
+  /** Times the GPU cache was emptied after a while without drawing. */
+  idlePurges: 0,
 };
 let debugRects: DebugRect[] = [];
 /** What Skia holds on the graphics card (textures of pictures, copies and glyphs), for diagnose_editor. */
@@ -134,20 +139,39 @@ export function SkiaLayer() {
       requestDraw();
     };
 
-    // How much Skia may keep on the graphics card. Its default (256 MB) is less than the pictures of a big design
-    // take once uploaded, so they would be thrown out and uploaded again while moving around; performance mode
-    // (pictures at half size) stays at the default.
+    // How much Skia may keep on the graphics card: room for the small version of every picture and the larger ones
+    // images.ts keeps (128 MB, 64 MB in performance mode), each with mipmaps, plus glyphs and scratch textures. Less
+    // than what is in use would have textures thrown out and uploaded again while moving around.
     let cacheLimit = 0;
     const fitCache = () => {
-      const want = (perfLimits().bitmapSide < 2048 ? 256 : 512) * 1024 * 1024;
+      const want = (perfLimits().bitmapSide < 2048 ? 160 : 256) * 1024 * 1024;
       if (!gr || want === cacheLimit) return;
       gr.setResourceCacheLimitBytes(want);
       cacheLimit = want;
     };
 
+    // Skia keeps textures it might use again (offscreen layers, blurred shadows, uploaded pictures) up to that limit.
+    // After a while without drawing they are let go; whatever the next draw needs is uploaded again (zoomed out that
+    // is nothing: frames are drawn from their copies, which are not part of this cache).
+    let lastDraw = performance.now();
+    let purged = true;
+    const idlePurge = setInterval(() => {
+      if (purged || !gr || !cacheLimit || state.surface !== 'ready' || performance.now() - lastDraw < IDLE_PURGE_MS) return;
+      purged = true;
+      try {
+        gr.setResourceCacheLimitBytes(8 * 1024 * 1024);
+        gr.setResourceCacheLimitBytes(cacheLimit);
+        state.idlePurges++;
+      } catch {
+        // The context went away meanwhile.
+      }
+    }, 5000);
+
     const draw = () => {
       frame = 0;
       if (!ck || !surface || state.surface !== 'ready') return;
+      lastDraw = performance.now();
+      purged = false;
       fitCache();
       const t0 = performance.now();
       const c = surface.getCanvas();
@@ -235,9 +259,13 @@ export function SkiaLayer() {
     });
 
     state.surface = 'loading';
-    // Fonts or pictures that frames were waiting for arrived: Roots re-renders, frames re-record their pictures.
+    // Fonts or pictures that frames were waiting for arrived: Roots re-renders, frames re-record their pictures. A
+    // sharper (or dropped) version of a picture changes no frame's eligibility: drawing again is enough.
     const offFonts = onFontsChanged(invalidateScene);
-    const offImages = onImagesChanged(invalidateScene);
+    const offImages = onImagesChanged(eligibility => {
+      if (eligibility) invalidateScene();
+      requestDraw();
+    });
     const offDropped = onPictureDropped(dropPictureImages);
     registerPictureGeometry(true);
     loadKit().then(
@@ -266,6 +294,7 @@ export function SkiaLayer() {
       resetImages();
       resetFonts();
       cancelAnimationFrame(frame);
+      clearInterval(idlePurge);
       clearTimeout(lostTimer);
       ro.disconnect();
       window.removeEventListener('resize', fitCanvas);

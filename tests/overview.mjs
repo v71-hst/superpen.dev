@@ -81,8 +81,8 @@ ok('Skia-drawn frames mount no <img>', imgs === 0, `${imgs} of ${v1.skiaKeys.len
 // Live images: snapshot textures (stage 1), the levels of the far-zoom copies of frame pictures and decoded picture
 // fills (stage 3).
 const sk = d.renderer.skia;
-const expectImages = sk.overview.textures + (sk.pictureImages?.levelImages ?? 0) + (sk.images?.ready ?? 0);
-ok('every live CanvasKit image is accounted for', (sk.liveObjects.byKind.image ?? 0) === expectImages, `${sk.liveObjects.byKind.image} live = ${sk.overview.textures} snapshot textures + ${sk.pictureImages?.levelImages} images in ${sk.pictureImages?.images} picture copies + ${sk.images?.ready} decoded pictures`);
+const expectImages = sk.overview.textures + (sk.pictureImages?.levelImages ?? 0) + (sk.images?.held ?? sk.images?.ready ?? 0);
+ok('every live CanvasKit image is accounted for', (sk.liveObjects.byKind.image ?? 0) === expectImages, `${sk.liveObjects.byKind.image} live = ${sk.overview.textures} snapshot textures + ${sk.pictureImages?.levelImages} images in ${sk.pictureImages?.images} picture copies + ${sk.images?.held ?? sk.images?.ready} decoded pictures (small and larger versions)`);
 ok('no scaled snapshot copies are made', d.lod.levels === d.lod.bitmaps, `${d.lod.bitmaps} snapshots, ${d.lod.levels} levels`);
 
 // Move a Skia-drawn frame to an empty spot (the same document edit a drag makes): Skia must draw it there.

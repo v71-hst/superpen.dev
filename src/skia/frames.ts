@@ -6,8 +6,8 @@ import type { SkPicture } from 'canvaskit-wasm';
 import type { RNode } from '../model/types';
 import { free } from './lifetime';
 import { fontEpoch, fontStamp } from './fonts';
-import { imageEpoch, imageStamp } from './images';
-import { newDeps, recordPicture, skiaEligible, type FrameDeps, type PaintContext, type PaintNode } from './painter';
+import { KEEP_MS, imageEpoch, imageStamp, wantImage } from './images';
+import { newDeps, recordPicture, skiaEligible, type FrameDeps, type ImageUse, type PaintContext, type PaintNode } from './painter';
 
 type Entry = {
   rnode: RNode;
@@ -22,6 +22,15 @@ type Entry = {
   seenImages: number;
   reason: string | null;
   picture: SkPicture | null;
+  /** Where the picture draws pictures (from the last recording; kept across a re-recording until the next one). */
+  uses: ImageUse[];
+  /**
+   * The frame is (or was a moment ago) in view showing a picture larger than its small version: it is recorded with
+   * the larger versions and again whenever one arrives or goes. Other frames only ever draw the small ones.
+   */
+  detail: boolean;
+  /** When it was last seen like that. */
+  detailAt: number;
 };
 
 const cache = new Map<string, Entry>();
@@ -42,7 +51,7 @@ function current(e: Entry, root: RNode, vars: unknown, editing: string | null): 
   if (e.rnode !== root || e.vars !== vars || e.editing !== editing) return false;
   const f = fontEpoch(), i = imageEpoch();
   if (e.seenFonts === f && e.seenImages === i) return true;
-  if (fontsOf(e.deps) !== e.fonts || imageStamp(e.deps.images) !== e.images) return false;
+  if (fontsOf(e.deps) !== e.fonts || imageStamp(e.deps.images, e.detail) !== e.images) return false;
   e.seenFonts = f;
   e.seenImages = i;
   return true;
@@ -52,13 +61,13 @@ function entry(ctx: PaintContext, root: RNode, editingKey: string | null): Entry
   const e = cache.get(root.key);
   const editing = editingKey && inSubtree(root, editingKey) ? editingKey : null;
   if (e && current(e, root, ctx.doc.variables, editing)) return e;
-  if (e?.picture) {
-    free(e.picture);
-    pictureListeners.forEach(l => l(root.key));
-  }
+  // The picture is recorded again when it is next drawn. Its far-zoom copy stays until then: an out-of-date copy for
+  // a moment, not a flash of the frame's flat colour.
+  if (e?.picture) free(e.picture);
   const deps = newDeps();
   const reason = skiaEligible(ctx, root, editing, deps);
-  const next: Entry = { rnode: root, vars: ctx.doc.variables, editing, deps, fonts: fontsOf(deps), images: imageStamp(deps.images), seenFonts: fontEpoch(), seenImages: imageEpoch(), reason, picture: null };
+  const detail = e?.detail ?? false;
+  const next: Entry = { rnode: root, vars: ctx.doc.variables, editing, deps, fonts: fontsOf(deps), images: imageStamp(deps.images, detail), seenFonts: fontEpoch(), seenImages: imageEpoch(), reason, picture: null, uses: e?.uses ?? [], detail, detailAt: e?.detailAt ?? 0 };
   cache.set(root.key, next);
   return next;
 }
@@ -79,7 +88,9 @@ export function framePicture(ctx: PaintContext, root: RNode, layout: () => Paint
     const t0 = performance.now();
     const l = layout();
     if (!l) return null;
-    e.picture = recordPicture(ctx, l);
+    const uses: ImageUse[] = [];
+    e.picture = recordPicture(ctx, l, uses, e.detail);
+    e.uses = uses;
     records++;
     const ms = performance.now() - t0;
     recordMs += ms;
@@ -96,7 +107,41 @@ export function pictureBounds(key: string): { x: number; y: number; w: number; h
   return { x: r[0], y: r[1], w: r[2] - r[0], h: r[3] - r[1] };
 }
 
-/** Told when a frame's picture is thrown away (its rasterised copies must go too). */
+/**
+ * The frame is on screen at `scale` device pixels per world px: asks for a sharper version of each picture it shows
+ * larger than the version there is. `visible` (world box): only pictures inside it; null: all of the frame's.
+ */
+export function frameSeen(key: string, scale: number, visible: { x: number; y: number; w: number; h: number } | null) {
+  const e = cache.get(key);
+  if (!e || e.reason) return;
+  let large = false;
+  for (const u of e.uses) {
+    if (visible && (u.x > visible.x + visible.w || u.x + u.w < visible.x || u.y > visible.y + visible.h || u.y + u.h < visible.y)) continue;
+    if (wantImage(u.url, u.side * scale)) large = true;
+  }
+  if (!large) return;
+  e.detailAt = performance.now();
+  if (!e.detail) {
+    e.detail = true;
+    // Recorded again (with a larger version that is already there) when it is next drawn.
+    e.seenImages = -1;
+  }
+}
+
+/**
+ * Frames that haven't shown a picture large for a while go back to the small versions, so the larger ones they were
+ * recorded with can be let go (called every few seconds, after the frames in view were seen).
+ */
+export function relaxFrames() {
+  const now = performance.now();
+  for (const e of cache.values()) {
+    if (!e.detail || now - e.detailAt < KEEP_MS) continue;
+    e.detail = false;
+    e.seenImages = -1;
+  }
+}
+
+/** Told when a frame is gone and its picture with it (its rasterised copy must go too). */
 export function onPictureDropped(fn: (key: string) => void): () => void {
   pictureListeners.add(fn);
   return () => pictureListeners.delete(fn);

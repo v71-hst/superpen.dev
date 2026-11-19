@@ -7,9 +7,9 @@ import { makeUrlResolver } from '../editor/fileio';
 import type { RNode } from '../model/types';
 import { loadKit } from './kit';
 import { fontStats, loadBundledFonts } from './fonts';
-import { imageStats } from './images';
+import { imageStats, wantImage } from './images';
 import { free } from './lifetime';
-import { recordPicture, skiaEligible, skiaMeasureText, type Mat, type PaintContext, type PaintNode } from './painter';
+import { recordPicture, skiaEligible, skiaMeasureText, type ImageUse, type Mat, type PaintContext, type PaintNode } from './painter';
 import { layoutTree } from '../layout/layout';
 import { kitIfLoaded } from './kit';
 
@@ -67,6 +67,11 @@ export async function renderFrameForTest(key: string, opts: { scale?: number; la
   if (!pn) throw new Error(`frame ${key} is not laid out`);
   const scale = opts.scale ?? 1;
   const w = Math.max(1, Math.round(pn.w * scale)), h = Math.max(1, Math.round(pn.h * scale));
+  // Pictures at the size this drawing shows them: record once to learn where they are drawn, ask, wait, record again.
+  const uses: ImageUse[] = [];
+  free(recordPicture(ctx, pn, uses));
+  for (const u of uses) wantImage(u.url, u.side * scale, true);
+  while (imageStats().sharpening && performance.now() < until) await new Promise(r => setTimeout(r, 50));
   const surface = ck.MakeSurface(w, h)!;
   const pic = recordPicture(ctx, pn);
   try {

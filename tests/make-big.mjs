@@ -113,9 +113,11 @@ for (let p = 0; p < PICS; p++) {
     for (let x = 0; x < SIZE; x++) {
       const v = Math.sin(x * a + c) * Math.cos(y * b) * 0.5 + 0.5;
       const k = (y * SIZE + x) * 4;
-      png.data[k] = base[0] * v + 40 * (1 - v);
-      png.data[k + 1] = base[1] * (1 - v) + 30;
-      png.data[k + 2] = base[2] * v;
+      // Big pictures also get a fine checker (8 px cells), so a test can tell a sharp drawing of one from a blurry one.
+      const d = SIZE > 512 && ((x >> 3) + (y >> 3)) % 2 ? 36 : 0;
+      png.data[k] = Math.min(255, base[0] * v + 40 * (1 - v) + d);
+      png.data[k + 1] = Math.min(255, base[1] * (1 - v) + 30 + d);
+      png.data[k + 2] = Math.min(255, base[2] * v + d);
       png.data[k + 3] = 255;
     }
   fs.writeFileSync(path.join(dir, 'images', `pic-${p}.png`), PNG.sync.write(png));
