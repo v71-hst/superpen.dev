@@ -666,6 +666,13 @@ html.light ::-webkit-scrollbar-thumb {
 .tb-space {
   flex: 1;
 }
+.tb-logo {
+  width: 18px;
+  height: 18px;
+  margin: 0 2px 0 6px;
+  color: var(--fg-strong);
+  flex: none;
+}
 .tb-sep {
   width: 1px;
   height: 16px;
@@ -808,7 +815,8 @@ button.tb-file:hover,
   }
 }
 @media (max-width: 760px) {
-  .tb-file {
+  .tb-file,
+  .tb-logo {
     display: none;
   }
 }

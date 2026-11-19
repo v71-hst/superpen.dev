@@ -17,6 +17,8 @@ media/banner.*
 dev/**
 CLAUDE.md
 media/icon.svg
+media/icon.spen
+media/logo-source.png
 tests/**
 docs/**
 .claude/**

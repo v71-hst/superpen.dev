@@ -91,12 +91,15 @@
                   "name": "Icon",
                   "width": 76,
                   "height": 76,
-                  "cornerRadius": 18,
+                  "cornerRadius": 17,
                   "fill": {
                     "type": "image",
                     "url": "./icon.png",
                     "mode": "cover"
-                  }
+                  },
+                  "stroke": "#FFFFFF2E",
+                  "strokeWidth": 1,
+                  "strokeAlignment": "inner"
                 },
                 {
                   "type": "frame",
