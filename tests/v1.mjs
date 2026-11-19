@@ -5,6 +5,9 @@
 import puppeteer from 'puppeteer-core';
 import pngjs from 'pngjs';
 import { launchOptions } from './browser.mjs';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 const { PNG } = pngjs;
 const [, , url, shots] = process.argv;
 const browser = await puppeteer.launch(launchOptions({ headless: true }));
@@ -439,6 +442,100 @@ const viaAgent = await ev(html => window.__penAgent('importHtml', { html, width:
 await frames();
 const placedPage = await ev(id => { const d = window.__penStore.getState().doc; const n = d.children.find(c => c.id === id); const others = d.children.filter(c => c.id !== id && typeof c.x === 'number'); return n && { count: d.children.length, name: n.name, x: n.x, right: Math.max(...others.map(c => c.x + (typeof c.width === 'number' ? c.width : 0))), kids: n.children.length }; }, viaAgent.id);
 ok('import_html adds one frame to the right of the design', !viaAgent.error && placedPage?.count === topBefore + 1 && placedPage.name === 'Imported card' && placedPage.x >= placedPage.right + 100 && placedPage.kids >= 1 && viaAgent.layers >= 6, JSON.stringify({ viaAgent, placedPage }));
+
+// ---------- Figma import ----------
+// Needs sample files that are not in the repository (other people's work): dev/fixtures/figma/structure.fig,
+// stacks_wrap.fig and frame-with-r-g-b-rect.clipboard.html (see tests/README.md for where they come from).
+const figDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dev', 'fixtures', 'figma');
+if (!fs.existsSync(path.join(figDir, 'structure.fig'))) {
+  console.log('SKIP Figma import (no sample files in dev/fixtures/figma)');
+} else {
+  const b64 = name => fs.readFileSync(path.join(figDir, name)).toString('base64');
+  const flatten = `(nodes => { const out = []; const walk = (n, d) => { out.push({ id: n.id, type: n.type, name: n.name, layout: n.layout, w: n.width, h: n.height, fill: n.fill, content: n.content, d }); (n.children ?? []).forEach(c => walk(c, d + 1)); }; nodes.forEach(n => walk(n, 0)); return out; })`;
+  const before = await ev(() => { const d = window.__penStore.getState().doc; return { count: d.children.length, right: Math.max(...d.children.filter(c => typeof c.x === 'number').map(c => c.x + (typeof c.width === 'number' ? c.width : 0))) }; });
+  const fig = await ev(async (data, flatten) => {
+    const m = await import('/src/editor/ops.ts');
+    const bytes = Uint8Array.from(atob(data), c => c.charCodeAt(0));
+    try {
+      const info = await m.figmaPages(bytes);
+      const r = await m.importFigma({ bytes });
+      const d = window.__penStore.getState().doc;
+      const added = d.children.filter(c => r.ids.includes(c.id));
+      return { info, r: { ...r, ids: r.ids.length }, first: r.ids[0], minX: Math.min(...added.map(c => c.x)), flat: eval(flatten)(added), summary: m.figmaSummary(r) };
+    } catch (e) {
+      return { error: String(e) };
+    }
+  }, b64('structure.fig'), flatten);
+  await frames();
+  const FF = fig.flat ?? [];
+  ok('a .fig file becomes layers beside the design: frames, text and vector paths',
+    !fig.error && fig.r.ids >= 1 && fig.minX >= before.right + 100 && FF.some(n => n.type === 'frame') && FF.some(n => n.type === 'text' && n.content) && FF.some(n => n.type === 'path' || n.type === 'rectangle' || n.type === 'ellipse') && fig.r.layers === FF.length,
+    fig.error ?? `${fig.summary} | pages ${JSON.stringify(fig.info.pages)} | types ${[...new Set(FF.map(n => n.type))].join(',')}`);
+  const figRect = fig.first ? await rect(fig.first) : null;
+  ok('the imported layers are drawn', !!figRect && figRect.w > 0 && figRect.h > 0, JSON.stringify(figRect));
+  if (shots && fig.first) {
+    const shot = await ev(ids => window.__penAgent('screenshot', { id: ids, max_size: 1000 }).catch(e => ({ error: String(e) })), fig.first);
+    if (shot?.dataUrl) fs.writeFileSync(`${shots}/v1_figma.png`, Buffer.from(shot.dataUrl.slice(shot.dataUrl.indexOf(',') + 1), 'base64'));
+  }
+
+  const wrap = await ev(async (data, flatten) => {
+    const m = await import('/src/import/figma/index.ts');
+    const r = await m.importFigFile(Uint8Array.from(atob(data), c => c.charCodeAt(0)));
+    return { flat: eval(flatten)(r.nodes), warnings: r.warnings, isFig: m.isFigFile(Uint8Array.from(atob(data), c => c.charCodeAt(0))), notFig: m.isFigFile(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])) };
+  }, b64('stacks_wrap.fig'), flatten);
+  ok('auto layout comes across as layout frames; other files are refused', wrap.isFig && !wrap.notFig && wrap.flat.some(n => n.layout === 'horizontal' || n.layout === 'vertical'), `${wrap.flat.length} layers, layouts ${[...new Set(wrap.flat.map(n => n.layout).filter(Boolean))].join(',')}; ${wrap.warnings.join('; ')}`);
+
+  // The dialog: choose a file, see its pages, import the chosen one.
+  await ev(() => window.__penStore.setState({ modal: 'importFigma' }));
+  await page.waitForSelector('[data-fig-import]');
+  const [chooser] = await Promise.all([page.waitForFileChooser(), page.evaluate(() => [...document.querySelectorAll('.modal button')].find(b => /Choose file/.test(b.textContent)).click())]);
+  await chooser.accept([path.join(figDir, 'structure.fig')]);
+  await page.waitForFunction(() => /structure\.fig/.test(document.querySelector('[data-fig-name]')?.textContent ?? ''), { timeout: 15000 });
+  const dialog = await ev(() => ({ pages: document.querySelector('.modal')?.textContent ?? '', enabled: !document.querySelector('[data-fig-import]').disabled, count: window.__penStore.getState().doc.children.length }));
+  await page.click('[data-fig-import]');
+  await page.waitForFunction(() => window.__penStore.getState().modal === null, { timeout: 30000 });
+  const afterDialog = await ev(() => ({ count: window.__penStore.getState().doc.children.length, selected: window.__penStore.getState().selection.length, toast: document.querySelector('.toast')?.textContent ?? '' }));
+  ok('the Figma dialog lists the pages and imports the chosen one', /Page/.test(dialog.pages) && /layer/.test(dialog.pages) && dialog.enabled && afterDialog.count > dialog.count && afterDialog.selected >= 1, JSON.stringify({ afterDialog, was: dialog.count }));
+
+  // Paste: Figma puts its layers in the clipboard's HTML.
+  const clip = fs.readFileSync(path.join(figDir, 'frame-with-r-g-b-rect.clipboard.html'), 'utf8');
+  const cdp = await browser.target().createCDPSession();
+  await cdp.send('Browser.grantPermissions', { origin: new URL(url).origin, permissions: ['clipboardReadWrite', 'clipboardSanitizedWrite'] });
+  await page.bringToFront();
+  const pasted = await ev(async (html, flatten) => {
+    const m = await import('/src/editor/ops.ts');
+    const s = window.__penStore.getState();
+    s.select([]);
+    const before = s.doc.children.map(c => c.id);
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([html], { type: 'text/html' }), 'text/plain': new Blob([''], { type: 'text/plain' }) })]);
+    } catch (e) {
+      return { error: 'clipboard write: ' + e };
+    }
+    await m.paste();
+    const d = window.__penStore.getState().doc;
+    const added = d.children.filter(c => !before.includes(c.id));
+    const c = m.clientToWorld(innerWidth / 2, innerHeight / 2);
+    return { flat: eval(flatten)(added), top: added.map(n => ({ x: n.x, y: n.y, w: n.width, h: n.height })), centre: c, toast: document.querySelector('.toast')?.textContent ?? '' };
+  }, clip, flatten);
+  const pf = pasted.flat ?? [];
+  const pt = pasted.top?.[0];
+  ok('layers copied in Figma paste as layers in the middle of the view',
+    !pasted.error && pf.length >= 4 && pf[0].type === 'frame' && pf.filter(n => n.type === 'rectangle').length === 3 && !!pt && Math.abs(pt.x + pt.w / 2 - pasted.centre.x) < 2 && Math.abs(pt.y + pt.h / 2 - pasted.centre.y) < 2,
+    pasted.error ?? JSON.stringify({ types: pf.map(n => n.type), fills: pf.map(n => n.fill), top: pt, centre: pasted.centre, toast: pasted.toast }));
+
+  // What the MCP tool does: it converts the file itself and hands the layers over.
+  const handed = await ev(async () => {
+    const before = window.__penStore.getState().doc.children.length;
+    const r = await window.__penAgent('insertImported', { source: 'import_figma', nodes: [{ type: 'frame', id: 'same', name: 'Handed over', x: 5, y: 7, width: 100, height: 50, fill: '#FF00FF', children: [{ type: 'text', id: 'same', content: 'Hi' }] }, { type: 'rectangle', id: 'same', x: 205, y: 7, width: 20, height: 20 }] }).catch(e => ({ error: String(e) }));
+    const d = window.__penStore.getState().doc;
+    const added = d.children.filter(c => r.ids?.includes(c.id));
+    const ids = new Set(); const walk = n => { ids.add(n.id); (n.children ?? []).forEach(walk); }; d.children.forEach(walk);
+    let total = 0; const cnt = n => { total++; (n.children ?? []).forEach(cnt); }; d.children.forEach(cnt);
+    return { r, grew: d.children.length - before, gap: added[1]?.x - added[0]?.x, sameY: added[1]?.y === added[0]?.y, unique: ids.size === total };
+  });
+  ok('layers handed over by import_figma keep their places relative to each other and get ids of their own', !handed.r.error && handed.grew === 2 && handed.gap === 200 && handed.sameY && handed.unique, JSON.stringify(handed));
+}
 
 ok('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();

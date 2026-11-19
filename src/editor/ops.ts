@@ -1,6 +1,7 @@
 // Editing commands shared by keyboard shortcuts, menus, panels and canvas gestures.
 import type { PenDoc, PenNode } from '../model/types';
 import { htmlToNodes, looksLikeHtml } from '../import/html';
+import { figmaClipboard, importFigFile, importFigmaClipboard, isFigFile, type FigmaImport } from '../import/figma';
 import { inVsCode, request } from './host';
 import { removeBackground, type RemoveBgOptions } from './removeBg';
 import { SOFT } from '../render/pixels';
@@ -145,6 +146,27 @@ export async function paste() {
     text = await navigator.clipboard.readText();
   } catch {
     /* clipboard not readable */
+  }
+  // Layers copied in Figma arrive as HTML with Figma's data inside.
+  let html = '';
+  try {
+    for (const item of await navigator.clipboard.read()) if (item.types.includes('text/html')) html = await (await item.getType('text/html')).text();
+  } catch {
+    /* no HTML on the clipboard, or it is not readable */
+  }
+  if (html && figmaClipboard(html)) {
+    const notify = useStore.getState().notify;
+    try {
+      const sel = useStore.getState().selection[0];
+      const picked = sel ? currentTree()?.byKey.get(sel) : undefined;
+      const target = sel && picked?.type === 'frame' && !picked.instanceOf && keySource(sel).kind === 'real' ? sel : null;
+      const r = await importFigma({ html }, { where: target ? { parent: target } : 'view' });
+      useStore.getState().select(r.ids);
+      notify(figmaSummary(r));
+    } catch (e) {
+      notify(`Could not paste from Figma: ${e instanceof Error ? e.message : e}`);
+    }
+    return;
   }
   // Pasted SVG markup becomes editable vectors.
   if (looksLikeSvg(text)) {
@@ -540,6 +562,111 @@ export async function importHtml(source: { html?: string; url?: string }, opts: 
     d.children.push(copy);
   });
   return { id, layers: made.count, warnings: made.warnings };
+}
+
+/** Layers in a list of nodes, counting everything inside them. */
+function countLayers(nodes: PenNode[]): number {
+  let n = 0;
+  const walk = (x: PenNode) => {
+    n++;
+    x.children?.forEach(walk);
+  };
+  nodes.forEach(walk);
+  return n;
+}
+
+/**
+ * Adds nodes made elsewhere (an import) to the design in one undo step, keeping their places relative to each other:
+ * "right" puts them beside everything the design already has, "view" in the middle of what the user is looking at,
+ * and a frame id puts them inside that frame. Ids are made new, so importing the same thing twice is fine.
+ */
+export function insertImported(nodes: PenNode[], where: 'right' | 'view' | { parent: string } = 'right'): string[] {
+  if (!nodes.length) return [];
+  const xy = (n: PenNode) => ({ x: typeof n.x === 'number' ? n.x : 0, y: typeof n.y === 'number' ? n.y : 0, w: typeof n.width === 'number' ? n.width : 0, h: typeof n.height === 'number' ? n.height : 0 });
+  const boxes = nodes.map(xy);
+  const left = Math.min(...boxes.map(b => b.x)), top = Math.min(...boxes.map(b => b.y));
+  const right = Math.max(...boxes.map(b => b.x + b.w)), bottom = Math.max(...boxes.map(b => b.y + b.h));
+  const ids: string[] = [];
+  const centre = clientToWorld(innerWidth / 2, innerHeight / 2);
+  useStore.getState().edit(d => {
+    const loc = typeof where === 'object' && keySource(where.parent).kind === 'real' ? locate(d, where.parent) : null;
+    let dx = -left, dy = -top;
+    if (!loc && where === 'view') {
+      dx += Math.round(centre.x - (right - left) / 2);
+      dy += Math.round(centre.y - (bottom - top) / 2);
+    } else if (!loc) {
+      let r = -Infinity, t = Infinity;
+      for (const n of d.children) {
+        if (typeof n.x !== 'number' || typeof n.y !== 'number') continue;
+        r = Math.max(r, n.x + (typeof n.width === 'number' ? n.width : 0));
+        t = Math.min(t, n.y);
+      }
+      dx += isFinite(r) ? Math.round(r + 120) : 0;
+      dy += isFinite(t) ? Math.round(t) : 0;
+    }
+    const list = loc ? (loc.node.children ??= []) : d.children;
+    const taken = allIds(d);
+    for (const n of nodes) {
+      const copy = cloneWithNewIds(n, taken);
+      const b = xy(n);
+      copy.x = Math.round((b.x + dx) * 100) / 100;
+      copy.y = Math.round((b.y + dy) * 100) / 100;
+      list.push(copy);
+      ids.push(copy.id);
+    }
+  });
+  return ids;
+}
+
+export type FigmaResult = { ids: string[]; layers: number; images: number; page?: string; pages: FigmaImport['pages']; warnings: string[] };
+
+/** What is in a .fig file: its pages, and how many layers each has at the top. */
+export async function figmaPages(bytes: Uint8Array): Promise<{ pages: FigmaImport['pages']; page?: string }> {
+  if (!isFigFile(bytes)) throw new Error('that is not a Figma file (.fig)');
+  const r = await importFigFile(bytes);
+  return { pages: r.pages, page: r.page };
+}
+
+/**
+ * Figma import (import/figma): a .fig file's page, or layers copied in Figma (the clipboard's HTML), become
+ * editable layers. Pictures are saved in images/ next to the design.
+ */
+export async function importFigma(source: { bytes?: Uint8Array; html?: string }, opts: { page?: string | number; where?: 'right' | 'view' | { parent: string } } = {}): Promise<FigmaResult> {
+  let r: FigmaImport;
+  if (source.bytes) {
+    if (!isFigFile(source.bytes)) throw new Error('that is not a Figma file (.fig)');
+    r = await importFigFile(source.bytes, { page: opts.page });
+  } else if (source.html && figmaClipboard(source.html)) {
+    r = await importFigmaClipboard(source.html);
+  } else {
+    throw new Error('there is nothing from Figma to import');
+  }
+  if (!r.nodes.length) throw new Error(r.page ? `the page "${r.page}" has nothing that can be imported` : 'nothing that can be imported was found');
+  // Pictures first, so the layers never point at files that are not there. A design with no place on disk gets
+  // them embedded instead, and the fills are pointed at those.
+  const moved = new Map<string, string>();
+  for (const img of r.images) {
+    const url = await saveAsset(img.path, new Blob([img.bytes as BlobPart]));
+    if (url !== `./${img.path}`) moved.set(`./${img.path}`, url);
+  }
+  if (moved.size) {
+    const fix = (n: any) => {
+      for (const key of ['fill', 'stroke']) {
+        const v = n[key];
+        for (const f of Array.isArray(v) ? v : [v]) if (f && typeof f === 'object' && f.type === 'image' && moved.has(f.url)) f.url = moved.get(f.url);
+      }
+      n.children?.forEach(fix);
+    };
+    r.nodes.forEach(fix);
+  }
+  const ids = insertImported(r.nodes, opts.where ?? (source.bytes ? 'right' : 'view'));
+  return { ids, layers: countLayers(r.nodes), images: r.images.length, page: r.page, pages: r.pages, warnings: r.warnings };
+}
+
+/** One line for the user about a finished Figma import. */
+export function figmaSummary(r: FigmaResult): string {
+  const left = r.warnings.length ? ` Not exact: ${r.warnings.slice(0, 4).join('; ')}${r.warnings.length > 4 ? `; and ${r.warnings.length - 4} more kinds` : ''}.` : '';
+  return `Imported ${r.layers} layer${r.layers === 1 ? '' : 's'} from Figma${r.page ? ` (page "${r.page}")` : ''}${r.images ? `, with ${r.images} picture${r.images === 1 ? '' : 's'}` : ''}.${left}`;
 }
 
 // ---------- viewport ----------

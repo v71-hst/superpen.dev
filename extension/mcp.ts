@@ -9,6 +9,7 @@ import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import { GUIDE } from './guide';
 import { SKILLS, SKILL_INDEX, findSkill } from './skills';
+import { importFigFile, isFigFile } from '../src/import/figma';
 
 const BRIDGE_DIR = path.join(os.homedir(), '.pen-editor', 'bridges');
 
@@ -595,6 +596,44 @@ tool(
     if (!a.html && !a.url) throw new Error('import_html needs html or url');
     const r = await callEditor('importHtml', a, true);
     return text(`Imported ${r.layers} layers into frame #${r.id}.${r.warnings.length ? ' Not imported: ' + r.warnings.join('; ') + '.' : ''} Screenshot it to check, then restructure what you keep.`);
+  },
+);
+
+tool(
+  'import_figma',
+  'Import a Figma file into the selected design. path is a .fig file on this computer (in Figma: File > Save local copy). One page is imported per call as editable layers placed to the right of the existing content: frames with auto layout, text, vectors as paths, pictures (saved in images/ next to the design), shadows, masks and image crops; component instances come in as plain layers. page is a page name or index; without it the first page that has layers is imported. list_pages: true only lists the pages and changes nothing. Returns the new top-level layer ids, the page list and what could not be converted exactly. Fonts keep Figma\'s names (check_layout reports missing ones). Afterwards, screenshot the result, and turn repeated parts into components.',
+  { path: z.string(), page: z.union([z.string(), z.number().int().min(0)]).optional(), list_pages: z.boolean().optional() },
+  async ({ path: file, page, list_pages }) => {
+    const s = requireSelected();
+    const abs = path.resolve(file);
+    if (!fs.existsSync(abs)) throw new Error(`there is no file at ${abs}`);
+    const bytes = new Uint8Array(fs.readFileSync(abs));
+    if (!isFigFile(bytes)) throw new Error(`${path.basename(abs)} is not a Figma file (.fig)`);
+    const r = await importFigFile(bytes, list_pages ? {} : { page });
+    const pages = r.pages.map((p, i) => `${i}: ${p.name || 'Untitled'} (${p.frames} layer${p.frames === 1 ? '' : 's'})`).join('\n');
+    if (list_pages) return text(`Pages of ${path.basename(abs)}:\n${pages}`);
+    if (!r.nodes.length) throw new Error(`the page "${r.page ?? page}" has nothing that can be imported. Pages:\n${pages}`);
+    if (s.readOnly) throw new Error(`${path.basename(s.path)} is selected read-only because another chat holds the lock. Call select_file with force: true to take over (ask the user first).`);
+    // Pictures go next to the design before the layers that use them are added.
+    const dir = path.dirname(s.path);
+    for (const img of r.images) {
+      const target = path.join(dir, img.path);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      if (!fs.existsSync(target)) fs.writeFileSync(target, img.bytes);
+    }
+    let layers = 0;
+    const count = (n: any) => {
+      layers++;
+      n.children?.forEach(count);
+    };
+    r.nodes.forEach(count);
+    const done = await callEditor('insertImported', { nodes: r.nodes, source: 'import_figma' }, true);
+    return text(
+      `Imported page "${r.page}" of ${path.basename(abs)}: ${layers} layers in ${done.ids.length} top-level layer${done.ids.length === 1 ? '' : 's'}${r.images.length ? `, ${r.images.length} picture${r.images.length === 1 ? '' : 's'} in images/` : ''}.\n` +
+        `Top-level ids: ${done.ids.slice(0, 40).join(', ')}${done.ids.length > 40 ? `, and ${done.ids.length - 40} more` : ''}\n` +
+        (r.warnings.length ? `Not exact:\n- ${r.warnings.join('\n- ')}\n` : '') +
+        `Pages:\n${pages}`,
+    );
   },
 );
 

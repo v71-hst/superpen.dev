@@ -5,7 +5,7 @@ import { rasterize } from '../render/rasterize';
 import { canvasSnapshot, recentLog, uiSnapshot } from './diagnostics';
 import { blankBitmapsOnCanvas, lodStats } from './lod';
 import { currentTree } from './tree';
-import { clientToWorld, elFor, insertSvg, importHtml, removeBackgroundOf, vectorizeNode, worldRectOf, zoomToKeys } from './ops';
+import { clientToWorld, elFor, insertSvg, importHtml, insertImported, removeBackgroundOf, vectorizeNode, worldRectOf, zoomToKeys } from './ops';
 import { isRendered, nodeScreenRect, nodeSize, ownerNodeKey } from './measure';
 import { ensureRendered } from './culling';
 import { flushEdits } from './host';
@@ -418,6 +418,15 @@ export async function handleAgentRequest(method: string, params: any): Promise<a
       recordAgentChange(before, 'import_html', () => [r.id]);
       flushEdits();
       return r;
+    }
+    case 'insertImported': {
+      // Nodes converted outside the editor (import_figma runs in the MCP server, which can read the file).
+      if (!Array.isArray(params.nodes) || !params.nodes.length) throw new Error('there are no layers to insert');
+      const before = useStore.getState().doc;
+      const ids = insertImported(params.nodes, 'right');
+      recordAgentChange(before, String(params.source ?? 'import'), () => ids);
+      flushEdits();
+      return { ids };
     }
     case 'removeBackground': {
       const before = useStore.getState().doc;

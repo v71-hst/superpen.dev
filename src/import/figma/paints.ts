@@ -139,12 +139,19 @@ function imageFill(p: any, ctx: PaintCtx): any | null {
       out.mode = 'contain';
       break;
     case 'STRETCH': {
-      // Figma's "crop": the image is placed by a matrix from the box (0..1) into the image (0..1).
+      // Figma's "crop": a matrix from the box (0..1) into the image (0..1). A .pen crop goes the other way (it
+      // places the picture, stretched over the box, in units of the box), so it is the inverse.
       out.mode = 'stretch';
       const t = p.transform;
       if (t && !(near(t.m00, 1) && near(t.m11, 1) && near(t.m01, 0) && near(t.m10, 0) && near(t.m02, 0) && near(t.m12, 0))) {
-        out.transform = [t.m00, t.m10, t.m01, t.m11, t.m02, t.m12].map(v => round(num(v, 0), 100000));
-        ctx.notes.add('cropped image fills (crop matrix kept, check the framing)');
+        const m00 = num(t.m00, 1), m01 = num(t.m01, 0), m02 = num(t.m02, 0), m10 = num(t.m10, 0), m11 = num(t.m11, 1), m12 = num(t.m12, 0);
+        const det = m00 * m11 - m01 * m10;
+        if (Math.abs(det) > 1e-9) {
+          const a = m11 / det, b = -m10 / det, c = -m01 / det, d = m00 / det;
+          out.transform = [a, b, c, d, -(a * m02 + c * m12), -(b * m02 + d * m12)].map(v => round(v, 100000));
+        } else {
+          ctx.notes.add('cropped image fills with a crop that cannot be applied (drawn stretched)');
+        }
       }
       break;
     }

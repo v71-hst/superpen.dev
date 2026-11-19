@@ -118,6 +118,7 @@ vectorize_image traces an image fill into paths (good for flat logos, poor for p
 Prefer icon nodes for standard UI icons and frames/shapes/gradients for decoration; use SVG for custom artwork.
 
 ## Bringing things in
+import_figma brings one page of a .fig file in as editable layers (auto layout kept, instances as plain layers).
 import_html turns a web page (url) or markup (html) into one frame of editable layers at free positions; inline SVG
 becomes paths and <img> becomes picture fills. remove_background cuts a plain background out of an image fill.
 vectorize_image traces a picture into paths. After an import, keep what you need and rebuild it with auto layout,

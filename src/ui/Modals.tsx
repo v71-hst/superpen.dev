@@ -1,5 +1,5 @@
 // Modal dialogs: keyboard shortcuts, variables & themes, settings, about.
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
 import { useStore } from '../editor/store';
 import { defaultTheme, resolveVariable, isVarRef } from '../model/resolve';
@@ -7,16 +7,16 @@ import { colorCss } from '../render/paint';
 import { PaintPopover } from './ColorPicker';
 import { CheckRow, Select } from './common';
 import { FindReplace, LintPanel } from './FindLint';
-import { importHtml, zoomToKeys } from '../editor/ops';
+import { figmaPages, figmaSummary, importFigma, importHtml, zoomToKeys } from '../editor/ops';
 
 export function Modals() {
   const modal = useStore(s => s.modal);
   if (!modal) return null;
   const close = () => useStore.setState({ modal: null });
-  const titles: Record<string, string> = { shortcuts: 'Keyboard Shortcuts', variables: 'Variables & Themes', settings: 'Settings', about: 'About', find: 'Find & Replace', lint: 'Design Lint', importHtml: 'Import a web page or HTML' };
+  const titles: Record<string, string> = { shortcuts: 'Keyboard Shortcuts', variables: 'Variables & Themes', settings: 'Settings', about: 'About', find: 'Find & Replace', lint: 'Design Lint', importHtml: 'Import a web page or HTML', importFigma: 'Import from Figma' };
   return (
     <div className="modal-backdrop" onPointerDown={e => e.target === e.currentTarget && close()} onKeyDown={e => e.key === 'Escape' && close()}>
-      <div className="modal" style={modal === 'settings' || modal === 'about' || modal === 'find' || modal === 'lint' || modal === 'importHtml' ? { width: 560 } : undefined}>
+      <div className="modal" style={modal === 'settings' || modal === 'about' || modal === 'find' || modal === 'lint' || modal === 'importHtml' || modal === 'importFigma' ? { width: 560 } : undefined}>
         <div className="modal-head">
           {titles[modal]}
           <button className="icon-btn" onClick={close}>
@@ -31,6 +31,7 @@ export function Modals() {
           {modal === 'find' && <FindReplace />}
           {modal === 'lint' && <LintPanel />}
           {modal === 'importHtml' && <ImportHtml />}
+          {modal === 'importFigma' && <ImportFigma />}
         </div>
       </div>
     </div>
@@ -90,6 +91,96 @@ function ImportHtml() {
         </button>
         <button className="rp-btn" style={{ padding: '0 16px', background: 'var(--primary)', color: 'var(--primary-fg)' }} disabled={busy || !source.trim()} onClick={run}>
           {busy ? 'Importing…' : isUrl ? 'Fetch and import' : 'Import'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** A .fig file handed over from outside the dialog (dropped on the window), picked up when the dialog opens. */
+let handedFig: File | null = null;
+export function openFigmaImport(file: File) {
+  handedFig = file;
+  useStore.setState({ modal: 'importFigma' });
+}
+
+function ImportFigma() {
+  const s = useStore();
+  const [file, setFile] = useState<{ name: string; bytes: Uint8Array } | null>(null);
+  const [pages, setPages] = useState<{ name: string; frames: number }[]>([]);
+  const [page, setPage] = useState('0');
+  const [busy, setBusy] = useState('');
+  const load = async (f: File) => {
+    setBusy('Reading…');
+    try {
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      const info = await figmaPages(bytes);
+      setFile({ name: f.name, bytes });
+      setPages(info.pages);
+      setPage(String(Math.max(0, info.pages.findIndex(p => p.frames > 0))));
+    } catch (e) {
+      setFile(null);
+      s.notify(`Could not read that file: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setBusy('');
+    }
+  };
+  useEffect(() => {
+    if (handedFig) void load(handedFig);
+    handedFig = null;
+  }, []);
+  const pick = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.fig';
+    input.onchange = () => {
+      const f = input.files?.[0];
+      if (f) void load(f);
+    };
+    input.click();
+  };
+  const run = async () => {
+    if (!file) return;
+    setBusy('Importing…');
+    // Let the button show "Importing…" before the conversion takes the thread.
+    await new Promise(r => setTimeout(r, 30));
+    try {
+      const r = await importFigma({ bytes: file.bytes }, { page: pages.length ? Number(page) : undefined });
+      useStore.setState({ modal: null });
+      s.select(r.ids);
+      zoomToKeys(r.ids);
+      s.notify(figmaSummary(r));
+    } catch (e) {
+      s.notify(`Could not import: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setBusy('');
+    }
+  };
+  return (
+    <div style={{ display: 'grid', gap: 10, fontSize: 12 }}>
+      <div style={{ color: 'var(--muted)', lineHeight: 1.5 }}>
+        Choose a .fig file (in Figma: File › Save local copy). One page is imported at a time, as editable layers beside what the design already has; pictures are saved in an images folder next to the design. You can also copy layers in Figma and paste them here with Ctrl V.
+      </div>
+      <div className="row-flex">
+        <button className="rp-btn" style={{ padding: '0 12px' }} onClick={pick} disabled={!!busy}>
+          Choose file…
+        </button>
+        <span data-fig-name style={{ color: file ? 'var(--text)' : 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: 1 }}>
+          {file ? file.name : busy || 'No file chosen'}
+        </span>
+      </div>
+      {file && pages.length > 0 && (
+        <div className="row-flex">
+          <span style={{ color: 'var(--muted)' }}>Page</span>
+          <Select value={page} options={pages.map((p, i) => ({ value: String(i), label: `${p.name || 'Untitled'} (${p.frames} layer${p.frames === 1 ? '' : 's'})` }))} onChange={setPage} />
+        </div>
+      )}
+      <div style={{ color: 'var(--muted)', lineHeight: 1.5 }}>
+        Component instances come in as plain layers. Text keeps Figma's font names, so fonts that are not on Google Fonts fall back. Prototype links, variables and a few effects are left out; the result says what was not exact.
+      </div>
+      <div className="row-flex" style={{ justifyContent: 'flex-end' }}>
+        <button className="rp-btn" data-fig-import style={{ padding: '0 16px', background: 'var(--primary)', color: 'var(--primary-fg)' }} disabled={!!busy || !file || (pages.length > 0 && !pages[Number(page)]?.frames)} onClick={run}>
+          {busy === 'Importing…' ? busy : 'Import'}
         </button>
       </div>
     </div>

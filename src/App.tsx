@@ -7,7 +7,7 @@ import { Canvas } from './ui/Canvas';
 import { LeftPanel } from './ui/LeftPanel';
 import { RightPanel } from './ui/RightPanel';
 import { FpsMeter, SectionBar, Toast, TopBar } from './ui/Chrome';
-import { Modals } from './ui/Modals';
+import { Modals, openFigmaImport } from './ui/Modals';
 import { Home } from './ui/Home';
 import { Presenter } from './ui/Present';
 import { isDirty } from './editor/store';
@@ -91,6 +91,12 @@ export function App() {
 
   const onDrop = (e: React.DragEvent) => {
     setDragging(false);
+    const fig = [...e.dataTransfer.files].find(x => /\.fig$/i.test(x.name));
+    if (fig && useStore.getState().doc) {
+      e.preventDefault();
+      openFigmaImport(fig);
+      return;
+    }
     const f = [...e.dataTransfer.files].find(x => isDesignFile(x.name));
     if (!f) return;
     e.preventDefault();

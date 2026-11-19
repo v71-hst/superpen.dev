@@ -15,7 +15,7 @@ export type AiPenRequest = { id: string; prompt: string; box: AiPenBox; refine?:
 export type AiPenPass = { id: number; frame: string; markup: string; keys: string[] };
 export type Tool = 'select' | 'scale' | 'rect' | 'ellipse' | 'polygon' | 'icon' | 'text' | 'frame' | 'note' | 'hand' | 'pen' | 'aipen' | 'comment' | 'eyedropper';
 export type LeftTab = 'layers' | 'sections' | 'slides' | 'components' | 'libraries';
-export type Modal = null | 'shortcuts' | 'variables' | 'settings' | 'about' | 'iconPicker' | 'find' | 'lint' | 'importHtml';
+export type Modal = null | 'shortcuts' | 'variables' | 'settings' | 'about' | 'iconPicker' | 'find' | 'lint' | 'importHtml' | 'importFigma';
 
 /** Agent edits waiting for the user to accept or reject them (review mode). */
 export type PendingReview = { base: PenDoc; touched: string[]; batches: number; label: string; since: number; /** The user (or VS Code) also changed the document since. */ mixed: boolean };
