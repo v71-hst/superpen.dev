@@ -562,3 +562,42 @@ Behaviour that changed, and the tests that say so:
 Still open: the first GPU use of a big picture uploads it (tens of ms; now mostly spent in idle time); decoded
 pictures take 243 MB of WebAssembly memory on this file (126 MB in performance mode), all loaded at startup because
 eligibility needs to know they exist; `overview` mode is untuned.
+
+### 2026-11-19, tuned build measured in VS Code, and memory
+
+`benchmark` in VS Code on the tuned build, same file and window, **performance mode on**, warmed-up runs:
+
+| | `dom` | `full` |
+|---|---|---|
+| Zoom out: slow frames of 120 / worst | 1 / 40–46 ms | 0 / 28.5 ms |
+| Zoom in: slow frames of 120 / worst | 0 / 17–23 ms | 0 / 17–23 ms |
+| Pan at 50%: worst | 6–11 ms | 6 ms |
+
+With performance mode on the two are close: `dom` gets there by unloading frames away from the view, `full` keeps all
+315 drawn. `full` with performance mode off has not been re-run in VS Code on the tuned build yet.
+
+Found there: idle pre-recording barely ran in VS Code's webview (12 frames in 12 s; a few seconds for all 315 in
+headless Edge). `requestIdleCallback` only fired on its timeout. It now runs in 5–10 ms slices on a timer while the
+view and pointer are still.
+
+**Memory** (`tests/memory.mjs`, plain Edge 1920×1080, no debugger, same file, performance mode off; process memory
+in MB as total / renderer / GPU process):
+
+| Step | `dom` | `full` |
+|---|---|---|
+| Opened, fit to screen | 1,021 / 579 / 219 | 1,615 / 653 / 864 |
+| Zoomed to 100% | 1,150 / 617 / 255 | 1,667 / 594 / 964 |
+| Zoomed to 50%, panned | 1,104 / 564 / 287 | 1,561 / 616 / 836 |
+| Zoomed out to 12% | 1,037 / 509 / 274 | 1,563 / 610 / 840 |
+| Same, 45 s idle | 885 / 357 / 272 | 1,506 / 562 / 839 |
+
+`full` uses 500–600 MB more, nearly all of it in the GPU process. This fails the goal ("uses less memory than
+today"). Cause: every picture fill of the file is decoded at up to 2048 px at startup (243 MB in WebAssembly memory),
+and making even a thumbnail-sized far-zoom copy of a frame uploads its pictures to the graphics card at full size,
+where the 512 MB cache keeps them. Performance mode (pictures at half size) not measured yet.
+
+Planned fix, not built: two tiers of pictures. A small copy of each picture (256 px or so) loaded at startup and used
+for eligibility and for every far-zoom copy; the full-size picture decoded only when a frame is seen up close, kept in
+a least-recently-used budget, with the frame drawn from the small ones until it arrives.
+
+`tests/memory.mjs` used to stay alive for 15 minutes after a run ended (the losing timer of a `Promise.race`); fixed.

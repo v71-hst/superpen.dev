@@ -125,7 +125,9 @@ const target = new URL(url);
 target.searchParams.set('penHarness', `http://127.0.0.1:${server.address().port}/scenario.js`);
 console.log(`== ${label} (no debugger attached)`);
 const edge = spawn(BROWSER, ['--headless=new', '--no-first-run', '--disable-extensions', '--window-size=1920,1080', `--user-data-dir=${profile}`, '--js-flags=--expose-gc', '--enable-precise-memory-info', target.href], { stdio: 'ignore' });
-await Promise.race([ended, new Promise(r => setTimeout(r, 15 * 60000))]);
+const giveUp = setTimeout(finish, 15 * 60000);
+await ended;
+clearTimeout(giveUp);
 edge.kill();
 server.close();
 try {

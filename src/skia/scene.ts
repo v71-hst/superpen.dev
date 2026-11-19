@@ -305,35 +305,31 @@ export function drawScene(c: SkCanvas, ck: CanvasKit, visible: { x: number; y: n
 }
 
 let lastVisible = { x: 0, y: 0, w: 0, h: 0 };
-let warmHandle: ReturnType<typeof setTimeout> | number | null = null;
+let warmHandle: ReturnType<typeof setTimeout> | null = null;
 /** Frames (by content token) whose picture could not be recorded ahead of need; drawing deals with them. */
 const warmFailed = new WeakSet<object>();
-const idle: (cb: (d: { timeRemaining(): number }) => void) => number | ReturnType<typeof setTimeout> =
-  typeof requestIdleCallback === 'function' ? cb => requestIdleCallback(cb, { timeout: 2000 }) : cb => setTimeout(() => cb({ timeRemaining: () => 8 }), 50);
 
 /**
- * Records pictures and makes far-zoom copies ahead of need, in the browser's idle time, nearest the view first. After
- * that, zooming out or panning to a frame for the first time has nothing left to compute.
+ * Records pictures and makes far-zoom copies ahead of need, nearest the view first, in short slices on a timer while
+ * nothing is moving. After that, zooming out or panning to a frame for the first time has nothing left to compute.
+ * (Not requestIdleCallback: in VS Code's webview it only fired on its timeout, about once a second.)
  */
-function scheduleWarm() {
+function scheduleWarm(delay = 12) {
   if (warmHandle !== null || !surfaceReady || !pictureKeys.size) return;
-  warmHandle = idle(warm);
+  warmHandle = setTimeout(warm, delay);
 }
 
-function warm(deadline: { timeRemaining(): number }) {
+function warm() {
   warmHandle = null;
   const ck = kitIfLoaded();
   const surface = gpu;
-  if (!ck || !surface || !surfaceReady || document.hidden) return;
+  if (!ck || !surface || !surfaceReady) return;
+  if (document.hidden) return scheduleWarm(1000);
   // One frame's recording can't be interrupted: not while the view moves or the pointer is busy.
   const quiet = performance.now() - Math.max(lastViewChange, lastInteraction);
-  if (quiet < 200) {
-    warmHandle = setTimeout(() => {
-      warmHandle = null;
-      scheduleWarm();
-    }, 200 - quiet);
-    return;
-  }
+  if (quiet < 200) return scheduleWarm(200 - quiet);
+  // Longer slices once the editor has been still for a while.
+  const until = performance.now() + (quiet > 1500 ? 10 : 5);
   const cx = lastVisible.x + lastVisible.w / 2, cy = lastVisible.y + lastVisible.h / 2;
   let redraw = false;
   let left = true;
@@ -364,7 +360,7 @@ function warm(deadline: { timeRemaining(): number }) {
       return;
     }
     if (best.x < lastVisible.x + lastVisible.w && best.x + best.w > lastVisible.x && best.y < lastVisible.y + lastVisible.h && best.y + best.h > lastVisible.y) redraw = true;
-    if (deadline.timeRemaining() < 3) break;
+    if (performance.now() >= until) break;
   }
   if (redraw) hooks.requestDraw();
   if (left) scheduleWarm();
