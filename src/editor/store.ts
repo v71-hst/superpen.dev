@@ -5,7 +5,16 @@ import type { PenDoc, PenNode, Theme } from '../model/types';
 import { locate } from '../model/doc';
 import { log, takeViewSource } from './diagnostics';
 
+// Deep freezing of every document is off (some code builds nodes and keeps changing them after they are inserted).
+// But with nothing frozen, the editing library has to walk the whole document after every edit to be sure no
+// working copy is left inside it: 40 ms per edit on a 40,000-node design, on every pointer move of a drag. It skips
+// frozen objects without looking inside them, so edit() freezes just the top-level layers (not what is in them):
+// an edit then walks only the layer it changed.
 setAutoFreeze(false);
+
+function sealTopLevel(doc: PenDoc) {
+  for (const n of doc.children) if (n && typeof n === 'object' && !Object.isFrozen(n)) Object.freeze(n);
+}
 
 /** A box on the canvas for AI Pen: `x`/`y` are relative to `parent` (or the canvas), `wx`/`wy` are world coordinates. */
 export type AiPenBox = { x: number; y: number; wx: number; wy: number; width: number; height: number; parent: string | null };
@@ -166,6 +175,7 @@ export const useStore = create<State & Actions>((set, get) => ({
     if (!doc) return;
     const next = produce(doc, recipe);
     if (next === doc) return;
+    sealTopLevel(next);
     const now = Date.now();
     const merge = mergeKey && lastMerge && lastMerge.key === mergeKey && now - lastMerge.t < 1500;
     set({

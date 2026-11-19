@@ -1,6 +1,6 @@
 // Variable/theme resolution and expansion of `ref` (component instance) nodes into render trees.
 import type { PenDoc, PenNode, RNode, Theme } from './types';
-import { indexDoc, type NodeIndex } from './doc';
+import { indexDoc, type NodeIndex, docIndex } from './doc';
 import { libraryEpoch, libraryNode, libraryVariable } from './libraries';
 
 // ---------- variables & themes ----------
@@ -222,8 +222,12 @@ export class TreeBuilder {
     return out.map((c, i) => this.generated(c, theme, key, `§${i}`, depth));
   }
 
+  /** The document this builder indexed last: its index is brought up to date for the next one (see docIndex). */
+  private indexedDoc: PenDoc | null = null;
+
   build(doc: PenDoc, theme: Theme): RNode[] {
-    this.idx = indexDoc(doc);
+    this.idx = docIndex(doc, this.indexedDoc);
+    this.indexedDoc = doc;
     const comps = this.idx.components;
     // Instances depend on component content, so any component change invalidates cached subtrees.
     // A state preview changes how its component's ancestors render too, so it invalidates cached subtrees.
@@ -318,16 +322,46 @@ export class TreeBuilder {
   }
 }
 
-export function indexTree(roots: RNode[]): { byKey: Map<string, RNode>; parent: Map<string, RNode | null> } {
+export type TreeIndex = { byKey: Map<string, RNode>; parent: Map<string, RNode | null>; /** Some key is used twice: never brought up to date in place. */ repeats: boolean };
+
+export function indexTree(roots: RNode[]): TreeIndex {
   const byKey = new Map<string, RNode>();
   const parent = new Map<string, RNode | null>();
+  let count = 0;
   const walk = (nodes: RNode[], p: RNode | null) => {
     for (const n of nodes) {
+      count++;
       byKey.set(n.key, n);
       parent.set(n.key, p);
       walk(n.children, n);
     }
   };
   walk(roots, null);
-  return { byKey, parent };
+  return { byKey, parent, repeats: count !== byKey.size };
+}
+
+/**
+ * Brings the index of one tree up to date for the tree built after an edit, touching only what changed (the builder
+ * hands back the same objects for everything an edit did not touch). Returns false when the shape differs somewhere:
+ * the index is then half changed and must be thrown away.
+ */
+export function patchTreeIndex(idx: TreeIndex, oldNodes: RNode[], newNodes: RNode[], oldParent: RNode | null = null, newParent: RNode | null = null): boolean {
+  if (oldNodes === newNodes) {
+    if (oldParent !== newParent) for (const n of newNodes) idx.parent.set(n.key, newParent);
+    return true;
+  }
+  if (oldNodes.length !== newNodes.length) return false;
+  for (let i = 0; i < newNodes.length; i++) {
+    const o = oldNodes[i];
+    const n = newNodes[i];
+    if (o === n) {
+      if (oldParent !== newParent) idx.parent.set(n.key, newParent);
+      continue;
+    }
+    if (o.key !== n.key) return false;
+    idx.byKey.set(n.key, n);
+    idx.parent.set(n.key, newParent);
+    if (!patchTreeIndex(idx, o.children, n.children, o, n)) return false;
+  }
+  return true;
 }

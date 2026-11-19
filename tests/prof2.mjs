@@ -1,4 +1,5 @@
-﻿// CPU-profiles panning and hovering, printing the top self-time functions.
+﻿// CPU-profiles panning, hovering, zooming or editing (phases: pan, hover, idle, zoomout, zoomin, edit), printing the
+// top self-time functions. Use the dev server so function names are readable.
 import puppeteer from 'puppeteer-core';
 import { launchOptions } from './browser.mjs';
 const [, , url] = process.argv;
@@ -15,7 +16,8 @@ for (const phase of (process.argv[3] || 'pan,hover').split(',')) {
   await cdp.send('Profiler.start');
   await page.mouse.move(900, 500);
   for (let i = 0; i < 30; i++) {
-    if (phase === 'pan') await page.mouse.wheel({ deltaY: 60, deltaX: 40 });
+    if (phase === 'edit') await page.evaluate(() => new Promise(res => { const st = window.__penStore.getState(); st.edit(d => { const n = d.children[d.children.length - 1]; n.x = (n.x ?? 0) + 1; }); requestAnimationFrame(() => requestAnimationFrame(res)); })); // one "move this layer" edit per frame, as a drag makes
+    else if (phase === 'pan') await page.mouse.wheel({ deltaY: 60, deltaX: 40 });
     else if (phase === 'idle') {}
     else if (phase === 'zoomout' || phase === 'zoomin') { await page.keyboard.down('Control'); await page.mouse.wheel({ deltaY: phase === 'zoomout' ? 60 : -60 }); await page.keyboard.up('Control'); }
     else await page.mouse.move(500 + i * 12, 300 + (i % 7) * 40);

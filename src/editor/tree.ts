@@ -1,7 +1,7 @@
 // Hook that turns the current document into the resolved render tree (with ref expansion).
 import { useMemo } from 'react';
 import { useStore } from './store';
-import { TreeBuilder, defaultTheme, indexTree } from '../model/resolve';
+import { TreeBuilder, defaultTheme, indexTree, patchTreeIndex, type TreeIndex } from '../model/resolve';
 import { onAssetsChanged, setScriptNotifier } from '../render/scripts';
 import { scriptState } from './scriptHost';
 import type { RNode, Theme } from '../model/types';
@@ -28,7 +28,7 @@ export type Tree = {
   theme: Theme;
 };
 
-let last: { doc: any; theme: any; epoch: number; libs: number; stateView: any; tree: Tree } | null = null;
+let last: { doc: any; theme: any; epoch: number; libs: number; stateView: any; tree: Tree; index: TreeIndex } | null = null;
 
 export function buildTree(doc: any, preview: Theme | null): Tree {
   const stateView = useStore.getState().stateView;
@@ -36,9 +36,15 @@ export function buildTree(doc: any, preview: Theme | null): Tree {
   const theme = { ...defaultTheme(doc), ...(preview ?? {}) };
   builder.stateView = stateView;
   const roots = builder.build(doc, theme);
-  const { byKey, parent } = indexTree(roots);
-  const tree = { roots, byKey, parent, theme };
-  last = { doc, theme: preview, epoch: builder.scriptEpoch, libs: libraryEpoch(), stateView, tree };
+  // After an edit only a few layers are new objects: bring the previous index up to date instead of listing every
+  // layer again (4 ms per edit on a 40,000-node design). Anything else that changed means a whole new index.
+  let index: TreeIndex | null = null;
+  if (last && !last.index.repeats && last.theme === preview && last.epoch === builder.scriptEpoch && last.libs === libraryEpoch() && last.stateView === stateView) {
+    if (patchTreeIndex(last.index, last.tree.roots, roots)) index = last.index;
+  }
+  if (!index) index = indexTree(roots);
+  const tree = { roots, byKey: index.byKey, parent: index.parent, theme };
+  last = { doc, theme: preview, epoch: builder.scriptEpoch, libs: libraryEpoch(), stateView, tree, index };
   return tree;
 }
 

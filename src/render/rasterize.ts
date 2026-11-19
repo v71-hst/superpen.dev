@@ -3,6 +3,7 @@
 
 import { imagesBusy, imagesIdle, originalOf } from './imageLod';
 import { SOFT } from './pixels';
+import { flushStaleShaders } from './shaders';
 
 const dataUrlCache = new Map<string, Promise<string>>();
 
@@ -214,6 +215,8 @@ async function buildSvg(el: HTMLElement, opts: Omit<RasterOptions, 'format'>) {
     await imagesIdle();
     await new Promise(r => setTimeout(r, 60));
   }
+  // Shader canvases that were off screen when the zoom last changed still hold their old pixels: redraw them first.
+  flushStaleShaders(el);
   const bw = Math.max(1, Math.ceil(el.offsetWidth || el.getBoundingClientRect().width));
   const bh = Math.max(1, Math.ceil(el.offsetHeight || el.getBoundingClientRect().height));
   const m = opts.margin ?? 0;

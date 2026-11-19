@@ -439,6 +439,13 @@ function shapeMask(shape: ShapeSpec | null, w: number, h: number, tw: number, th
 
 /** Live animated shader instances; one requestAnimationFrame loop drives them all. */
 const animated = new Set<ShaderRunner>();
+/** Canvases whose zoom step changed while they were off screen (see setScale). */
+const staleRunners = new Set<ShaderRunner>();
+
+/** Brings stale shader canvases inside `root` up to date, for a screenshot or export of something not on screen. */
+export function flushStaleShaders(root: Element) {
+  for (const r of [...staleRunners]) if (root.contains(r.canvas)) r.catchUp();
+}
 let rafId = 0;
 const t0 = performance.now();
 /** Animation runs at most this often; the canvas keeps the last frame in between. */
@@ -474,6 +481,8 @@ export class ShaderRunner {
   private version = 0;
   private mouse: [number, number] | null = null;
   private visible = true;
+  /** The zoom changed while this canvas was off screen: it re-renders when it comes into view. */
+  private stale = false;
   private io: IntersectionObserver;
   private moveHandler = (e: PointerEvent) => {
     const r = this.canvas.getBoundingClientRect();
@@ -490,6 +499,7 @@ export class ShaderRunner {
   constructor(public canvas: HTMLCanvasElement) {
     this.io = new IntersectionObserver(es => {
       this.visible = es.some(e => e.isIntersecting);
+      if (this.visible) this.catchUp();
       if (this.visible && this.needsAnim && !rafId) rafId = requestAnimationFrame(loop);
     });
     this.io.observe(canvas);
@@ -597,7 +607,22 @@ export class ShaderRunner {
   setScale(scale: number) {
     if (!this.cfg || this.cfg.scale === scale) return;
     this.cfg = { ...this.cfg, scale };
-    if (!this.needsAnim) this.render();
+    if (this.needsAnim) return;
+    // Every shader canvas used to re-render on each zoom step, on screen or not: with many of them that was the
+    // longest frame of a zoom-out. One that is off screen keeps its old pixels until it is seen.
+    if (this.visible) this.render();
+    else {
+      this.stale = true;
+      staleRunners.add(this);
+    }
+  }
+
+  /** Re-renders if the zoom step changed while this canvas was off screen. */
+  catchUp() {
+    if (!this.stale) return;
+    this.stale = false;
+    staleRunners.delete(this);
+    if (!this.needsAnim && !this.disposed) this.render();
   }
 
   hasConfig() {
@@ -654,6 +679,7 @@ export class ShaderRunner {
   dispose() {
     this.disposed = true;
     animated.delete(this);
+    staleRunners.delete(this);
     this.io.disconnect();
     window.removeEventListener('pointermove', this.moveHandler);
   }

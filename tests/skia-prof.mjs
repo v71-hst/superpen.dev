@@ -10,6 +10,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const browser = await puppeteer.launch(launchOptions({ headless: true, protocolTimeout: 600000, args: ['--ignore-gpu-blocklist', '--enable-gpu-rasterization'] }));
 const page = await browser.newPage();
 await page.setViewport({ width: 1400, height: 1000 });
+// PEN_CPU_SLOW=6 runs the page's main thread 6 times slower, to see what a weaker PC would feel (graphics card work is not slowed).
+if (process.env.PEN_CPU_SLOW) {
+  const cdp = await page.createCDPSession();
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: Number(process.env.PEN_CPU_SLOW) });
+  console.log(`processor slowed ${process.env.PEN_CPU_SLOW}x`);
+}
 page.on('pageerror', e => console.log('[pageerror]', String(e).slice(0, 300)));
 await page.evaluateOnNewDocument(p => localStorage.setItem('pen.perfMode', p), perf);
 await page.goto(`${url}${url.includes('?') ? '&' : '?'}renderer=${renderer}`, { waitUntil: 'domcontentloaded', timeout: 180000 });

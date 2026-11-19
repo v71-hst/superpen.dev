@@ -2,7 +2,7 @@
 import type { PenDoc, PenNode, RNode } from './types';
 import { libraryNode } from './libraries';
 import { scaleSubtree } from './scale';
-import { allIds, cloneWithNewIds, displayName, indexDoc, locate, newId } from './doc';
+import { allIds, cloneWithNewIds, displayName, indexDoc, locate, newId, idsAtStart } from './doc';
 import { applyProps, keySource } from '../editor/store';
 import { isGeneratedKey } from './resolve';
 
@@ -78,7 +78,7 @@ function existsKey(d: PenDoc, key: string): boolean {
 /** Applies a batch of operations to a draft document. Throws (leaving nothing applied) on the first invalid one. */
 export function applyOperations(d: PenDoc, ops: Operation[]): { results: OpResult[]; touched: string[] } {
   if (!Array.isArray(ops)) throw new OpError('"operations" must be an array');
-  const ids = allIds(d);
+  const ids = idsAtStart(d);
   const results: OpResult[] = [];
   const touched: string[] = [];
   ops.forEach((o: any, i) => {
