@@ -10,8 +10,8 @@ import { effectList, fillList, isEnabled, linearEndpoints, normalizeStroke, pars
 import { ellipseGeometry, pathGeometry, polygonGeometry } from '../render/geometry';
 import { weightNum } from '../render/fonts';
 import { scriptState } from '../editor/scriptHost';
-import { Scope, own } from './lifetime';
-import { familyList, fontBlocker, fontProvider } from './fonts';
+import { Scope, free, own } from './lifetime';
+import { familyList, fontBlocker, fontEpoch, fontProvider } from './fonts';
 import { getImage } from './images';
 import { iconLibrarySupported, iconPaths } from './icons';
 
@@ -491,11 +491,53 @@ export function textParagraph(ck: CanvasKit, p: any, maxWidth: number | null, fo
   builder.addText(content || '​');
   const para = builder.build();
   builder.delete();
+  layoutParagraph(para, maxWidth);
+  return para;
+}
+
+/** Lays a paragraph out at maxWidth, or (null) on one line per hard break. Re-laying out is much cheaper than building. */
+function layoutParagraph(para: Paragraph, maxWidth: number | null) {
   if (maxWidth === null) {
     para.layout(1e6);
     para.layout(Math.ceil(para.getMaxIntrinsicWidth()) + 1);
   } else para.layout(Math.max(1, maxWidth));
-  return para;
+}
+
+/**
+ * Paragraphs shared by measuring and drawing: one per text node's props (the layout engine asks for several widths,
+ * then the painter draws it), built once and laid out again per width. Least recently used ones are freed; all of them
+ * when a font arrives (glyphs may change).
+ */
+const paragraphs = new Map<object, { para: Paragraph; width: number | null | undefined }>();
+let paragraphFonts = -1;
+const MAX_PARAGRAPHS = 3000;
+
+function sharedParagraph(ck: CanvasKit, p: any, maxWidth: number | null): Paragraph {
+  if (paragraphFonts !== fontEpoch()) {
+    clearParagraphs();
+    paragraphFonts = fontEpoch();
+  }
+  let e = paragraphs.get(p);
+  if (e) paragraphs.delete(p);
+  else {
+    e = { para: own(textParagraph(ck, p, maxWidth), 'paragraph'), width: maxWidth };
+    if (paragraphs.size >= MAX_PARAGRAPHS) {
+      const [k, old] = paragraphs.entries().next().value!;
+      free(old.para);
+      paragraphs.delete(k);
+    }
+  }
+  paragraphs.set(p, e);
+  if (e.width !== maxWidth) {
+    layoutParagraph(e.para, maxWidth);
+    e.width = maxWidth;
+  }
+  return e.para;
+}
+
+export function clearParagraphs() {
+  for (const e of paragraphs.values()) free(e.para);
+  paragraphs.clear();
 }
 
 /** MeasureText for the layout engine, from Skia paragraphs (cached per node props and width). */
@@ -508,11 +550,10 @@ export function skiaMeasureText(ctx: PaintContext) {
     const k = String(maxWidth);
     let v = m.get(k);
     if (!v) {
-      const para = textParagraph(ctx.ck, p, maxWidth);
+      const para = sharedParagraph(ctx.ck, p, maxWidth);
       // The layout engine's contract (src/layout/layout.ts MeasureText): shrink-to-fit width at maxWidth.
       const max = para.getMaxIntrinsicWidth();
       v = { w: maxWidth === null ? max : Math.min(max, Math.max(para.getMinIntrinsicWidth(), maxWidth)), h: para.getHeight() };
-      para.delete();
       m.set(k, v);
     }
     return v;
@@ -534,7 +575,8 @@ function drawText(r: Rec, pn: PaintNode, p: any, _fx: any[]) {
     if (sh) fg.setShader(scope.own(sh, 'shader'));
     else fg.setColor(color(ck, primaryColor(fills) ?? 'transparent'));
   }
-  const para = scope.own(textParagraph(ck, p, growth === 'auto' ? null : pn.w, fg), 'paragraph');
+  const width = growth === 'auto' ? null : pn.w;
+  const para = fg ? scope.own(textParagraph(ck, p, width, fg), 'paragraph') : sharedParagraph(ck, p, width);
   const ph = para.getHeight();
   const dy = p.textAlignVertical === 'middle' ? (pn.h - ph) / 2 : p.textAlignVertical === 'bottom' ? pn.h - ph : 0;
   c.drawParagraph(para, 0, dy);

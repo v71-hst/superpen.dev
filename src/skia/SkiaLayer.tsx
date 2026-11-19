@@ -9,7 +9,13 @@ import { log } from '../editor/diagnostics';
 import { loadKit } from './kit';
 import { failRenderer } from './renderer';
 import { liveObjects } from './lifetime';
-import { drawScene, resetScene, sceneStats, setDrawHooks, setSurfaceReady } from './scene';
+import { drawScene, invalidateScene, resetScene, sceneStats, setDrawHooks, setSurfaceReady } from './scene';
+import { loadBundledFonts, onFontsChanged, fontStats, resetFonts } from './fonts';
+import { onImagesChanged, imageStats, resetImages } from './images';
+import { clearFrames, frameStats, onPictureDropped } from './frames';
+import { dropPictureImages, pictureImageStats, resetPictureImages } from './pictureTextures';
+import { registerPictureGeometry } from './pictureFrames';
+import { clearParagraphs } from './painter';
 
 /** How long a lost context may take to come back before Skia gives up for this session. */
 const RESTORE_TIMEOUT_MS = 5000;
@@ -32,7 +38,7 @@ let requestDraw: () => void = () => {};
 let readPixel: (x: number, y: number) => number[] | null = () => null;
 
 export function skiaStatus() {
-  return { ...state, debugRects: debugRects.length, liveObjects: liveObjects(), overview: sceneStats() };
+  return { ...state, debugRects: debugRects.length, liveObjects: liveObjects(), overview: sceneStats(), pictures: frameStats(), pictureImages: pictureImageStats(), fonts: fontStats(), images: imageStats() };
 }
 
 export function setDebugRects(rects: DebugRect[]) {
@@ -173,10 +179,18 @@ export function SkiaLayer() {
     });
 
     state.surface = 'loading';
+    // Fonts or pictures that frames were waiting for arrived: Roots re-renders, frames re-record their pictures.
+    const offFonts = onFontsChanged(invalidateScene);
+    const offImages = onImagesChanged(invalidateScene);
+    const offDropped = onPictureDropped(dropPictureImages);
+    registerPictureGeometry(true);
     loadKit().then(
-      kit => {
+      async kit => {
         if (disposed) return;
         ck = kit;
+        // Text needs a font file before Skia can draw it; the bundled Inter is the fallback for every family.
+        await loadBundledFonts(kit).catch(e => log('warn', 'Skia: bundled fonts did not load', String(e)));
+        if (disposed) return;
         canvas.width = 0; // forces fitCanvas to size the canvas and build the surface
         fitCanvas();
       },
@@ -185,6 +199,16 @@ export function SkiaLayer() {
 
     return () => {
       disposed = true;
+      offFonts();
+      offImages();
+      offDropped();
+      registerPictureGeometry(false);
+      // Everything Skia holds lives in WebAssembly memory: free it all when the layer goes away.
+      clearFrames();
+      clearParagraphs();
+      resetPictureImages();
+      resetImages();
+      resetFonts();
       cancelAnimationFrame(frame);
       clearTimeout(lostTimer);
       ro.disconnect();

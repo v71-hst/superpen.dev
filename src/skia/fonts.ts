@@ -3,7 +3,7 @@
 // own alias, so a paragraph's family list falls back through the subsets), and Inter bundled with the extension so
 // text always draws. A family that cannot be fetched makes the frames using it fall back to the DOM renderer.
 import type { CanvasKit, TypefaceFontProvider } from 'canvaskit-wasm';
-import { own } from './lifetime';
+import { free, own } from './lifetime';
 import { weightNum } from '../render/fonts';
 
 export const DEFAULT_FAMILY = 'Inter';
@@ -187,6 +187,18 @@ export function fontStats() {
     if (s.status === 'failed') out.failedFamilies.push(k.split('|')[0]);
   }
   return out;
+}
+
+/** Frees the font provider and forgets every registered font (Skia switched off); they load again when needed. */
+export function resetFonts() {
+  if (provider) free(provider);
+  provider = null;
+  families.clear();
+  aliasesByFamily.clear();
+  registeredFiles.clear();
+  bundled = null;
+  bundledStyles.length = 0;
+  changed();
 }
 
 export function kitForFonts() {

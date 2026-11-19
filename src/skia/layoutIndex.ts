@@ -5,36 +5,53 @@ import { currentTree } from '../editor/tree';
 import { useStore } from '../editor/store';
 import { isGeneratedKey } from '../model/resolve';
 import type { RNode } from '../model/types';
-import { layoutAll, matApply, matInvert, worldBounds, type LayoutNode } from '../layout/layout';
+import { layoutAll, matApply, matInvert, worldBounds, type LayoutNode, type MeasureText } from '../layout/layout';
+import { fontEpoch } from './fonts';
 import { canvasMeasureText } from '../layout/measureText';
 import { kitIfLoaded } from './kit';
 import { propsOf, skiaMeasureText } from './painter';
 import { paintContext } from './testing';
 
-let cache: { roots: RNode[]; vars: unknown; kit: unknown; map: Map<string, LayoutNode> } | null = null;
+let measureFor: { ck: unknown; vars: unknown; fonts: number; fn: MeasureText } | null = null;
 
-/** Layout of every top-level frame of the current document (cached per tree; unchanged frames reuse their layout). */
-export function currentLayout(): Map<string, LayoutNode> {
+/**
+ * One text measurer per kit, variables and font epoch: layoutAll caches each frame's layout by measurer identity, so
+ * a stable measurer keeps unchanged frames cached, and a new one after a font loads re-measures their text.
+ */
+function measurer(): MeasureText {
+  const s = useStore.getState();
+  const ck = kitIfLoaded();
+  const fonts = fontEpoch();
+  if (!measureFor || measureFor.ck !== ck || measureFor.vars !== s.doc?.variables || measureFor.fonts !== fonts) {
+    measureFor = { ck, vars: s.doc?.variables, fonts, fn: ck ? skiaMeasureText(paintContext(ck)) : canvasMeasureText(s.doc ?? undefined) };
+  }
+  return measureFor.fn;
+}
+
+/** Layout of one top-level frame, every node indexed by key (computed on demand, cached per frame RNode). */
+export function rootLayout(rootKey: string): Map<string, LayoutNode> | null {
   const tree = currentTree();
   const s = useStore.getState();
-  if (!tree || !s.doc) return new Map();
-  const ck = kitIfLoaded();
-  if (cache && cache.roots === tree.roots && cache.vars === s.doc.variables && cache.kit === ck) return cache.map;
-  const measure = ck ? skiaMeasureText(paintContext(ck)) : canvasMeasureText(s.doc);
-  const roots = layoutAll(tree.roots, measure, { doc: s.doc });
-  // Index every node, not only roots.
-  const map = new Map<string, LayoutNode>();
-  const walk = (n: LayoutNode) => {
-    map.set(n.key, n);
-    n.children.forEach(walk);
-  };
-  roots.forEach(walk);
-  cache = { roots: tree.roots, vars: s.doc.variables, kit: ck, map };
-  return map;
+  const root = tree?.byKey.get(rootKey);
+  if (!root || !s.doc) return null;
+  return layoutAll([root], measurer(), { doc: s.doc });
+}
+
+/** The top-level frame a node belongs to. */
+export function rootOf(key: string): string | null {
+  const tree = currentTree();
+  let k: string | undefined = key;
+  while (k) {
+    const p = tree?.parent.get(k);
+    if (!p) return tree?.byKey.has(k) ? k : null;
+    k = p.key;
+  }
+  return null;
 }
 
 export function layoutOf(key: string): LayoutNode | null {
-  return currentLayout().get(key) ?? null;
+  const r = rootOf(key);
+  return r ? rootLayout(r)?.get(key) ?? null : null;
 }
 
 /** World-space axis-aligned box of a node; groups get the union of their children, as the DOM measure does. */

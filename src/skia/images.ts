@@ -73,6 +73,12 @@ export function trimImages(maxAgeMs = 60_000) {
   }
 }
 
+/** Frees every decoded picture (Skia switched off). */
+export function resetImages() {
+  for (const e of entries.values()) free(e.image);
+  entries.clear();
+}
+
 export function imageStats() {
   let ready = 0, loading = 0, failed = 0, bytes = 0;
   for (const e of entries.values()) {

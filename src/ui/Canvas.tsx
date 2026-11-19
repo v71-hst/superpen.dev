@@ -2,8 +2,9 @@
 import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { NodeView, RenderCtx, type RenderContextValue } from '../render/NodeView';
 import { SkiaLayer } from '../skia/SkiaLayer';
-import { useActiveRenderer } from '../skia/renderer';
+import { activeRenderer, useActiveRenderer } from '../skia/renderer';
 import { elementsAtPoint, nodeChainAtEvent, nodeChainOf as chainFromElement, nodeKeyOf, nodesInScreenRect } from '../editor/measure';
+import { pictureFrameFor, setPictureFrames, type PictureFrame } from '../skia/pictureFrames';
 import { canDraw, overviewOn, setSceneFrames, useSceneVersion, type SceneFrame } from '../skia/scene';
 import { pickAt, colorFromChain } from '../editor/eyedropper';
 import { useStore, keySource, applyProps } from '../editor/store';
@@ -1060,6 +1061,18 @@ function Roots({ tree }: { tree: Tree }) {
   const overview = overviewOn();
   const skiaFrames: SceneFrame[] = [];
   let imageFallbacks = 0;
+  // Stages 3–4: frames Skia draws from their own recorded picture (no DOM inside them, no snapshot needed). In full
+  // mode that's every frame Skia can draw, at any zoom; in overview mode only far frames.
+  const full = activeRenderer() === 'full';
+  const pictureKeys: string[] = [];
+  const pictureRoot = (n: RNode, far: boolean) => {
+    if (!overview) return null;
+    const pf = pictureFrameFor(n);
+    if (!pf) return null;
+    skiaFrames.push({ key: n.key, url: '', x: pf.x, y: pf.y, w: pf.w, h: pf.h, record: pf.record, placeholder: pf.placeholder, token: pf.token });
+    pictureKeys.push(n.key);
+    return <PictureRoot key={n.key} pf={pf} far={far} />;
+  };
   const bitmapRoot = (n: RNode, bm: Bitmap) => {
     if (overview) {
       if (canDraw(bm.url)) {
@@ -1089,11 +1102,25 @@ function Roots({ tree }: { tree: Tree }) {
     // selected, edited or pinned by an agent.
     if (hidden.has(n.key) && !active.has(n.key)) continue;
     if (asleep && !active.has(n.key)) continue;
+    if (full) {
+      const pr = pictureRoot(n, lodOn);
+      if (pr) {
+        byKey.set(n.key, pr);
+        continue;
+      }
+    }
     const eligible = lodEligible(n);
     const bm = eligible ? getBitmap(n.key) : undefined;
     if (near && !near.has(n.key) && !active.has(n.key) && hasFixedSize(n)) {
-      byKey.set(n.key, bm ? bitmapRoot(n, bm) : <PlaceholderRoot key={n.key} n={n} />);
+      byKey.set(n.key, (!full && pictureRoot(n, true)) || (bm ? bitmapRoot(n, bm) : <PlaceholderRoot key={n.key} n={n} />));
       continue;
+    }
+    if (lodOn && !full && !active.has(n.key) && eligible) {
+      const pr = pictureRoot(n, true);
+      if (pr) {
+        byKey.set(n.key, pr);
+        continue;
+      }
     }
     if (!lodOn || active.has(n.key) || !eligible) {
       byKey.set(n.key, live(n, bm));
@@ -1116,7 +1143,11 @@ function Roots({ tree }: { tree: Tree }) {
   mounted.current = nextMounted;
   const docIndex = new Map(tree.roots.map((n, i) => [n.key, i]));
   skiaFrames.sort((a, b) => docIndex.get(a.key)! - docIndex.get(b.key)!);
-  useLayoutEffect(() => setSceneFrames(skiaFrames, imageFallbacks));
+  pictureKeys.sort((a, b) => docIndex.get(a)! - docIndex.get(b)!);
+  useLayoutEffect(() => {
+    setPictureFrames(pictureKeys);
+    setSceneFrames(skiaFrames, imageFallbacks);
+  });
   useEffect(() => {
     for (const k of want) requestBitmap(k);
     if (!deferred) return;
@@ -1147,6 +1178,14 @@ function BitmapRoot({ n, bm, zoom }: { n: RNode; bm: Bitmap; zoom: number }) {
       style={{ position: 'absolute', left: p.x, top: p.y, width: bm.w, height: bm.h, display: 'block', userSelect: 'none' }}
     />
   );
+}
+
+/**
+ * A frame Skia draws from its recorded picture: an empty box that keeps its place for labels and lookups. Far out it
+ * behaves like a snapshot (a click selects the frame); close up, clicks reach its layers through the layout tree.
+ */
+function PictureRoot({ pf, far }: { pf: PictureFrame; far: boolean }) {
+  return <div data-k={pf.key} data-skia data-picture {...(far ? { 'data-bitmap': '' } : {})} style={{ position: 'absolute', left: pf.x, top: pf.y, width: pf.w, height: pf.h }} />;
 }
 
 /** A zoomed-out frame drawn on the Skia canvas: an empty box that keeps its place for selection and lookups. */

@@ -5,15 +5,34 @@
 // A frame is only handed to Skia once its texture is ready and the surface can draw; until then, or if anything
 // fails, Roots keeps showing the snapshot <img>, so a frame is never left with nothing.
 import { useSyncExternalStore } from 'react';
-import type { Canvas as SkCanvas, CanvasKit, Image as SkImage } from 'canvaskit-wasm';
+import type { Canvas as SkCanvas, CanvasKit, Image as SkImage, Paint, SkPicture } from 'canvaskit-wasm';
+import { levelSide, pictureImage } from './pictureTextures';
 import { kitIfLoaded } from './kit';
 import { free, own } from './lifetime';
 import { activeRenderer } from './renderer';
 import { useStore } from '../editor/store';
 import { log } from '../editor/diagnostics';
 
-/** A frame drawn by Skia: its snapshot and where it sits in the world. */
-export type SceneFrame = { key: string; url: string; x: number; y: number; w: number; h: number };
+/**
+ * A frame drawn by Skia: its snapshot (url) or its recorded picture (stages 3–4, url ''), and where it sits in the
+ * world.
+ */
+export type SceneFrame = {
+  key: string;
+  url: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** Picture frames: records (or returns) the picture; until it exists the placeholder colour is shown. */
+  record?: () => SkPicture | null;
+  placeholder?: string;
+  /** Changes with the frame's content. */
+  token?: object;
+};
+
+/** Below this zoom (lod.ts LOD_ZOOM) a picture frame is drawn from a rasterised copy instead of replaying it. */
+const PICTURE_IMAGE_ZOOM = 1 / 3;
 
 type Texture = { state: 'loading' | 'ready' | 'failed'; image: SkImage | null; bytes: number; used: number };
 
@@ -58,6 +77,15 @@ export function overviewOn(): boolean {
   return activeRenderer() !== 'dom';
 }
 
+export function surfaceIsReady() {
+  return surfaceReady;
+}
+
+/** Something a frame's picture depends on changed (a font or picture loaded): Roots re-renders and re-records. */
+export function invalidateScene() {
+  bump();
+}
+
 /** SkiaLayer reports whether it can draw; while it can't (lost context), Roots shows the snapshot images. */
 export function setSurfaceReady(ready: boolean) {
   if (ready === surfaceReady) return;
@@ -85,7 +113,7 @@ export function setSceneFrames(next: SceneFrame[], imageFallbacks: number) {
     const t = textures.get(f.url);
     if (t) t.used = now;
   }
-  const same = next.length === frames.length && next.every((f, i) => { const o = frames[i]; return o.key === f.key && o.url === f.url && o.x === f.x && o.y === f.y && o.w === f.w && o.h === f.h; });
+  const same = next.length === frames.length && next.every((f, i) => { const o = frames[i]; return o.key === f.key && o.url === f.url && o.token === f.token && o.x === f.x && o.y === f.y && o.w === f.w && o.h === f.h; });
   frames = next;
   // Draw right away so the canvas changes in the same frame as the <img> elements it replaces. Roots re-renders
   // often (zoom steps, frames going live a few at a time); an unchanged list needs no redraw (view changes redraw
@@ -179,14 +207,44 @@ function evict() {
 export function drawScene(c: SkCanvas, ck: CanvasKit, visible: { x: number; y: number; w: number; h: number }) {
   if (!frames.length) return;
   const now = performance.now();
+  const zoom = useStore.getState().view.zoom;
+  // Recording a frame's picture, and rasterising it for far zoom, cost a few ms each: spend at most ~12 ms per draw on
+  // that work, draw the rest from what exists (a recorded picture, or the frame's colour), then draw again.
+  const until = performance.now() + 12;
+  let more = false;
+  let placeholderPaint: Paint | null = null;
   for (const f of frames) {
     if (f.x > visible.x + visible.w || f.x + f.w < visible.x || f.y > visible.y + visible.h || f.y + f.h < visible.y) continue;
+    if (f.record) {
+      const pic = performance.now() < until || zoom >= PICTURE_IMAGE_ZOOM ? f.record() : null;
+      if (!pic) {
+        // Not recorded yet: the frame's own colour for a moment, never nothing.
+        placeholderPaint ??= new ck.Paint();
+        placeholderPaint.setColor(ck.parseColorString(f.placeholder ?? 'rgba(128,128,128,0.12)'));
+        c.drawRect(ck.XYWHRect(f.x, f.y, f.w, f.h), placeholderPaint);
+        more = true;
+        continue;
+      }
+      let img: SkImage | null = null;
+      if (zoom < PICTURE_IMAGE_ZOOM) {
+        const side = levelSide(Math.max(f.w, f.h), zoom, devicePixelRatio || 1);
+        img = pictureImage(ck, f.key, pic, f, side, performance.now() < until);
+        if (!img) more = true;
+      }
+      if (img) {
+        const k = Math.max(f.w, f.h) / Math.max(img.width(), img.height());
+        c.drawImageRectOptions(img, ck.XYWHRect(0, 0, img.width(), img.height()), ck.XYWHRect(f.x, f.y, img.width() * k, img.height() * k), ck.FilterMode.Linear, ck.MipmapMode.Linear, null);
+      } else c.drawPicture(pic);
+      continue;
+    }
     const t = textures.get(f.url);
     if (!t?.image) continue;
     t.used = now;
     const img = t.image;
     c.drawImageRectOptions(img, ck.XYWHRect(0, 0, img.width(), img.height()), ck.XYWHRect(f.x, f.y, f.w, f.h), ck.FilterMode.Linear, ck.MipmapMode.Linear, null);
   }
+  placeholderPaint?.delete();
+  if (more) setTimeout(() => hooks.requestDraw(), 0);
 }
 
 /** Throws away every texture (new file, or Skia switched off). */

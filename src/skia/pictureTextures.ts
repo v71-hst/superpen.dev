@@ -33,13 +33,14 @@ export function levelSide(size: number, zoom: number, dpr: number) {
  * The picture rasterised so its longest side is `side` px (bounds: the frame's world box), or null if it can't be
  * made. Rasterising happens synchronously the first time; callers draw it scaled into the frame's box.
  */
-export function pictureImage(ck: CanvasKit, key: string, picture: SkPicture, bounds: { x: number; y: number; w: number; h: number }, side: number): SkImage | null {
+export function pictureImage(ck: CanvasKit, key: string, picture: SkPicture, bounds: { x: number; y: number; w: number; h: number }, side: number, create = true): SkImage | null {
   const id = `${key}@${side}`;
   const hit = entries.get(id);
   if (hit && hit.picture === picture) {
     hit.used = performance.now();
     return hit.image;
   }
+  if (!create) return null;
   if (hit) drop(id, hit);
   const k = side / Math.max(bounds.w, bounds.h, 1);
   const w = Math.max(1, Math.ceil(bounds.w * k)), h = Math.max(1, Math.ceil(bounds.h * k));
@@ -80,12 +81,13 @@ function evict() {
   }
 }
 
-/** Forgets the images of frames whose picture changed or that are gone. */
-export function prunePictureImages(live: Map<string, SkPicture>) {
-  for (const [id, e] of entries) {
-    const key = id.slice(0, id.lastIndexOf('@'));
-    if (live.get(key) !== e.picture) drop(id, e);
-  }
+/** Forgets a frame's images (its picture was re-recorded or the frame is gone). */
+export function dropPictureImages(key: string) {
+  for (const [id, e] of entries) if (id.slice(0, id.lastIndexOf('@')) === key) drop(id, e);
+}
+
+export function resetPictureImages() {
+  for (const [id, e] of entries) drop(id, e);
 }
 
 export function pictureImageStats() {
