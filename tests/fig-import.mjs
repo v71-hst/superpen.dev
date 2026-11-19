@@ -1,6 +1,6 @@
 // Figma import check: converts .fig files (or saved Figma clipboard HTML) with src/import/figma and verifies the result.
 //
-//   node tests/fig-import.mjs [--out <folder>] [--page <name>] [--all-pages] [--sections frames] <file.fig | file.html> [more files]
+//   node tests/fig-import.mjs [--out <folder>] [--page <name>] [--all-pages] [--sections flatten] <file.fig | file.html> [more files]
 //
 // For each file it prints the pages, node counts by type, the number of images and the warnings, checks the
 // invariants below, and writes <out>/<file name>/<file name>.spen (plus images/) to open in the editor.
@@ -27,7 +27,7 @@ for (let i = 0; i < args.length; i++) {
   else files.push(args[i]);
 }
 if (!files.length) {
-  console.error('usage: node tests/fig-import.mjs [--out <folder>] [--page <name>] [--all-pages] [--sections frames] <file.fig | clipboard.html> [more files]');
+  console.error('usage: node tests/fig-import.mjs [--out <folder>] [--page <name>] [--all-pages] [--sections flatten] <file.fig | clipboard.html> [more files]');
   process.exit(2);
 }
 

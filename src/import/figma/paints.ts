@@ -154,7 +154,8 @@ function imageFill(p: any, ctx: PaintCtx): any | null {
     default:
       break; // FILL
   }
-  if (num(p.rotation, 0)) ctx.notes.add('rotated image fills (rotation dropped)');
+  // Figma turns an image fill in quarter turns (stored in degrees; 360 is a full turn).
+  if (Math.abs(((num(p.rotation, 0) % 360) + 360) % 360) > 0.01) ctx.notes.add('image fills turned by 90° / 180° / 270° (drawn unturned)');
   ctx.images.push({ fill: out, hash: hash || `blob${blob}`, blob });
   return out;
 }

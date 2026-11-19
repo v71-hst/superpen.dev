@@ -14,22 +14,28 @@
 import type { PenNode } from '../../model/types';
 import { figmaClipboard, figmaClipboardMeta, isFigFile, readArchiveFiles, readClipboard, readFig, type FigData } from './container';
 import { convertNode, isConvertible, newContext, r2 } from './convert';
-import type { ImageUse } from './paints';
+import { colorHex, type ImageUse } from './paints';
 import { buildScene, type FNode, type Scene } from './scene';
 import { modeScope, type ModeScope } from './styles';
 
 export { figmaClipboard, figmaClipboardMeta, isFigFile };
 
 export type FigmaImport = {
-  /** Top-level .pen nodes: one per top-level layer of the chosen page, positioned with x/y as in Figma. */
+  /**
+   * Top-level .pen nodes: one per top-level layer of the chosen page, positioned with x/y as in Figma. For the
+   * clipboard: the copied layers, moved so that the top-left one starts at 0,0.
+   */
   nodes: PenNode[];
   /** Image files to write next to the design: relative path ("images/<hash>.png") -> bytes. Image fills point at these with "./images/<hash>.png". */
   images: { path: string; bytes: Uint8Array }[];
-  /** Every page of the file, with the number of top-level layers that can be imported from it. */
-  pages: { name: string; frames: number }[];
+  /**
+   * Every page of the file, with the number of top-level layers that can be imported from it and the page's
+   * canvas colour in Figma (loose dark text was drawn on that, which matters on a dark canvas).
+   */
+  pages: { name: string; frames: number; background?: string }[];
   /** The page `nodes` came from (undefined for the clipboard). */
   page?: string;
-  /** Figma sections of the page: their frames are top-level nodes here, listed by id. */
+  /** With `sections: "flatten"`: the Figma sections of the page, each with the ids of its (now top-level) frames. */
   sections: { name: string; frames: string[] }[];
   /** Human-readable notes on anything that could not be converted exactly (counted by kind, not one line per node). */
   warnings: string[];
@@ -39,10 +45,11 @@ export type FigmaImportOptions = {
   /** Page to import, by name or by index in `pages`. Default: the first page that has something on it. */
   page?: string | number;
   /**
-   * What to do with Figma sections. "flatten" (default) makes the frames inside a section top-level nodes and
-   * lists the section in `sections`; "frames" keeps each section as one big frame around its contents.
+   * What to do with Figma sections. "frames" (default) keeps each section as a frame around its contents, which
+   * looks like Figma. "flatten" drops the section's own box and makes the layers inside it top-level nodes,
+   * listing the section in `sections` (for editors that have sections of their own).
    */
-  sections?: 'flatten' | 'frames';
+  sections?: 'frames' | 'flatten';
   /** For tests: adds `figmaBox: [x, y, width, height]` (Figma's own numbers) to every node. */
   debug?: boolean;
 };
@@ -120,8 +127,12 @@ function topLevel(scene: Scene, page: FNode, flatten: boolean): TopLevel[] {
 function convert(data: FigData, opts: FigmaImportOptions, fromClipboard: boolean): FigmaImport {
   const notes = new NoteList();
   const scene = buildScene(data.message, data.fields);
-  const flatten = opts.sections !== 'frames';
-  const pages = scene.pages.map(p => ({ name: String(p.name ?? ''), frames: topLevel(scene, p, flatten).length }));
+  const flatten = opts.sections === 'flatten';
+  const pages = scene.pages.map(p => {
+    const page: FigmaImport['pages'][number] = { name: String(p.name ?? ''), frames: topLevel(scene, p, flatten).length };
+    if (p.backgroundColor && p.backgroundEnabled !== false) page.background = colorHex(p.backgroundColor, typeof p.backgroundOpacity === 'number' ? p.backgroundOpacity : 1);
+    return page;
+  });
 
   let chosen: FNode[];
   let pageName: string | undefined;
@@ -159,6 +170,16 @@ function convert(data: FigData, opts: FigmaImportOptions, fromClipboard: boolean
         if (!list) sections.set(t.section, (list = []));
         list.push(pen.id);
       }
+    }
+  }
+  if (fromClipboard && nodes.length) {
+    // A copy keeps the page coordinates it was made at. Move it so that its top-left corner is at 0,0: whoever
+    // pastes it decides where it goes.
+    const left = Math.min(...nodes.map(n => (typeof n.x === 'number' ? n.x : 0)));
+    const top = Math.min(...nodes.map(n => (typeof n.y === 'number' ? n.y : 0)));
+    for (const n of nodes) {
+      n.x = r2((typeof n.x === 'number' ? n.x : 0) - left);
+      n.y = r2((typeof n.y === 'number' ? n.y : 0) - top);
     }
   }
   const images = resolveImages(ctx.images, data, scene, notes);

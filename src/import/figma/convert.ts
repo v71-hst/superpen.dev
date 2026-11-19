@@ -107,7 +107,11 @@ function base(n: FNode, type: string, parentLayout: Layout, ctx: ConvertCtx, box
   if (n.visible === false) pen.enabled = false;
   if (n.mask === true) {
     pen.mask = true;
-    if (n.maskType === 'LUMINANCE') ctx.notes.add('luminance masks (treated as ordinary masks)');
+    if (n.maskType === 'LUMINANCE') {
+      // Not something the editor draws differently yet; kept so that it can.
+      pen.maskType = 'luminance';
+      ctx.notes.add('luminance masks (marked maskType: "luminance"; drawn as ordinary masks)');
+    }
   }
   if (blendName(n.blendMode)) ctx.notes.add('layer blend modes (drawn as normal)');
   if (ctx.debug) pen.figmaBox = [num(n.transform?.m02), num(n.transform?.m12), num(n.size?.x), num(n.size?.y)];
@@ -130,8 +134,9 @@ function sizing(n: FNode, pen: PenNode, parentLayout: Layout, hugW = false, hugH
   pen.height = height;
 }
 
-function cornerRadius(n: FNode): number | number[] | undefined {
+function cornerRadius(n: FNode, ctx: ConvertCtx): number | number[] | undefined {
   const all = num(n.cornerRadius);
+  if (num(n.cornerSmoothing) > 0 && (all > 0 || n.rectangleCornerRadiiIndependent === true)) ctx.notes.add('smoothed ("iOS") corners (drawn as plain rounded corners)');
   if (n.rectangleCornerRadiiIndependent === true) {
     const r = [n.rectangleTopLeftCornerRadius, n.rectangleTopRightCornerRadius, n.rectangleBottomRightCornerRadius, n.rectangleBottomLeftCornerRadius].map(v => r2(Math.max(0, num(v))));
     if (r.some(v => v !== r[0])) return r;
@@ -211,6 +216,22 @@ function paddingOf(n: FNode, perSide: boolean): [number, number, number, number]
   return [r2(top + extra[0]), r2(right + extra[1]), r2(bottom + extra[2]), r2(left + extra[3])];
 }
 
+function turned(n: FNode): boolean {
+  const t = n.transform ?? {};
+  return Math.abs(num(t.m01, 0)) > 1e-3 || Math.abs(num(t.m10, 0)) > 1e-3 || (num(t.m00, 1) < 0 && num(t.m11, 1) < 0);
+}
+
+/** True when the children that auto layout places follow each other along the main axis without starting a new line. */
+function onOneLine(kids: FNode[], horizontal: boolean): boolean {
+  let end = -Infinity;
+  for (const k of kids) {
+    const start = num(horizontal ? k.transform?.m02 : k.transform?.m12);
+    if (start < end - 0.5) return false;
+    end = Math.max(end, start + num(horizontal ? k.size?.x : k.size?.y) * 0.5);
+  }
+  return true;
+}
+
 const JUSTIFY: Record<string, string> = { CENTER: 'center', MAX: 'end', SPACE_EVENLY: 'space_between', SPACE_BETWEEN: 'space_between' };
 const ALIGN_ITEMS: Record<string, string> = { CENTER: 'center', MAX: 'end' };
 
@@ -218,7 +239,8 @@ function container(n: FNode, parentLayout: Layout, ctx: ConvertCtx, depth: numbe
   const w = num(n.size?.x), h = num(n.size?.y);
   const kids = expanded ? expanded.children : n.kids;
   const master = expanded ? expanded.master : null;
-  if (expanded && num(n.symbolData?.uniformScaleFactor, 1) !== 1) ctx.notes.add('instances scaled with the Scale tool (text and stroke sizes may be off)');
+  // A .fig file stores the scaled font sizes, stroke widths and so on of a scaled instance; the clipboard does not.
+  if (expanded && num(n.symbolData?.uniformScaleFactor, 1) !== 1 && !(Array.isArray(n.derivedSymbolData) && n.derivedSymbolData.length)) ctx.notes.add('pasted instances scaled with the Scale tool (text and stroke sizes inside are not scaled)');
 
   if (isGroup(n) && !mirrored(n)) {
     const pen = base(n, 'group', parentLayout, ctx, 0, 0);
@@ -232,7 +254,12 @@ function container(n: FNode, parentLayout: Layout, ctx: ConvertCtx, depth: numbe
 
   let layout: Layout = 'none';
   if (n.stackMode === 'HORIZONTAL' || n.stackMode === 'VERTICAL') {
-    if (n.stackWrap === 'WRAP') ctx.notes.add('wrapping auto layout (children placed at fixed positions instead)');
+    const flow = kids.filter(k => k.visible !== false && k.stackPositioning !== 'ABSOLUTE');
+    // Figma lays out a rotated child by the box around it; a .pen layout would use its unrotated box.
+    if (flow.some(turned)) ctx.notes.add('auto layout with rotated children (children placed at fixed positions instead)');
+    // .pen layouts do not wrap. A wrapping layout whose children all fit on one line looks the same without
+    // wrapping; one that really wraps keeps its children where Figma put them.
+    else if (n.stackWrap === 'WRAP' && !onOneLine(flow, n.stackMode === 'HORIZONTAL')) ctx.notes.add('wrapping auto layout with more than one line (children placed at fixed positions instead)');
     else layout = n.stackMode === 'HORIZONTAL' ? 'horizontal' : 'vertical';
   } else if (n.stackMode === 'GRID') {
     ctx.notes.add('grid auto layout (children placed at fixed positions instead)');
@@ -261,7 +288,7 @@ function container(n: FNode, parentLayout: Layout, ctx: ConvertCtx, depth: numbe
   }
 
   if (n.type !== 'SECTION' && n.frameMaskDisabled !== true && !isGroup(n)) pen.clip = true;
-  const radius = cornerRadius(n);
+  const radius = cornerRadius(n, ctx);
   if (radius !== undefined) pen.cornerRadius = radius;
 
   let fill = convertPaints(n.fillPaints, w, h, ctx);
@@ -304,7 +331,7 @@ function rectangle(n: FNode, parentLayout: Layout, ctx: ConvertCtx): PenNode {
   const w = num(n.size?.x), h = num(n.size?.y);
   const pen = base(n, 'rectangle', parentLayout, ctx, w, h);
   sizing(n, pen, parentLayout);
-  const radius = cornerRadius(n);
+  const radius = cornerRadius(n, ctx);
   if (radius !== undefined) pen.cornerRadius = radius;
   const fill = convertPaints(n.fillPaints, w, h, ctx);
   if (fill !== undefined) pen.fill = fill;
@@ -313,21 +340,57 @@ function rectangle(n: FNode, parentLayout: Layout, ctx: ConvertCtx): PenNode {
   return pen;
 }
 
-function ellipse(n: FNode, parentLayout: Layout, ctx: ConvertCtx): PenNode {
+/** The box around a .pen ellipse arc (angles in degrees, counter-clockwise from 3 o'clock), by sampling it. */
+function arcBox(w: number, h: number, inner: number, start: number, sweep: number) {
+  const box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+  const add = (deg: number, k: number) => {
+    const a = (deg * Math.PI) / 180;
+    const x = w / 2 + (w / 2) * k * Math.cos(a), y = h / 2 - (h / 2) * k * Math.sin(a);
+    box.x0 = Math.min(box.x0, x);
+    box.x1 = Math.max(box.x1, x);
+    box.y0 = Math.min(box.y0, y);
+    box.y1 = Math.max(box.y1, y);
+  };
+  for (let i = 0; i <= 90; i++) {
+    add(start + (sweep * i) / 90, 1);
+    add(start + (sweep * i) / 90, inner);
+  }
+  return box;
+}
+
+function ellipse(n: FNode, parentLayout: Layout, ctx: ConvertCtx, depth: number): PenNode | null {
   const w = num(n.size?.x), h = num(n.size?.y);
-  const pen = base(n, 'ellipse', parentLayout, ctx, w, h);
-  sizing(n, pen, parentLayout);
   const arc = n.arcData;
+  const inner = arc ? Math.max(0, Math.min(1, num(arc.innerRadius))) : 0;
+  let startAngle: number | undefined, sweepAngle: number | undefined;
   if (arc) {
-    const inner = num(arc.innerRadius);
-    if (inner > 0) pen.innerRadius = Math.min(1, Math.round(inner * 10000) / 10000);
     const start = num(arc.startingAngle), end = num(arc.endingAngle, Math.PI * 2);
     const sweep = end - start;
     if (Math.abs(Math.abs(sweep) - Math.PI * 2) > 1e-3) {
       // Figma measures clockwise on screen, .pen counter-clockwise; both start at 3 o'clock.
-      pen.startAngle = r2((-start * 180) / Math.PI);
-      pen.sweepAngle = r2((-sweep * 180) / Math.PI);
+      startAngle = r2((-start * 180) / Math.PI);
+      sweepAngle = r2((-sweep * 180) / Math.PI);
+      // When the file has the arc's outline, make sure the .pen arc covers the same box; if it does not, the
+      // outline itself is used (as a path), so the picture is right either way.
+      let stored: { x0: number; y0: number; x1: number; y1: number } | null = null;
+      for (const g of Array.isArray(n.fillGeometry) ? n.fillGeometry : []) {
+        const b = commandsToPath(ctx.scene.blobs[g?.commandsBlob])?.box;
+        if (b) stored = stored ? { x0: Math.min(stored.x0, b.x0), y0: Math.min(stored.y0, b.y0), x1: Math.max(stored.x1, b.x1), y1: Math.max(stored.y1, b.y1) } : { ...b };
+      }
+      if (stored) {
+        const mine = arcBox(w, h, inner, startAngle, sweepAngle);
+        const tol = Math.max(0.5, Math.max(w, h) * 0.08);
+        const same = Math.abs(mine.x0 - stored.x0) <= tol && Math.abs(mine.y0 - stored.y0) <= tol && Math.abs(mine.x1 - stored.x1) <= tol && Math.abs(mine.y1 - stored.y1) <= tol;
+        if (!same) return shape(n, parentLayout, ctx, depth);
+      }
     }
+  }
+  const pen = base(n, 'ellipse', parentLayout, ctx, w, h);
+  sizing(n, pen, parentLayout);
+  if (inner > 0) pen.innerRadius = Math.round(inner * 10000) / 10000;
+  if (startAngle !== undefined) {
+    pen.startAngle = startAngle;
+    pen.sweepAngle = sweepAngle;
   }
   const fill = convertPaints(n.fillPaints, w, h, ctx);
   if (fill !== undefined) pen.fill = fill;
@@ -347,15 +410,20 @@ function line(n: FNode, parentLayout: Layout, ctx: ConvertCtx): PenNode {
 
 type Piece = { d: string; evenodd: boolean; paints: any; strokeOnly?: boolean };
 
-/** True when a stroke can be drawn by the editor itself (a centred line with plain ends), instead of as an outline. */
-function plainStroke(n: FNode): boolean {
+/**
+ * True when a stroke can be drawn by the editor itself (a centred line with plain ends), instead of as an outline.
+ * `alongNetwork`: the line would be the vector network's own, which has sharp corners and no per-point styles.
+ */
+function plainStroke(n: FNode, alongNetwork: boolean): boolean {
   if (n.strokeAlign !== undefined && n.strokeAlign !== 'CENTER') return false;
   if (n.strokeCap !== undefined && n.strokeCap !== 'NONE' && !CAP[n.strokeCap]) return false;
   if (Array.isArray(n.dashPattern) && n.dashPattern.some((v: any) => num(v) > 0)) return false;
-  if (num(n.cornerRadius) > 0) return false;
   if (n.strokeBrushGuid || n.brushType || (Array.isArray(n.variableWidthPoints) && n.variableWidthPoints.length)) return false;
-  for (const s of n.vectorData?.styleOverrideTable ?? []) {
-    if (s && (s.strokeCap !== undefined || num(s.cornerRadius) > 0 || s.strokeWeight !== undefined || s.strokePaints !== undefined)) return false;
+  if (alongNetwork) {
+    if (num(n.cornerRadius) > 0) return false;
+    for (const s of n.vectorData?.styleOverrideTable ?? []) {
+      if (s && (s.strokeCap !== undefined || num(s.cornerRadius) > 0 || s.strokeWeight !== undefined || s.strokePaints !== undefined)) return false;
+    }
   }
   return true;
 }
@@ -397,8 +465,8 @@ function shape(n: FNode, parentLayout: Layout, ctx: ConvertCtx, depth: number): 
     else if (network) {
       fills = networkFills(network).map(f => ({ d: f.d, evenodd: f.evenodd, paints: fillPaintsFor(f.style) }));
       outline = networkOutline(network);
-      // A network without regions still fills the shapes its closed lines make.
-      if (!fills.length && outline.d && outline.allClosed) fills = [{ d: outline.d, evenodd: false, paints: n.fillPaints }];
+      // A network without regions still fills the shapes its lines make (an open line is closed for filling).
+      if (!fills.length && outline.d) fills = [{ d: outline.d, evenodd: false, paints: n.fillPaints }];
     } else if (n.type === 'BOOLEAN_OPERATION') {
       ctx.notes.add('boolean operations without a stored outline (their shapes are kept as a group)');
       const pen = base(n, 'group', parentLayout, ctx, 0, 0);
@@ -416,7 +484,7 @@ function shape(n: FNode, parentLayout: Layout, ctx: ConvertCtx, depth: number): 
   let strokeOnPath: string | null = null; // draw the stroke with the editor's own stroke, along this path
   let strokeOutline: Piece[] = [];
   if (stroked) {
-    const plain = plainStroke(n);
+    const plain = plainStroke(n, n.type === 'VECTOR');
     if (plain && n.type !== 'VECTOR' && fills.length === 1) {
       strokeOnPath = fills[0].d; // the shape's own outline is the line the stroke follows
     } else if (plain && network && (outline ??= networkOutline(network)).d) {
@@ -534,7 +602,7 @@ function convertKind(n: FNode, parentLayout: Layout, ctx: ConvertCtx, depth: num
     case 'ROUNDED_RECTANGLE':
       return rectangle(n, parentLayout, ctx);
     case 'ELLIPSE':
-      return ellipse(n, parentLayout, ctx);
+      return ellipse(n, parentLayout, ctx, depth);
     case 'LINE':
       return line(n, parentLayout, ctx);
     case 'VECTOR':
