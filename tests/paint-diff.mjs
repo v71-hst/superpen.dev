@@ -16,9 +16,12 @@ const browser = await puppeteer.launch(launchOptions({ headless: true, protocolT
 const page = await browser.newPage();
 await page.setViewport({ width: 1600, height: 1000 });
 page.on('pageerror', e => console.log('[pageerror]', String(e).slice(0, 300)));
-await page.goto(url, { waitUntil: 'networkidle2', timeout: 180000 });
+// Not networkidle: pages with shaders or many fonts may never go quiet. Then give the DOM renderer time to load its
+// picture fills, or the first reference screenshots miss them.
+await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 180000 });
 await page.waitForSelector('#pen-world [data-k]', { timeout: 180000 });
-await new Promise(r => setTimeout(r, 2000));
+await page.waitForFunction(() => window.__penSkia && window.__penAgent, { timeout: 60000 });
+await new Promise(r => setTimeout(r, 8000));
 const keys = await page.evaluate(n => window.__penStore.getState().doc.children.filter(c => c.enabled !== false && c.type !== 'note' && c.type !== 'prompt' && c.type !== 'context').slice(0, n).map(c => c.id), Number(maxArg));
 const rows = [];
 for (const key of keys) {
@@ -27,7 +30,7 @@ for (const key of keys) {
       const s = window.__penStore.getState();
       const f = s.doc.children.find(c => c.id === key);
       s.setView({ x: 40 - (f.x ?? 0), y: 40 - (f.y ?? 0), zoom: 1 });
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise(r => setTimeout(r, 1500));
       const ref = await window.__penAgent('screenshot', { id: key, scale: 1, max_size: 4000 });
       let skia;
       try {

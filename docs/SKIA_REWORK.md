@@ -319,6 +319,7 @@ to run, what to look at. The owner builds and installs with `npm run package` an
 |---|---|---|---|
 | 2026-11-13 | Plan | Written | Nothing built. `main` is at 0.3.1. Tests moved from the owner's PC into `tests/`. Next: stage 0. |
 | 2026-11-18 | 0 | Done (cloud) | See the stage 0 notes below. Next: stage 1 (and the owner's `dom` baseline benchmark, below). |
+| 2026-11-19 | 1–4 | Done (cloud) | Owner asked for every stage at once; gates 1–3 become one check on the PC. See the stages 1–4 notes below. Next: the owner's combined gate, then stage 5 on their say-so. |
 
 ### 2026-11-18, stage 0 notes
 
@@ -376,3 +377,121 @@ For the owner (no gate yet; this records the `dom` baseline gate 1 will compare 
    `localStorage.setItem('pen.renderer','overview')`, Reload Window, then ask Claude for `diagnose_editor`:
    `renderer.skia.surface` should be `ready`. Nothing looks different yet. Set it back with
    `localStorage.removeItem('pen.renderer')`.
+
+### 2026-11-19, stages 1–4 notes
+
+**Decision (owner, 2026-11-18):** build stages 1–4 in one go in the cloud and test everything at once on the PC,
+instead of stopping at gates 1 and 2. So gates 1–3 are now one combined check on the owner's PC (steps at the end).
+`dom` stays the default; nothing here changes behaviour unless `pen.renderer` is set. Stage 5 (UI switch, default flip,
+cleanup) still waits for the owner's say-so.
+
+How it was built: three parallel workers (stage 1, stage 2a/2b, stage 2c) in separate worktrees, merged into
+`skia-rework`; stages 3 and 4 on top. Commits are on the branch; the merge commits name each stage.
+
+**Stage 1 (overview).** `src/skia/scene.ts`: Roots registers zoomed-out frames; each snapshot lod.ts makes becomes one
+mipmapped texture (LRU budget 256 MB, 128 MB in performance mode); an empty `<div data-k data-bitmap data-skia>`
+keeps the frame's place. Snapshot `<img>` whenever a texture isn't ready, failed, or the surface is lost. Scaled
+snapshot copies and the halving re-raster are skipped in overview. `?renderer=` URL knob in test builds only.
+
+**Stage 2a/2b (layout).** `src/layout/layout.ts` (+ `measureText.ts`): the format's flexbox subset in TypeScript, API as
+planned plus an optional `{ doc }` (props hold unresolved `$variables`). `MeasureText` contract: `w` is shrink-to-fit
+`min(max-content, max(min-content, maxWidth))`. Chrome behaviours reproduced (found by the diff): auto-width rows give
+fill items their max-content then share free space; fill-height items in auto columns are 0 tall; `space_around` with
+negative free space starts at the beginning; flexed sizes floor to 1/64 px; absolute auto widths shrink to fit.
+`tests/layout-diff.mjs`: **0 offenders** (0.5 px) on features.pen (14 nodes), new `fixtures/layout.pen` (254),
+showcase.spen (279), make-big 40 frames (5,000) and 320 frames (40,384). `layoutAll` on 40,384 nodes: 122 ms cold,
+5 ms cached (container).
+
+**Stage 2c (measure seam).** `src/editor/measure.ts`: every node-geometry and `[data-k]` lookup behind one module;
+`ops.ts` keeps `elFor`/`worldRectOf`/`screenRectOf`/`canvasRect`/`clientToWorld` as aliases. Still DOM on purpose:
+culling's own root rects, lod's off-screen staging host, rasterize clones, diagnostics, Present, ShaderLayer internals.
+
+**Stage 3 (painter).** `src/skia/painter.ts` mirrors NodeView/paint.ts: fills (last on top; colour, linear, radial —
+CSS rules on boxes, SVG rules with rotation on shapes —, angular, the mesh approximation, image cover/contain/stretch,
+blend modes isolated per box), corner radii, outer/inset box-shadows, background blur, clip, opacity layers, outline
+and masked strokes, shapes (ellipse/polygon/path/line, fill rules, inner/centre/outer strokes, caps, joins), Lucide and
+Feather icons as paths (`icons.ts`), notes, text via paragraphs. Decisions:
+- Filter drop-shadows (groups, shapes, icons) use sigma = blur / 4, because the DOM renderer passes blur / 2 to CSS
+  `drop-shadow()` (whose value is a radius): matching today's look won over the plan's "sigma = blur / 2" here. Box and
+  text shadows and blur effects are blur / 2.
+- Fonts (`fonts.ts`): CanvasKit 0.42 reads WOFF2, so Google Fonts CSS is used as browsers get it. Every weight/style of
+  a family is registered under its own alias (Google's static instances can all report the same weight, which made
+  Skia draw 400 text with an 800 file). Family list: exact style, then the bundled Inter at the nearest weight, then
+  other weights only for missing glyphs. Inter 400–800 + 400 italic (latin, `@fontsource/inter` 5.3.0, 120 KB) ship
+  with the extension. All unicode subsets of a weight are fetched (could be lazier).
+- Paragraphs: rounding hack off; `line-height: normal` = the font's rounded ascent + descent, as Chrome computes it
+  (Skia's default was ~0.6 px short per line). One paragraph per text node, shared by measuring and drawing.
+- Pictures (`images.ts`): decoded once at the snapshot size cap (2048, 1024 in performance mode), CPU-side.
+- `skiaEligible()` keeps a whole top-level frame on the DOM renderer for: shader fills/effects, script nodes not `ok`,
+  browser nodes, icon fonts (Material Symbols, Phosphor), system fonts, fonts or pictures still loading, unknown node
+  types. `diagnose_editor` → `renderer.skia.pictures.reasons` counts them.
+- `tests/paint-diff.mjs` (frame by frame, Skia vs the DOM screenshot, `compare()` from imageTools):
+  features.pen 2/2 frames 100 % (boxes from the DOM and from the layout engine); showcase Components 99.99 %;
+  showcase page 94.8 % (DOM boxes) / 93.3 % (engine) — the gap is the two GPU-shader areas, and that frame stays on
+  the DOM renderer anyway (reason "shader fill"); make-big, 20 frames, engine layout: 100 % average, 20/20 ≥ 95 %.
+
+**Stage 4 (full).** With `pen.renderer=full`, every frame Skia can draw gets an empty `<div data-k data-skia
+data-picture>` and is drawn from its recorded picture at any zoom (`pictureFrames.ts`); below 33 % zoom from a copy
+rasterised once per zoom level (`pictureTextures.ts`, 192 MB budget). Pictures are recorded only when drawn, ~12 ms of
+recording per draw, the frame's colour shown meanwhile. Layout is computed per frame on demand. `measure.ts` gets
+runtime hooks (`setSkiaGeometry`): rects, sizes and the node chain under the pointer come from the layout tree
+(draw order, clipping, rotation); DOM-drawn frames and overlays still win. Simplifications against the plan:
+- Text editing, agent screenshots/exports (the frame is pinned live), AI Pen replay, shaders and browser nodes make the
+  whole frame DOM while they apply, instead of a DOM overlay or a texture inside a Skia frame.
+- Prototype playback (Present) keeps its own DOM, as before.
+- Everything Skia holds (pictures, paragraphs, textures, fonts, decoded pictures) is freed when the layer goes away.
+
+Tests (container, Chromium 1243 headless, software GL, own dev server restarted after edits):
+
+| Suite | dom | overview | full |
+|---|---|---|---|
+| errs (showcase) | 0 errors | 0 errors | 0 errors |
+| features | 20/20 | 20/20 | 20/20 |
+| aipen | 16/16 | 16/16 | 16/16 |
+| drawcheck | 7/7 | 7/7 | 7/7 |
+| subpixel | 1/1 | 1/1 | 1/1 |
+| hiddentab | 6/6 | 6/6 | 6/6 |
+| stress (make-big, 150 steps) | 0 page errors, 0 unexpected view changes, no issues | same | same |
+| blank (make-big) | 6/7 (known, as on `main`) | 5/7 ¹ | 5/7 ¹ |
+| skia-smoke | 11/11 | | |
+| overview.mjs | | 12/12 | |
+| full.mjs (new) | | | 14/14 |
+
+¹ The extra failure, "blank copies are detected", sabotages lod.ts's scaled snapshot copies, which overview and full
+don't make (Skia mipmaps / picture copies replace them); worker A saw the same in stage 1. "Frames stay visible"
+passes under every kind of sabotage in all three modes.
+
+`set_renderer` checked live: full → overview → dom → full, each active at once (Skia canvas mounted or not, picture
+frames 2 → 0 → 0 → 2 on features.pen), 0 page errors.
+
+- `features.mjs` is now renderer-neutral (boxes via measure.ts; colours from the element, or the screen pixel for
+  Skia-drawn layers). `overview.mjs` counts picture copies and decoded pictures among the live images.
+- Memory bug found and fixed on the way: every paragraph had its own font collection (~5 MB per frame with Google's
+  Inter subsets), so zooming out over the 320-frame file hit CanvasKit's 2 GB heap and aborted (blank frames, and in
+  full mode the editor crashed). One shared FontCollection now: 120 recorded frames keep the heap at 128 MB. A
+  CanvasKit failure while preparing or drawing frames, or an uncaught `Aborted(`, now falls back to `dom`.
+- layout-diff after the merge: 0 offenders on features.pen, fixtures/layout.pen, showcase.spen and make-big (40,384 nodes); `layoutAll` 166 ms cold, 8 ms cached (container).
+- Package: vsix 0.56 MB (main) → 3.7 MB (3,729,068 bytes): CanvasKit wasm 7.3 MB raw, its JS 120 KB, six Inter
+  WOFF2 files ~146 KB; the main editor bundle grew 52 KB (1.50 → 1.55 MB). `.claude/**` added to `.vscodeignore`
+  (vsce picked up local worktrees; on the PC it would ship Claude Code's local settings).
+- New MCP tools: `benchmark` (stage 0) and `set_renderer` (dom / overview / full, live, only when the user asks).
+
+Not measured (needs the owner's GPU): any speed or memory number. In software rendering, first recording costs about
+200 ms per make-big frame (container CPU), so a full-mode zoom-out over 320 unseen frames fills in over ~80 s here;
+expect it to be several times faster on a real machine, but that is exactly what the combined gate must check.
+
+For the owner — the combined gate (gates 1–3 in one sitting, on copies of real files):
+
+1. `git fetch && git checkout skia-rework`, `npm install`, `npm run package`,
+   `code --install-extension release\superpen.vsix --force`, Reload Window. Don't commit the rebuilt vsix.
+2. Switching renderers: Command Palette → "Developer: Open Webview Developer Tools", Console:
+   `localStorage.setItem('pen.renderer','full')` (or `'overview'`, or `removeItem` for `dom`), then close and reopen
+   the design. Or ask Claude to call `set_renderer` (it switches live). `diagnose_editor` → `renderer` confirms it.
+3. For each of `dom`, `overview`, `full`, with performance mode off and on, on a copy of the big file: ask Claude
+   "run the benchmark" (editor tab visible). Paste the numbers here.
+4. Memory: `node tests/memory.mjs "<url>" [perf]` (Windows) in each mode, or Task Manager's GPU/process memory.
+5. Look: in `full`, check text (wrapping, weights), shadows, gradients, pictures, icons look the same as `dom`, and
+   `diagnose_editor` → `renderer.skia.pictures` (how many frames Skia draws, and why the rest fall back; aim: 9 in 10).
+6. Use `full` for real work for a while: select, drag, resize, edit text, comments, AI edits, undo. Then the friend
+   on the 16 GB machine tries it.
+7. If anything is off, the fallback is `localStorage.removeItem('pen.renderer')`.
