@@ -29,7 +29,7 @@
         {
           "id": "superpencil",
           "title": "Superpencil",
-          "icon": "media/activity.svg"
+          "icon": "media/mark.svg"
         }
       ]
     },
@@ -68,8 +68,8 @@
         "title": "Open in Superpencil",
         "category": "Superpencil",
         "icon": {
-          "light": "media/button-light.svg",
-          "dark": "media/button-dark.svg"
+          "light": "media/mark-light.svg",
+          "dark": "media/mark-dark.svg"
         }
       },
       {

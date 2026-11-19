@@ -81,7 +81,7 @@ export function TopBar() {
 /** The Superpencil mark (media/icon.spen), in the text colour. */
 function Logo() {
   return (
-    <svg className="tb-logo" viewBox="207.5 205 780 780" fill="currentColor" fillRule="evenodd" aria-hidden>
+    <svg className="tb-logo" viewBox="237.5 205 780 780" fill="currentColor" fillRule="evenodd" aria-hidden>
       <path d="M398 332A270 106 0 0 1 938 332L938 872A270 92 0 0 1 398 872ZM452.5 345A215.5 63 0 0 1 883.5 345A215.5 63 0 0 1 846 380.5L846 622A39 39 0 0 1 768 622L768 572C768 556 758 544 742 543L724 542.5C708 541 699 528 697 508C694 470 686 440 655 420C632 407 598 405.5 560 399.5A215.5 63 0 0 1 452.5 345Z" />
       <path d="M398 421.5C352 442 303 480 274 520C266 533 258.5 549 257 566C256 596 277 625 315 630C345 634 392 623 431 610C480 592 530 569 573 544L582.7 547.4L590 506L500 440ZM398 480C380 491 364 502 350 513C334 525 320 541 317 556C316 565 320 570 326 570.5C350 571 378 566 398 557Z" />
     </svg>
