@@ -168,6 +168,6 @@ export function removeBackground(src: ImageData, opts: RemoveBgOptions = {}): Re
   let note: string | undefined;
   if (borderShare < 0.35) note = 'the background is not plain: only part of the border of the picture matched one colour (this works on plain or gently graded backgrounds)';
   else if (share < 0.01) note = 'almost nothing was removed: the background is probably not plain (this works on plain or gently graded backgrounds)';
-  else if (share > 0.97) note = 'nearly everything was removed: the subject is probably too close in colour to the background (try a lower tolerance)';
+  else if (share > 0.998 || n - removed < 64) note = 'nearly everything was removed: the subject is probably too close in colour to the background (try a lower tolerance)';
   return { image: out, removed: share, borderShare, background: [Math.round(bg[0]), Math.round(bg[1]), Math.round(bg[2])], tolerance: Math.round(tol / 2.2), note };
 }

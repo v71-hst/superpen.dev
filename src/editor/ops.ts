@@ -514,7 +514,8 @@ export async function removeBackgroundOf(key: string, opts: RemoveBgOptions & { 
   const g = c.getContext('2d', SOFT)!;
   g.drawImage(img, 0, 0, c.width, c.height);
   const r = removeBackground(g.getImageData(0, 0, c.width, c.height), opts);
-  if (r.removed < 0.01 || r.removed > 0.97 || r.borderShare < 0.35) throw new Error(r.note ?? 'the background could not be told from the subject');
+  // Every note is a reason the result should not be used (not plain, nothing removed, nothing left, already transparent).
+  if (r.note || r.removed < 0.01 || r.borderShare < 0.35) throw new Error(r.note ?? 'the background could not be told from the subject');
   g.putImageData(r.image, 0, 0);
   const blob = await new Promise<Blob | null>(res => c.toBlob(res, 'image/png'));
   if (!blob) throw new Error('the result could not be saved');
