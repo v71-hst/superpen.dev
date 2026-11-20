@@ -13,7 +13,9 @@ import { scriptState } from '../editor/scriptHost';
 import { Scope, free, own } from './lifetime';
 import { DEFAULT_FAMILY, familyList, fontBlocker, fontCollection, fontEpoch, fontStyleKey, iconFontKey, iconFontText, isIconFont } from './fonts';
 import { getImage } from './images';
-import { SHADERS_LOADING, effectMargin, isShaderEffect, shaderEffectBlocker, shaderEffectImage, shaderFillBlocker, shaderFillImage, shaderInfoKey } from './shaderFills';
+import { SHADERS_LOADING, effectMargin, isShaderEffect, shaderEffectBlocker, shaderEffectImage, shaderFillBlocker, shaderFillImage, shaderInfoKey, type ShaderEnv } from './shaderFills';
+import { nodeScreenRect } from '../editor/measure';
+import { useStore } from '../editor/store';
 import { iconLibraryBlocker, iconPaths } from './icons';
 import { meshOf, tessellate } from '../render/mesh';
 
@@ -268,7 +270,9 @@ function drawFill(r: Rec, world: Mat, f: any, x: number, y: number, w: number, h
   }
   if (f.type === 'image' && f.url) {
     const url = r.ctx.resolveUrl(f.url);
-    const got = getImage(url, r.detail);
+    // A live shader (liveShaders.ts): its texture, whatever its size; nothing to make sharper. It has no mipmap levels
+    // (sampling it with them gives black), and it is drawn at about its own size.
+    const got = f.liveImage !== undefined ? { image: f.liveImage, w: 0, h: 0 } : getImage(url, r.detail);
     const image = got.image;
     // A made picture (a still shader) is asked for here, at record time: note what is being waited for.
     if (f.wanted && f.wanted !== url) r.pending?.add(f.wanted);
@@ -287,7 +291,7 @@ function drawFill(r: Rec, world: Mat, f: any, x: number, y: number, w: number, h
     // The crop: the fitted picture transformed in units of the box (see imageTransform).
     const t = imageTransform(f);
     const grow = t ? Math.max(Math.hypot(t[0], t[1]), Math.hypot(t[2], t[3])) : 1;
-    if (r.uses) {
+    if (r.uses && f.liveImage === undefined) {
       const [a, b, cc, d, e, g] = world;
       const xs = [x, x + w].flatMap(px => [y, y + h].map(py => a * px + cc * py + e));
       const ys = [x, x + w].flatMap(px => [y, y + h].map(py => b * px + d * py + g));
@@ -302,7 +306,7 @@ function drawFill(r: Rec, world: Mat, f: any, x: number, y: number, w: number, h
       c.concat([t[0], (t[2] * W) / H, t[4] * W, (t[1] * H) / W, t[3], t[5] * H, 0, 0, 1]);
       c.translate(-x, -y);
     }
-    c.drawImageRectOptions(image, ck.XYWHRect(0, 0, image.width(), image.height()), ck.XYWHRect(x + (w - dw) / 2, y + (h - dh) / 2, dw, dh), ck.FilterMode.Linear, ck.MipmapMode.Linear, paint);
+    c.drawImageRectOptions(image, ck.XYWHRect(0, 0, image.width(), image.height()), ck.XYWHRect(x + (w - dw) / 2, y + (h - dh) / 2, dw, dh), ck.FilterMode.Linear, f.liveImage !== undefined ? ck.MipmapMode.None : ck.MipmapMode.Linear, paint);
     c.restore();
   }
 }
@@ -335,13 +339,18 @@ type Rec = {
   pending?: Set<string>;
   /** The node drawn alone for its shader effects' @content: without those effects, its opacity and its filters. */
   bare?: string;
+  /** A node left out (with everything in it): what is behind it, for shaders that read their backdrop. */
+  hide?: string;
+  /** The top-level frame being recorded, and (once asked) what it looks like: for those backdrops. */
+  root?: PaintNode;
+  rootSig?: string;
 };
 
 function drawNode(r: Rec, pn: PaintNode, parentWorld: Mat) {
   const { c, ck } = r;
   const p = propsOf(r.ctx, pn.node);
   // A mask is a shape that clips its later siblings (drawChildren); it paints nothing itself.
-  if (p.enabled === false || p.mask === true) return;
+  if (p.enabled === false || p.mask === true || r.hide === pn.key) return;
   c.save();
   c.concat(skMat(mul(invert(parentWorld), pn.world)));
   let layers = 0;
@@ -405,6 +414,77 @@ function drawNode(r: Rec, pn: PaintNode, parentWorld: Mat) {
 }
 
 /**
+ * What a shader on node `pn` may need from the frame (shaderFills.ts ShaderEnv). The backdrop is the frame drawn
+ * without the node (nor what is in it), cropped to the node's box grown by `margin`, as the page-element renderer
+ * captured it (ShaderLayer.tsx captureBackdrop).
+ */
+function shaderEnv(r: Rec, pn: PaintNode): ShaderEnv {
+  const ctx = r.ctx, root = r.root;
+  return {
+    backdropSig: () => {
+      if (!root) return '';
+      r.rootSig ??= nodeSignature(ctx, root);
+      return r.rootSig;
+    },
+    backdrop: (k, margin) => {
+      if (!root) return null;
+      const { ck } = ctx;
+      const [a, b, c, d, e, f] = pn.world;
+      const xs = [e, e + a * pn.w, e + c * pn.h, e + a * pn.w + c * pn.h], ys = [f, f + b * pn.w, f + d * pn.h, f + b * pn.w + d * pn.h];
+      const x0 = Math.min(...xs) - margin, y0 = Math.min(...ys) - margin;
+      const w = Math.max(...xs) + margin - x0, h = Math.max(...ys) + margin - y0;
+      const scope = new Scope();
+      const rec = new ck.PictureRecorder();
+      const cv = rec.beginRecording(ck.LTRBRect(x0, y0, x0 + w, y0 + h));
+      let pic: SkPicture;
+      try {
+        drawNode({ c: cv, ck, scope, ctx, detail: true, hide: pn.key, root }, root, [1, 0, 0, 1, 0, 0]);
+        pic = own(rec.finishRecordingAsPicture(), 'picture');
+      } finally {
+        rec.delete();
+        scope.dispose();
+      }
+      try {
+        return pictureToCanvas(ck, pic, w, h, k, x0, y0);
+      } finally {
+        free(pic);
+      }
+    },
+    screenRect: margin => {
+      const z = useStore.getState().view.zoom;
+      const sr = nodeScreenRect(pn.key);
+      return sr ? new DOMRect(sr.left - margin * z, sr.top - margin * z, sr.width + margin * 2 * z, sr.height + margin * 2 * z) : null;
+    },
+  };
+}
+
+/** A picture's area (x0, y0, w, h in its units) drawn at k pixels per unit into a 2D canvas (shader inputs). */
+function pictureToCanvas(ck: CanvasKit, pic: SkPicture, w: number, h: number, k: number, x0: number, y0: number): HTMLCanvasElement | null {
+  const pw = Math.max(1, Math.round(w * k)), ph = Math.max(1, Math.round(h * k));
+  const surface = ck.MakeSurface(pw, ph);
+  if (!surface) return null;
+  try {
+    const sc = surface.getCanvas();
+    sc.clear(ck.TRANSPARENT);
+    sc.scale(k, k);
+    sc.translate(-x0, -y0);
+    sc.drawPicture(pic);
+    surface.flush();
+    const img = surface.makeImageSnapshot();
+    const px = img.readPixels(0, 0, { width: pw, height: ph, colorType: ck.ColorType.RGBA_8888, alphaType: ck.AlphaType.Unpremul, colorSpace: ck.ColorSpace.SRGB });
+    img.delete();
+    if (!px) return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = pw;
+    canvas.height = ph;
+    canvas.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(px.buffer, px.byteOffset, px.byteLength), pw, ph), 0, 0);
+    return canvas;
+  } finally {
+    surface.delete();
+  }
+}
+
+/**
  * What node `pn` looks like, for the cache key of its shader effects' output: its resolved props and box and those of
  * everything inside it, placed relative to it.
  */
@@ -414,13 +494,13 @@ function nodeSignature(ctx: PaintContext, pn: PaintNode, origin: Mat = invert(pn
 }
 
 /** Node `pn` drawn alone (bare: without its shader effects, opacity and filters), in its own units. */
-function recordBare(ctx: PaintContext, pn: PaintNode, margin: number, pending?: Set<string>): SkPicture {
+function recordBare(ctx: PaintContext, pn: PaintNode, margin: number, pending?: Set<string>, root?: PaintNode): SkPicture {
   const { ck } = ctx;
   const scope = new Scope();
   const rec = new ck.PictureRecorder();
   const c = rec.beginRecording(ck.LTRBRect(-margin, -margin, pn.w + margin, pn.h + margin));
   try {
-    drawNode({ c, ck, scope, ctx, detail: true, pending, bare: pn.key }, pn, pn.world);
+    drawNode({ c, ck, scope, ctx, detail: true, pending, bare: pn.key, root }, pn, pn.world);
     return own(rec.finishRecordingAsPicture(), 'picture');
   } finally {
     rec.delete();
@@ -439,15 +519,16 @@ function drawShaderEffects(r: Rec, pn: PaintNode, p: any, effects: any[]): boole
   // What the node shows must be complete before the effect runs on it. Fonts and pictures are (skiaEligible waits for
   // them); made pictures inside it (shader fills) are the frame's dependencies, and are waited for here.
   const inside = new Set<string>();
-  free(recordBare(r.ctx, pn, margin, inside));
+  free(recordBare(r.ctx, pn, margin, inside, r.root));
   for (const u of inside) r.pending?.add(u);
   if ([...inside].some(u => getImage(u, false).status !== 'ready')) return false;
   const ctx = r.ctx;
+  const root = r.root;
   const content = (k: number) => {
     const w = Math.max(1, Math.round((pn.w + margin * 2) * k)), h = Math.max(1, Math.round((pn.h + margin * 2) * k));
     const surface = ck.MakeSurface(w, h);
     if (!surface) return null;
-    const pic = recordBare(ctx, pn, margin);
+    const pic = recordBare(ctx, pn, margin, undefined, root);
     try {
       const sc = surface.getCanvas();
       sc.clear(ck.TRANSPARENT);
@@ -469,7 +550,7 @@ function drawShaderEffects(r: Rec, pn: PaintNode, p: any, effects: any[]): boole
       surface.delete();
     }
   };
-  const made = shaderEffectImage(r.ctx.resolveUrl, pn.node, effects, pn.w, pn.h, margin, nodeSignature(r.ctx, pn), content);
+  const made = shaderEffectImage(r.ctx.resolveUrl, pn.node, effects, pn.w, pn.h, margin, nodeSignature(r.ctx, pn), content, shaderEnv(r, pn));
   if (made && 'error' in made) {
     // As is, with a 1px dashed outline just outside the (margin-grown) box, as CSS draws `outline` on the canvas.
     drawBareInPlace(r, pn);
@@ -484,6 +565,12 @@ function drawShaderEffects(r: Rec, pn: PaintNode, p: any, effects: any[]): boole
   }
   if (!made) return false;
   // The output replaces the node: until the first one is made, the node is drawn as it is.
+  if (made.liveImage !== undefined) {
+    r.pending?.add(made.url);
+    if (!made.liveImage) return false;
+    drawFill(r, pn.world, made, -margin, -margin, pn.w + margin * 2, pn.h + margin * 2, false);
+    return true;
+  }
   r.pending?.add(made.wanted);
   if (getImage(made.url, false).status !== 'ready') {
     r.pending?.add(made.url);
@@ -585,7 +672,7 @@ function drawBox(r: Rec, pn: PaintNode, p: any, fx: any[]) {
     // background-blend-mode blends a box's layers with each other only: isolate them.
     const isolate = fills.some((f: any) => f && typeof f === 'object' && f.blendMode && f.blendMode !== 'normal');
     if (isolate) c.saveLayer();
-    const made = fills.map(f => (isShaderFill(f) ? shaderFillImage(r.ctx.resolveUrl, pn.node, p, f, w, h) : f));
+    const made = fills.map(f => (isShaderFill(f) ? shaderFillImage(r.ctx.resolveUrl, pn.node, p, f, w, h, shaderEnv(r, pn)) : f));
     for (const f of made) if (!f?.errorMarker) drawFill(r, pn.world, f, 0, 0, w, h, false);
     if (isolate) c.restore();
     c.restore();
@@ -855,7 +942,7 @@ function drawShape(r: Rec, pn: PaintNode, p: any) {
   if (fills.length) {
     c.save();
     c.clipPath(path, ck.ClipOp.Intersect, true);
-    const made = fills.map(f => (isShaderFill(f) ? shaderFillImage(r.ctx.resolveUrl, pn.node, p, f, w, h) : f));
+    const made = fills.map(f => (isShaderFill(f) ? shaderFillImage(r.ctx.resolveUrl, pn.node, p, f, w, h, shaderEnv(r, pn)) : f));
     for (const f of made) if (!f?.errorMarker) drawFill(r, pn.world, f, 0, 0, w, h, true);
     c.restore();
     drawErrorMarkers(r, pn, made, w, h);
@@ -1082,7 +1169,7 @@ export function recordPicture(ctx: PaintContext, root: PaintNode, uses?: ImageUs
   // cullRect() is what was actually drawn.
   const c = rec.beginRecording(ck.LTRBRect(Math.min(...xs) - m, Math.min(...ys) - m, Math.max(...xs) + m, Math.max(...ys) + m), true);
   try {
-    drawNode({ c, ck, scope, ctx, uses, detail, pending }, root, [1, 0, 0, 1, 0, 0]);
+    drawNode({ c, ck, scope, ctx, uses, detail, pending, root }, root, [1, 0, 0, 1, 0, 0]);
     return own(rec.finishRecordingAsPicture(), 'picture');
   } finally {
     rec.delete();

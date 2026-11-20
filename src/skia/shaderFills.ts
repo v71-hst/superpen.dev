@@ -2,8 +2,9 @@
 // the slow path, however small the fill. A STILL shader (one that reads no time, pointer or backdrop) always gives
 // the same picture for the same inputs, so it is run once into an image, and Skia draws that image like any picture
 // fill: a small version first, a larger one while something on screen shows it bigger (images.ts does both; here the
-// "file" is the shader run at the size asked for). Animated shaders, shaders that read what is behind them, and
-// shader effects keep the old path: their frames are drawn with page elements as before. A still shader that fails
+// "file" is the shader run at the size asked for). Animated shaders are drawn from live textures (liveShaders.ts);
+// shaders that read what is behind them get the frame drawn without the node (ShaderEnv); effects run on the node
+// drawn alone (painter.ts drawShaderEffects). A still shader that fails
 // (compile error, unreadable file, no WebGL) is drawn as the same error marker that path shows (errorFill).
 import type { RNode } from '../model/types';
 import { parseShader, ShaderRunner, type ShapeSpec, type UniformInfo } from '../render/shaders';
@@ -14,6 +15,7 @@ import { ellipseGeometry, pathGeometry, polygonGeometry } from '../render/geomet
 import { perfLimits } from '../editor/perfLimits';
 import { kitIfLoaded } from './kit';
 import { bumpImageStamp, forgetImages, getImage, registerImageSource } from './images';
+import { liveKey, liveScale, liveShaderError, liveShaderImage } from './liveShaders';
 
 /** Addresses of shader images: nothing is fetched from them (see registerImageSource); url resolvers leave blob: alone. */
 const PREFIX = 'blob:pen-shader/';
@@ -124,8 +126,6 @@ export function shaderFillBlocker(resolveUrl: (u: string) => string, n: RNode, p
   if (info.state === 'loading') return SHADERS_LOADING;
   // Not readable: it is run anyway, and fails with the page-element renderer's own message (then drawn as an error).
   if (info.state === 'failed') return null;
-  if (info.animated) return `animated shader fill on ${n.key}`;
-  if (info.backdrop) return `shader fill on ${n.key} reads what is behind it`;
   if (shapeFor(n, p, info.sdf) === undefined) return `shader fill on ${n.key} reads the outline of a ${n.type}`;
   return null;
 }
@@ -141,23 +141,67 @@ function hash(s: string): string {
 }
 
 /**
+ * What a shader may need from the frame it is in (painter.ts shaderEnv): what is behind the node (@backdrop: the frame
+ * drawn without it, cropped to the node's box grown by `margin`, at k pixels per unit), something that changes when
+ * that does, and where the node is on screen (the pointer uniform of animated shaders).
+ */
+export type ShaderEnv = {
+  backdrop: (k: number, margin: number) => HTMLCanvasElement | null;
+  backdropSig: () => string;
+  screenRect: (margin: number) => DOMRect | null;
+};
+
+/**
  * The shader fill `f` of node `n` (w x h node units) as a picture fill Skia can draw, or null when there is nothing
  * to draw yet. Asking starts the shader running if its image does not exist; the frame records again when it does.
+ * An animated one is drawn from a live texture (liveShaders.ts).
  */
-export function shaderFillImage(resolveUrl: (u: string) => string, n: RNode, p: any, f: any, w: number, h: number): any | null {
+export function shaderFillImage(resolveUrl: (u: string) => string, n: RNode, p: any, f: any, w: number, h: number, env?: ShaderEnv): any | null {
   if (!isShader(f) || !(w > 0) || !(h > 0)) return null;
   const url = resolveUrl(f.url);
   const W = Math.round(w * 100) / 100, H = Math.round(h * 100) / 100;
   const message = broken.get(url);
   if (message !== undefined) return errorFill(message, W, H);
   const info = infoOf(url);
-  if (info.state === 'loading' || (info.state === 'ready' && (info.animated || info.backdrop))) return null;
+  if (info.state === 'loading') return null;
   const shape = shapeFor(n, p, info.state === 'ready' && info.sdf, W, H);
   if (shape === undefined) return null;
   const all = fillList(p.fill);
   const at = all.indexOf(f);
   const below = (at > 0 ? all.slice(0, at) : []).filter(x => !isShader(x));
-  const key = PREFIX + hash(JSON.stringify([url, f.uniforms ?? {}, W, H, shape, below, assetEpoch]));
+  const readsBackdrop = info.state === 'ready' && info.backdrop && !!env;
+  const backdropSig = readsBackdrop ? env!.backdropSig() : '';
+  if (info.state === 'ready' && info.animated) {
+    const id = `${n.key}#fill${at}`;
+    const cfgKey = hash(JSON.stringify([url, f.uniforms ?? {}, W, H, shape, below, assetEpoch, backdropSig]));
+    const img = liveShaderImage(
+      id,
+      cfgKey,
+      () => {
+        const scale = liveScale();
+        return {
+          passes: [{ url: f.url, uniforms: f.uniforms ?? {} }],
+          width: W,
+          height: H,
+          margin: 0,
+          shape,
+          content: async () => paintFills(below, W, H, Math.min(scale, 2), shape),
+          backdrop: readsBackdrop ? async () => env!.backdrop(Math.min(scale, 1.5), 0) : null,
+          resolveUrl,
+          scale,
+        };
+      },
+      () => env?.screenRect(0) ?? null,
+    );
+    const err = liveShaderError(id);
+    if (err) {
+      broken.set(url, err);
+      bumpImageStamp(shaderInfoKey(url));
+      return errorFill(err, W, H);
+    }
+    return { type: 'image', url: liveKey(id), liveImage: img, mode: 'stretch', opacity: f.opacity, blendMode: f.blendMode, shader: true };
+  }
+  const key = PREFIX + hash(JSON.stringify([url, f.uniforms ?? {}, W, H, shape, below, assetEpoch, backdropSig]));
   registerImageSource(key, async side => {
     const maxScale = perfLimits().shaderMaxScale;
     const scale = Math.max(0.05, Math.min(maxScale, side / Math.max(W, H)));
@@ -171,7 +215,7 @@ export function shaderFillImage(resolveUrl: (u: string) => string, n: RNode, p: 
         margin: 0,
         shape,
         content: async () => paintFills(below, W, H, Math.min(scale, 2), shape),
-        backdrop: null,
+        backdrop: readsBackdrop ? async () => env!.backdrop(Math.min(scale, 1.5), 0) : null,
         resolveUrl,
         scale,
       });
@@ -239,8 +283,6 @@ export function shaderEffectBlocker(resolveUrl: (u: string) => string, n: RNode,
   const info = infoOf(url);
   if (info.state === 'loading') return SHADERS_LOADING;
   if (info.state === 'failed') return null;
-  if (info.animated) return `animated shader effect on ${n.key}`;
-  if (info.backdrop) return `shader effect on ${n.key} reads what is behind it`;
   return null;
 }
 
@@ -259,6 +301,7 @@ export function shaderEffectImage(
   margin: number,
   signature: string,
   content: (k: number) => HTMLCanvasElement | null,
+  env?: ShaderEnv,
 ): { error: string } | any | null {
   if (!effects.length || !(w > 0) || !(h > 0)) return null;
   const urls = effects.map(e => resolveUrl(e.url));
@@ -266,18 +309,40 @@ export function shaderEffectImage(
   const failed = brokenEffects.get(chain) ?? urls.map(u => broken.get(u)).find(m => m !== undefined);
   if (failed !== undefined) return { error: failed };
   const infos = urls.map(infoOf);
-  if (infos.some(i => i.state === 'loading' || (i.state === 'ready' && (i.animated || i.backdrop)))) return null;
+  if (infos.some(i => i.state === 'loading')) return null;
   const W = Math.round(w * 100) / 100, H = Math.round(h * 100) / 100;
   const passes = effects.map(e => ({ url: e.url, uniforms: e.uniforms ?? {} }));
-  const key = PREFIX + 'fx/' + hash(JSON.stringify([urls, passes.map(p => p.uniforms), W, H, margin, signature, assetEpoch]));
+  const readsBackdrop = !!env && infos.some(i => i.state === 'ready' && i.backdrop);
+  const backdropSig = readsBackdrop ? env!.backdropSig() : '';
+  const backdrop = (scale: number) => (readsBackdrop ? async () => env!.backdrop(Math.min(scale, 1.5), margin) : null);
   const fullW = W + margin * 2, fullH = H + margin * 2;
+  if (infos.some(i => i.state === 'ready' && i.animated)) {
+    const id = `${n.key}#effect`;
+    const cfgKey = hash(JSON.stringify([urls, passes.map(p => p.uniforms), W, H, margin, signature, assetEpoch, backdropSig]));
+    const img = liveShaderImage(
+      id,
+      cfgKey,
+      () => {
+        const scale = liveScale();
+        return { passes, width: W, height: H, margin, shape: null, content: async () => content(Math.min(scale, 2)), backdrop: backdrop(scale), resolveUrl, scale };
+      },
+      () => env?.screenRect(margin) ?? null,
+    );
+    const err = liveShaderError(id);
+    if (err) {
+      brokenEffects.set(chain, err);
+      return { error: err };
+    }
+    return { type: 'image', url: liveKey(id), liveImage: img, mode: 'stretch', shader: true };
+  }
+  const key = PREFIX + 'fx/' + hash(JSON.stringify([urls, passes.map(p => p.uniforms), W, H, margin, signature, assetEpoch, backdropSig]));
   registerImageSource(key, async side => {
     const maxScale = perfLimits().shaderMaxScale;
     const scale = Math.max(0.05, Math.min(maxScale, side / Math.max(fullW, fullH)));
     const canvas = document.createElement('canvas');
     const runner = new ShaderRunner(canvas, true);
     try {
-      await runner.update({ passes, width: W, height: H, margin, shape: null, content: async () => content(Math.min(scale, 2)), backdrop: null, resolveUrl, scale });
+      await runner.update({ passes, width: W, height: H, margin, shape: null, content: async () => content(Math.min(scale, 2)), backdrop: backdrop(scale), resolveUrl, scale });
       if (runner.error) {
         brokenEffects.set(chain, runner.error);
         for (const u of urls) bumpImageStamp(shaderInfoKey(u));

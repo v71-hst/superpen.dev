@@ -1,7 +1,7 @@
 // Still shader fills are drawn by Skia from an image of the shader's output (src/skia/shaderFills.ts); animated ones
-// keep the page-element path. Checks: every frame of a design full of still shader fills is drawn by Skia, the fill
-// is really on the canvas, a larger version arrives when zoomed in, changing a uniform updates the picture without
-// the frame leaving Skia or blinking, and a frame with an animated shader is left alone, with the reason said.
+// from a live texture (src/skia/liveShaders.ts). Checks: every frame of a design full of still shader fills is drawn
+// by Skia, the fill is really on the canvas, a larger version arrives when zoomed in, changing a uniform updates the
+// picture without the frame leaving Skia or blinking, and a frame with an animated shader stays with Skia and moves.
 // Usage: node shaderfill.mjs <url of a make-shaders.mjs design> [shot dir]     (dev server or PEN_PROD)
 import puppeteer from 'puppeteer-core';
 import pngjs from 'pngjs';
@@ -73,14 +73,23 @@ ok('changing a uniform redraws the fill', after.some(c => c[0] > 150 && spread(c
 ok('the frame stays with Skia while it changes', blank === 0 && afterDiag.onScreen.live === 0, `${blank} moments off Skia; ${JSON.stringify(afterDiag.onScreen)}`);
 if (shots) await page.screenshot({ path: `${shots}/shaderfill-edited.png` });
 
-// An animated shader (one that reads the time) is not for this path: its frame is left to the other renderer.
+// An animated shader (one that reads the time) is drawn from a live texture (src/skia/liveShaders.ts): its frame
+// stays with Skia, and what is on screen moves.
 await page.evaluate(async () => {
   const f = window.__penStore.getState().doc.children[1];
   const n = f.children.find(c => c.fill && c.fill.type === 'shader');
   // make-shaders.mjs writes this file next to the design.
   await window.__penAgent('applyOps', { operations: [{ op: 'update', id: n.id, props: { fill: { type: 'shader', url: './shaders/moving.glsl' } } }] });
 });
-const moving = await settle(d => Object.keys(d.pictures.reasons ?? {}).some(k => /animated/.test(k)), 8000);
-ok('a frame with an animated shader is left to the other renderer, and says why', Object.keys(moving.pictures.reasons ?? {}).some(k => /animated shader fill/.test(k)) && moving.all.live + moving.all.bitmap + moving.all.placeholder >= 1, JSON.stringify({ reasons: moving.pictures.reasons, canvas: moving.all }));
+await page.evaluate(() => {
+  const f = window.__penStore.getState().doc.children[1];
+  window.__penStore.getState().setView({ zoom: 0.9, x: 80 - f.x * 0.9, y: 80 - f.y * 0.9 });
+});
+const moving = await settle(d => d.all.live === 0 && Object.keys(d.pictures.reasons ?? {}).length === 0, 8000);
+await sleep(1500);
+const t0 = await pixel(80 + 150, 80 + 120);
+await sleep(700);
+const t1 = await pixel(80 + 150, 80 + 120);
+ok('a frame with an animated shader stays with Skia, and the shader moves', moving.all.live === 0 && Object.keys(moving.pictures.reasons ?? {}).length === 0 && t0.join() !== t1.join(), JSON.stringify({ reasons: moving.pictures.reasons, canvas: moving.all, t0, t1 }));
 ok('no page errors', errors.length === 0, errors.slice(0, 2).join(' | '));
 await browser.close();

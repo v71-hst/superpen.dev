@@ -11,7 +11,7 @@ import { setSkiaGeometry } from '../editor/measure';
 import { worldBounds } from '../layout/layout';
 import { fillList, isEnabled, primaryColor } from '../render/paint';
 import { kitIfLoaded } from './kit';
-import { framePicture, frameReason, frameSeen, pictureBounds, pruneFrames, relaxFrames } from './frames';
+import { framePicture, frameReason, frameSeen, frameLiveKeys, pictureBounds, pruneFrames, relaxFrames } from './frames';
 import { paintContext } from './testing';
 import { hitChain, layoutOf, layoutWorldRect, rootLayout, rootOf } from './layoutIndex';
 import { propsOf } from './painter';
@@ -30,6 +30,8 @@ export type PictureFrame = {
   peek: () => SkPicture | null;
   /** On screen at `scale` device pixels per world px: asks for sharper versions of its pictures inside `visible`. */
   seen: (scale: number, visible: Box | null) => void;
+  /** Live (animated) shader textures its picture draws (frames.ts frameLiveKeys). */
+  live: () => readonly string[];
   /** Shown for the moment before the picture is recorded: the frame's own colour. */
   placeholder: string;
   /** Changes whenever the frame's content does (its RNode). */
@@ -95,6 +97,7 @@ export function pictureFrameFor(n: RNode): PictureFrame | null {
     record: () => framePicture(ctx, n, () => layoutOf(n.key), useStore.getState().editingKey),
     peek: () => framePicture(ctx, n, () => null, useStore.getState().editingKey, false),
     seen: (scale, visible) => frameSeen(n.key, scale, visible),
+    live: () => frameLiveKeys(n.key),
     placeholder: primaryColor(fillList(p.fill).filter(isEnabled)) ?? 'rgba(128,128,128,0.12)',
     token: n,
   };

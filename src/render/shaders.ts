@@ -515,8 +515,11 @@ export class ShaderRunner {
   /** The scale the pixels now on the canvas were drawn for. */
   private drawnScale = 0;
   private io: IntersectionObserver | null = null;
+  /** Where the output is on screen, for the pointer uniform, when the canvas itself is not on the page (Skia). */
+  screenRect: (() => DOMRect | null) | null = null;
   private moveHandler = (e: PointerEvent) => {
-    const r = this.canvas.getBoundingClientRect();
+    const r = this.screenRect ? this.screenRect() : this.canvas.getBoundingClientRect();
+    if (!r) return;
     if (!this.cfg || !r.width) return;
     const s = r.width / (this.cfg.width + this.cfg.margin * 2);
     this.mouse = [(e.clientX - r.left) / s - this.cfg.margin, (e.clientY - r.top) / s - this.cfg.margin];
@@ -661,6 +664,15 @@ export class ShaderRunner {
       this.stale = true;
       staleRunners.add(this);
     }
+  }
+
+  /** Stops (or resumes) animating an offscreen canvas whose output is not being shown (Skia's live shaders). */
+  pause(paused: boolean) {
+    if (this.disposed) return;
+    this.visible = !paused;
+    if (paused || !this.needsAnim) return;
+    animated.add(this);
+    if (!rafId) rafId = requestAnimationFrame(loop);
   }
 
   /** Re-renders if the zoom step changed while this canvas was off screen. */

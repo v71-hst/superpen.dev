@@ -2,6 +2,7 @@
 // is actually drawn, or ahead of need while the editor is idle). Both are cached by RNode identity (TreeBuilder keeps an
 // unchanged frame's RNode) plus the state of the font styles and pictures that frame itself uses: a font or picture
 // arriving re-records only the frames that depend on it.
+import { isLiveKey, liveStamp } from './liveShaders';
 import type { SkPicture } from 'canvaskit-wasm';
 import type { RNode } from '../model/types';
 import { free } from './lifetime';
@@ -24,6 +25,10 @@ type Entry = {
   picture: SkPicture | null;
   /** Where the picture draws pictures (from the last recording; kept across a re-recording until the next one). */
   uses: ImageUse[];
+  /** Live (animated) shader textures the picture draws (liveShaders.ts): the frame is replayed, never copied. */
+  live: string[];
+  /** Their liveStamp when it was recorded: a new frame of animation records it again. */
+  liveSeen: number;
   /**
    * The frame is (or was a moment ago) in view showing a picture larger than its small version: it is recorded with
    * the larger versions and again whenever one arrives or goes. Other frames only ever draw the small ones.
@@ -67,7 +72,7 @@ function entry(ctx: PaintContext, root: RNode, editingKey: string | null): Entry
   const deps = newDeps();
   const reason = skiaEligible(ctx, root, editing, deps);
   const detail = e?.detail ?? false;
-  const next: Entry = { rnode: root, vars: ctx.doc.variables, editing, deps, fonts: fontsOf(deps), images: imageStamp(deps.images, detail), seenFonts: fontEpoch(), seenImages: imageEpoch(), reason, picture: null, uses: e?.uses ?? [], detail, detailAt: e?.detailAt ?? 0 };
+  const next: Entry = { rnode: root, vars: ctx.doc.variables, editing, deps, fonts: fontsOf(deps), images: imageStamp(deps.images, detail), seenFonts: fontEpoch(), seenImages: imageEpoch(), reason, picture: null, uses: e?.uses ?? [], live: e?.live ?? [], liveSeen: -1, detail, detailAt: e?.detailAt ?? 0 };
   cache.set(root.key, next);
   return next;
 }
@@ -84,6 +89,10 @@ export function frameReason(ctx: PaintContext, root: RNode, editingKey: string |
 export function framePicture(ctx: PaintContext, root: RNode, layout: () => PaintNode | null, editingKey: string | null = null, create = true): SkPicture | null {
   const e = entry(ctx, root, editingKey);
   if (e.reason) return null;
+  if (e.picture && e.live.length && create && liveStamp(e.live) !== e.liveSeen) {
+    free(e.picture);
+    e.picture = null;
+  }
   if (!e.picture && create) {
     const t0 = performance.now();
     const l = layout();
@@ -98,12 +107,19 @@ export function framePicture(ctx: PaintContext, root: RNode, layout: () => Paint
       for (const u of asked) e.deps.images.add(u);
       e.images = imageStamp(e.deps.images, e.detail);
     }
+    e.live = [...asked].filter(isLiveKey);
+    e.liveSeen = liveStamp(e.live);
     records++;
     const ms = performance.now() - t0;
     recordMs += ms;
     slowestRecordMs = Math.max(slowestRecordMs, ms);
   }
   return e.picture;
+}
+
+/** The live shader textures a frame's picture draws (empty when it has none or is not recorded). */
+export function frameLiveKeys(key: string): readonly string[] {
+  return cache.get(key)?.live ?? [];
 }
 
 /** World-space bounds of everything a frame's recorded picture draws (overflowing children and shadows included). */

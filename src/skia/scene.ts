@@ -4,6 +4,7 @@
 // images that the GPU uploads on first draw, so they survive a lost graphics context and re-upload on restore.
 // A frame is only handed to Skia once its texture is ready and the surface can draw; until then, or if anything
 // fails, Roots keeps showing the snapshot <img>, so a frame is never left with nothing.
+import { noteLiveDrawn, resetLiveShaders, setLiveSurface } from './liveShaders';
 import { useSyncExternalStore } from 'react';
 import type { Canvas as SkCanvas, CanvasKit, Image as SkImage, Paint, SkPicture, Surface } from 'canvaskit-wasm';
 import { baseSide, hasPictureCopy, levelSide, pictureCopy, stalePictureCopy } from './pictureTextures';
@@ -44,6 +45,8 @@ export type SceneFrame = {
   placeholder?: string;
   /** Changes with the frame's content. */
   token?: object;
+  /** Live (animated) shader textures its picture draws: replayed at every zoom, and kept animating while drawn. */
+  live?: () => readonly string[];
 };
 
 type Box = { x: number; y: number; w: number; h: number };
@@ -117,6 +120,7 @@ let gpu: Surface | null = null;
 export function setSceneSurface(s: Surface | null) {
   if (s !== gpu) resetFarAtlas();
   gpu = s;
+  setLiveSurface(s, () => hooks.requestDraw());
 }
 
 /** Something a frame's picture depends on changed (a font or picture loaded): Roots re-renders and re-records. */
@@ -284,11 +288,15 @@ export function drawScene(c: SkCanvas, ck: CanvasKit, visible: { x: number; y: n
   // Far-zoom copies are drawn as sprites of shared textures (farAtlas.ts): anything drawn another way flushes the
   // sprites queued before it first, so frames keep their order.
   beginFarAtlas(ck, gpu);
+  const liveDrawn: string[] = [];
   for (const f of frames) {
     if (f.x > visible.x + visible.w || f.x + f.w < visible.x || f.y > visible.y + visible.h || f.y + f.h < visible.y) continue;
     if (f.record) {
-      const pic = !far || performance.now() < until ? f.record() : (f.peek?.() ?? null);
-      if (pic && !far) {
+      const live = f.live?.() ?? [];
+      const pic = !far || live.length || performance.now() < until ? f.record() : (f.peek?.() ?? null);
+      // A frame with animated shaders is replayed at every zoom: a copy would stop them.
+      if (pic && (!far || live.length)) {
+        for (const k of live) liveDrawn.push(k);
         drawFarAtlas(c);
         c.drawPicture(pic);
         continue;
@@ -330,6 +338,7 @@ export function drawScene(c: SkCanvas, ck: CanvasKit, visible: { x: number; y: n
     c.drawImageRectOptions(img, ck.XYWHRect(0, 0, img.width(), img.height()), ck.XYWHRect(f.x, f.y, f.w, f.h), ck.FilterMode.Linear, ck.MipmapMode.Linear, null);
   }
   drawFarAtlas(c);
+  if (liveDrawn.length) noteLiveDrawn(liveDrawn);
   placeholderPaint?.delete();
   stats.slowestDrawMs = Math.max(stats.slowestDrawMs, Math.round(performance.now() - now));
   if (more) setTimeout(() => hooks.requestDraw(), 0);
@@ -547,6 +556,7 @@ export function takeProgramStep(c: SkCanvas, dpr: number): boolean {
 /** Throws away every texture (new file, or Skia switched off). */
 export function resetScene() {
   resetFarAtlas();
+  resetLiveShaders();
   for (const t of textures.values()) free(t.image);
   textures.clear();
   queue.length = 0;

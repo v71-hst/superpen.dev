@@ -1156,7 +1156,7 @@ function Roots({ tree }: { tree: Tree }) {
     if (!overview) return null;
     const pf = pictureFrameFor(n);
     if (!pf) return null;
-    skiaFrames.push({ key: n.key, url: '', x: pf.x, y: pf.y, w: pf.w, h: pf.h, record: pf.record, peek: pf.peek, seen: pf.seen, placeholder: pf.placeholder, token: pf.token });
+    skiaFrames.push({ key: n.key, url: '', x: pf.x, y: pf.y, w: pf.w, h: pf.h, record: pf.record, peek: pf.peek, seen: pf.seen, live: pf.live, placeholder: pf.placeholder, token: pf.token });
     return <PictureRoot key={n.key} pf={pf} far={far} />;
   };
   const bitmapRoot = (n: RNode, bm: Bitmap) => {
