@@ -324,6 +324,7 @@ to run, what to look at. The owner builds and installs with `npm run package` an
 | 2026-11-19 | Gate (owner's PC) | Memory fixed | Pictures in two sizes; `full` now uses less memory than `dom` in normal mode at every step. See the last section. Next: the owner tries it in VS Code, then the look check, real use and the 16 GB machine. |
 | 2026-11-19 | 5 | Default switched (owner's decision) | Merged to `main` as 0.4.0 with `full` as the default; the `skia-rework` branch is gone. `dom` and `overview` stay selectable. The clean-up half of stage 5 is not started. See the last section. |
 | 2026-11-20 | After 1.0.1 | Far-zoom speed fix (branch `far-zoom-perf`) | "About 10 fps at 2%": far-zoom copies drawn from shared atlas pages, frame labels moved as one box, and frames with outline-reading (`@sdf`) shaders on paths, or shaders with an error, now drawn by Skia (the friend's file). See the last section. Not merged. |
+| 2026-11-20 | Skia only (owner's decision) | In progress (branch `skia-only`) | The owner decided to remove the DOM renderer completely. Every frame is drawn by Skia now (no fallback reasons left), screenshots/exports/slideshow/thumbnails/checkLayout no longer use it, and a missing graphics card means software drawing. Left: the new HTML exporter, then deleting the DOM renderer. See the last section. |
 
 ### 2026-11-18, stage 0 notes
 
@@ -834,3 +835,59 @@ Questions for the friend, with this build:
 3. Still slow? Only while zooming/panning, or also when nothing moves? Only in the first minute after opening?
 4. If so, `diagnose_editor` while it is slow (`renderer.skia.overview.atlas`, `gpu`, `drawMs`), and whether VS Code
    uses the graphics card at all: Windows Task Manager, the GPU column for "Code" while zooming (theory 4).
+
+### 2026-11-20, Skia only: every frame on Skia, then no DOM renderer
+
+The owner's decision, after the friend's report that the far-zoom build still dropped to 2 fps while zooming: remove the
+DOM renderer completely. Branch `skia-only` (from `far-zoom-perf`). The order: first every frame on Skia (that is
+where the speed is), then everything else that read the DOM renderer, then deleting it.
+
+**The 2 fps while zooming.** Frames with shader effects went to the DOM renderer, which captured each effect's node
+again (rasterising it from the page) every time the zoom grew 1.4x. Reproduced with `make-shaders.mjs fx28.spen 28 30
+0 12` (28 frames, 336 small shapes with a still halftone effect) and `farzoom.mjs` (new: `SWEEP=1`, one fast zoom from
+2% to 100% and back):
+
+| 28 frames with shader effects | Before | After (still effects drawn by Skia) |
+|---|---|---|
+| Frames drawn by Skia | 0 of 28 | 28 of 28 |
+| 9% zoom: fps, long tasks | 23, 29 | 60, 0 |
+| 25% zoom: fps, worst frame | 6, 1,033 ms | 36, 100 ms |
+| Fast zoom 2% to 100%: fps, worst frame | 8.5, 983 ms | 38.5, 150 ms |
+| Fast zoom back out: fps | 12.4 | 53 |
+
+What is left at 25% is the shaders running at the larger size, in this container's software GL ("(program)" in the
+profile); on a graphics card that is much faster.
+
+**Every frame on Skia** (each its own commit, all suites run before each):
+- Still shader effects: the node drawn alone by Skia for @content, the effect run once into a picture (like still
+  fills). On screen they are sharper than the DOM renderer's, which kept the capture's resolution.
+- Icon fonts: Material Symbols (variable font: weight, optical size) and Phosphor (codepoints from its stylesheet),
+  loaded from the same addresses; an unknown library draws the missing-glyph box. 99.9% the same pixels on screen.
+- Fonts: system fonts drawn in metric-compatible open fonts (Arial/Helvetica: Arimo, Times: Tinos, Courier: Cousine,
+  Georgia: Gelasio, UI fonts: Inter); a family that can't load in Inter, as the page's font stack did.
+- Script nodes (their running/error/no-file marker), unknown node types (placeholder), browser nodes (Skia draws the
+  box; the live page is an iframe over the canvas while at least 160 px wide on screen, at most 8).
+- Animated shaders (fills and effects): a ShaderRunner per shader animates an offscreen canvas, its pixels go to a GPU
+  texture each frame (liveShaders.ts); a frame with one is replayed at every zoom and recorded again per animation
+  frame (updating a texture from its source gives it a new texture, which a recorded picture would not see).
+- Shaders that read the backdrop: the frame drawn by Skia without the node, cropped to its box.
+- Text being edited: the frame is recorded without that text, which is edited in a box over the canvas styled like it.
+- AI Pen: the shapes still to trace are left out of the frame's picture instead of the frame going to the DOM.
+
+**Everything else that read the DOM renderer:**
+- `skia/offscreen.ts` draws any layer off screen (PNG/JPEG): the agent's screenshot, checkDrawing, compareReference,
+  PNG/JPG exportNode, the Export panel (its PNG/JPG export did nothing for Skia frames before), print and slide export.
+- The slideshow (`ui/SkiaStage.tsx`): slides drawn by Skia, hover states and links found through the layout.
+- Layer and slide thumbnails: the same stage, drawn while on screen.
+- `checkLayout` from the layout engine and Skia's records (text overflow, missing icons, shader and script errors):
+  the same issues as the DOM renderer on four test designs.
+- No graphics card (WebGL missing, or its context lost and not restored): Skia draws in software on a new canvas,
+  100% the same pixels; only CanvasKit itself failing ends Skia.
+- Nothing pins frames to the DOM renderer any more.
+
+Tests changed with the behaviour: shaderfill (an animated shader stays with Skia and moves), full.mjs (editing and
+context loss), skia-smoke (software fallback, with a pixel read back), features (the slideshow's layers found through
+its layout, colours read off the screen), aipen (the frame stays with Skia while tracing).
+
+**Unverified:** a real graphics card (all of this ran on software GL); the browser-node iframe left a strip of the
+canvas unpainted below it in the headless test browser; Phosphor (its host is blocked in this container).
