@@ -148,7 +148,8 @@ html.light ::-webkit-scrollbar-thumb {
 #pen-world svg {
   -webkit-user-drag: none;
 }
-#pen-world [data-editing] {
+#pen-world [data-editing],
+.text-edit-overlay [data-editing] {
   user-select: text;
   -webkit-user-select: text;
 }

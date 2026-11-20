@@ -99,7 +99,7 @@ export function framePicture(ctx: PaintContext, root: RNode, layout: () => Paint
     if (!l) return null;
     const uses: ImageUse[] = [];
     const asked = new Set<string>();
-    e.picture = recordPicture(ctx, l, uses, e.detail, asked);
+    e.picture = recordPicture(ctx, l, uses, e.detail, asked, e.editing);
     e.uses = uses;
     // Made pictures (still shaders) are only known once the layout gives their size: from now on the frame depends
     // on them like on its other pictures, and records again when one arrives or gets a sharper version.

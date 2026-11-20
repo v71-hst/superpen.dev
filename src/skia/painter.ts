@@ -93,7 +93,6 @@ const PICTURES_LOADING = 'pictures loading';
 export function skiaEligible(ctx: PaintContext, n: RNode, editingKey?: string | null, deps?: FrameDeps): string | null {
   const p = propsOf(ctx, n);
   if (p.enabled === false) return null;
-  if (n.key === editingKey) return 'text being edited';
   // Still shader effects are drawn from a picture of their output (drawShaderEffects); the others leave the frame.
   let effectsLoading = false;
   for (const e of effectList(p.effect)) {
@@ -1156,7 +1155,7 @@ function drawNote(r: Rec, pn: PaintNode, p: any) {
  * Records a laid-out top-level frame (or any subtree) as a picture in world coordinates. `uses` collects where it
  * draws pictures; `detail` false draws them from their small versions even when a larger one is loaded.
  */
-export function recordPicture(ctx: PaintContext, root: PaintNode, uses?: ImageUse[], detail = true, pending?: Set<string>): SkPicture {
+export function recordPicture(ctx: PaintContext, root: PaintNode, uses?: ImageUse[], detail = true, pending?: Set<string>, hide?: string | null): SkPicture {
   const { ck } = ctx;
   const scope = new Scope();
   const rec = new ck.PictureRecorder();
@@ -1169,7 +1168,8 @@ export function recordPicture(ctx: PaintContext, root: PaintNode, uses?: ImageUs
   // cullRect() is what was actually drawn.
   const c = rec.beginRecording(ck.LTRBRect(Math.min(...xs) - m, Math.min(...ys) - m, Math.max(...xs) + m, Math.max(...ys) + m), true);
   try {
-    drawNode({ c, ck, scope, ctx, uses, detail, pending, root }, root, [1, 0, 0, 1, 0, 0]);
+    // The text being edited is left out: it is edited in a box over the canvas (ui/TextEditOverlay.tsx).
+    drawNode({ c, ck, scope, ctx, uses, detail, pending, root, hide: hide ?? undefined }, root, [1, 0, 0, 1, 0, 0]);
     return own(rec.finishRecordingAsPicture(), 'picture');
   } finally {
     rec.delete();

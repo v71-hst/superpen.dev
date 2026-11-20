@@ -90,12 +90,12 @@ await sleep(200);
 const sel = await page.evaluate(() => window.__penStore.getState().selection);
 ok('Ctrl+click deep-selects the text layer', sel.length === 1 && sel[0] === ids.title, JSON.stringify(sel));
 
-// Text editing: the frame goes DOM while edited, then back to Skia. (Enter edits the selected text layer; puppeteer's
-// synthetic double-click doesn't start editing in either renderer.)
+// Text editing: the frame stays with Skia (without the text) and the text is edited in a box over it (ui/
+// TextEditOverlay.tsx). (Enter edits the selected text layer; puppeteer's synthetic double-click doesn't start editing.)
 await page.keyboard.press('Enter');
 await sleep(400);
 const editing = await page.evaluate(k => ({ key: window.__penStore.getState().editingKey, picture: !!document.querySelector(`[data-k="${k}"][data-picture]`), editor: !!document.querySelector('[data-editing]') }), ids.frame);
-ok('editing a text layer works (its frame switches to the DOM renderer)', editing.key === ids.title && !editing.picture && editing.editor, JSON.stringify(editing));
+ok('editing a text layer works (its frame stays with Skia, the editor is over it)', editing.key === ids.title && editing.picture && editing.editor, JSON.stringify(editing));
 await page.keyboard.press('End');
 await page.keyboard.type(' OK');
 await page.keyboard.press('Escape');
@@ -104,7 +104,7 @@ const after = await page.evaluate((k, f) => {
   const find = (ns, id) => { for (const n of ns || []) { if (n.id === id) return n; const r = find(n.children, id); if (r) return r; } };
   return { content: find(window.__penStore.getState().doc.children, k).content, editing: window.__penStore.getState().editingKey, picture: !!document.querySelector(`[data-k="${f}"][data-picture]`) };
 }, ids.title, ids.frame);
-ok('the edit is saved and the frame goes back to Skia', after.content.endsWith(' OK') && !after.editing && after.picture, JSON.stringify(after));
+ok('the edit is saved and the frame is still drawn by Skia', after.content.endsWith(' OK') && !after.editing && after.picture, JSON.stringify(after));
 
 // An edit re-records the frame's picture and shows on screen.
 const before = await page.evaluate(() => window.__penSkia.skiaStatus().pictures.recordings);
