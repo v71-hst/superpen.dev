@@ -325,7 +325,7 @@ to run, what to look at. The owner builds and installs with `npm run package` an
 | 2026-11-19 | 5 | Default switched (owner's decision) | Merged to `main` as 0.4.0 with `full` as the default; the `skia-rework` branch is gone. `dom` and `overview` stay selectable. The clean-up half of stage 5 is not started. See the last section. |
 | 2026-11-20 | After 1.0.1 | Far-zoom speed fix (branch `far-zoom-perf`) | "About 10 fps at 2%": far-zoom copies drawn from shared atlas pages, frame labels moved as one box, and frames with outline-reading (`@sdf`) shaders on paths, or shaders with an error, now drawn by Skia (the friend's file). See the last section. Not merged. |
 | 2026-11-20 | Skia only (owner's decision) | Done (branch `skia-only`, not merged) | The DOM renderer is removed. Every frame is drawn by Skia (on the GPU, or in software without one); screenshots, exports, the slideshow, thumbnails and checkLayout use Skia and the layout engine; HTML/SVG export has a new exporter. See the last two sections. |
-| 2026-11-20 | Skia only: shaders on Skia's GPU | Done (branch `skia-only`, not merged) | "Zooming still freezes sometimes": design shaders are translated to SkSL and run on Skia's own GPU context, no WebGL readback. See the last section. Not checked on a real GPU yet. |
+| 2026-11-20 | Skia only: shaders on Skia's GPU | Done (branch `skia-only`, not merged) | "Zooming still freezes sometimes": design shaders are translated to SkSL and run on Skia's own GPU context, no WebGL readback. See the last section. The friend's test build on a real GPU: zooming "all perfect now". |
 
 ### 2026-11-18, stage 0 notes
 
@@ -949,6 +949,6 @@ them on the CPU instead of reading them back from the GPU.
 **Checked:** `tests/sksl.mjs` runs every shader both ways: still-noise 100%, still-halftone 100%, frost 100%, objfx
 100%, sdf-metal 99.35% of pixels within 6/255 (the outline's edge), the animated ones compile and move (anim.spen),
 the broken one is rejected and keeps WebGL. Here (software GL) zooming fx28 is unchanged, as expected: 34.4 to 36.4
-fps, long tasks 1640 to 1588 ms; the read-backs this removes are cheap without a GPU. **Not checked on a real GPU:**
-the friend's test build is the check.
+fps, long tasks 1640 to 1588 ms; the read-backs this removes are cheap without a GPU. **On a real GPU** (the friend's test
+build, `skia-only-test-build` at 6e65b06): "all perfect now", no more freezes while zooming.
 
