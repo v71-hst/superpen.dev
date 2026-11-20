@@ -20,6 +20,11 @@ const FREE_MS = 15000;
 
 const lives = new Map<string, Live>();
 let gpu: Surface | null = null;
+/** Drawing in software: live shaders are copied into a new CPU image each frame (no textures to update). */
+let software = false;
+export function setLiveSoftware(on: boolean) {
+  software = on;
+}
 let requestDraw: () => void = () => {};
 let ticking = false;
 
@@ -103,8 +108,17 @@ function ensureImage(k: string, l: Live) {
   // A new size (the zoom changed how many pixels it needs) needs a new texture: the frame records again with it.
   const had = !!l.image;
   free(l.image);
-  // A canvas is a texture source the browser uploads like an image; CanvasKit can't read its size itself.
   const ck = kitIfLoaded();
+  if (software) {
+    if (!ck) return;
+    l.image = own(ck.MakeImageFromCanvasImageSource(l.canvas), 'liveImage');
+    l.w = l.canvas.width;
+    l.h = l.canvas.height;
+    l.version++;
+    if (had) bumpImageStamp(k);
+    return;
+  }
+  // A canvas is a texture source the browser uploads like an image; CanvasKit can't read its size itself.
   const info = ck ? { width: l.canvas.width, height: l.canvas.height, alphaType: ck.AlphaType.Unpremul, colorType: ck.ColorType.RGBA_8888, colorSpace: ck.ColorSpace.SRGB } : undefined;
   l.image = own(gpu.makeImageFromTextureSource(l.canvas as any, info, false) as SkImage, 'liveImage');
   l.w = l.canvas.width;
@@ -154,8 +168,15 @@ function tick() {
       }
       ensureImage(k, l);
       if (l.image && gpu && l.canvas.width) {
-        gpu.updateTextureFromSource(l.image, l.canvas as any, false);
-        l.version++;
+        if (software) {
+          // A new image each frame; the frame records again with it (liveStamp).
+          free(l.image);
+          l.image = null;
+          ensureImage(k, l);
+        } else {
+          gpu.updateTextureFromSource(l.image, l.canvas as any, false);
+          l.version++;
+        }
         any = true;
       }
     }

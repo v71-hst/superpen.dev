@@ -139,13 +139,12 @@ const filled = await page.evaluate(async b => {
 if (shots) fs.writeFileSync(`${shots}/full-far.png`, Buffer.from(farShot, 'base64'));
 ok('far zoom draws rasterised copies of the pictures', far.images > 0 && filled.differ > filled.n * 0.3, `${JSON.stringify(far)}; ${filled.differ}/${filled.n} samples painted`);
 
-// Lost for good: falls back to the DOM renderer, every frame still there.
+// Lost for good: Skia carries on drawing in software (a new canvas, no graphics card), every frame still there.
 await page.evaluate(() => window.__penStore.getState().setView({ x: 300, y: 20, zoom: 1 }));
 await sleep(500);
 await page.evaluate(() => { const c = document.getElementById('pen-skia'); (c.getContext('webgl2') || c.getContext('webgl')).getExtension('WEBGL_lose_context').loseContext(); });
 await sleep(7000);
-const fb = await page.evaluate(() => ({ active: window.__penSkia.activeRenderer(), pictures: document.querySelectorAll('[data-picture]').length, frames: document.querySelectorAll('#pen-world > [data-k]').length, live: window.__penSkia.skiaStatus().liveObjects.total }));
-ok('context lost for good: DOM renderer takes over, frames drawn', fb.active === 'dom' && fb.pictures === 0 && fb.frames > 0, JSON.stringify(fb));
-ok('and every CanvasKit object is freed', fb.live === 0, `${fb.live} live`);
+const fb = await page.evaluate(() => ({ active: window.__penSkia.activeRenderer(), mode: window.__penSkia.skiaStatus().mode, surface: window.__penSkia.skiaStatus().surface, pictures: document.querySelectorAll('[data-picture]').length, frames: document.querySelectorAll('#pen-world > [data-k]').length }));
+ok('context lost for good: Skia draws in software, frames drawn', fb.active === 'full' && fb.mode === 'software' && fb.surface === 'ready' && fb.pictures > 0, JSON.stringify(fb));
 ok('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();

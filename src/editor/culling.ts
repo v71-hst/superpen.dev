@@ -1,4 +1,5 @@
 // Viewport performance: skip rendering off-screen top-level frames and keep the canvas on a GPU layer while it moves.
+import { activeRenderer } from '../skia/renderer';
 import { useStore } from './store';
 import { currentTree } from './tree';
 import { lodInteraction } from './lod';
@@ -192,6 +193,9 @@ function reraster(w: HTMLElement, zoom: number) {
  * un-culls them and switches them out of bitmap mode. Callers should wait a couple of frames afterwards.
  */
 export function ensureRendered(keys: string[], ms = 4000) {
+  // Skia draws every frame and the layout engine answers where everything is: nothing needs pinning live (pinning
+  // would hand the frames back to the DOM renderer for nothing).
+  if (activeRenderer() !== 'dom') return;
   const until = performance.now() + ms;
   const tree = currentTree();
   const roots = new Set<string>();

@@ -2,7 +2,8 @@
 // view or what it shows changes. It survives graphics-context loss (the 0.3.1 invisible-frames failure): the surface
 // is rebuilt on restore, and if the context does not come back, or Skia cannot start, the editor falls back to the
 // DOM renderer with one log line and one toast. Frames must never go invisible.
-import React, { useEffect, useRef } from 'react';
+import { setLiveSoftware } from './liveShaders';
+import React, { useEffect, useRef, useState } from 'react';
 import type { CanvasKit, GrDirectContext, Surface } from 'canvaskit-wasm';
 import { useStore } from '../editor/store';
 import { log } from '../editor/diagnostics';
@@ -30,6 +31,8 @@ type DebugRect = { x: number; y: number; width: number; height: number; color: s
 
 const state = {
   surface: 'none' as 'none' | 'loading' | 'ready' | 'lost' | 'failed',
+  /** 'software' once the graphics card could not be used (no WebGL, or its context lost for good). */
+  mode: 'gpu' as 'gpu' | 'software',
   width: 0,
   height: 0,
   dpr: 1,
@@ -65,9 +68,14 @@ export function readSkiaPixel(x: number, y: number): number[] | null {
 
 export function SkiaLayer() {
   const ref = useRef<HTMLCanvasElement>(null);
+  // Without a usable graphics card Skia draws in software, on a new canvas (one that had a WebGL context can't be
+  // given another kind).
+  const [software, setSoftware] = useState(false);
 
   useEffect(() => {
     const canvas = ref.current!;
+    state.mode = software ? 'software' : 'gpu';
+    setLiveSoftware(software);
     let ck: CanvasKit | null = null;
     let surface: Surface | null = null;
     // One graphics context for the life of the WebGL context: a resize only replaces the surface, so everything
@@ -77,8 +85,15 @@ export function SkiaLayer() {
     let lostTimer: ReturnType<typeof setTimeout> | undefined;
     let disposed = false;
 
-    const giveUp = (reason: string) => {
+    const giveUp = (reason: string, final = false) => {
       if (disposed) return;
+      if (!software && !final) {
+        log('warn', `Skia: the graphics card can't be used (${reason}); drawing in software`);
+        useStore.getState().notify('No graphics card for the canvas: drawing in software (slower)');
+        disposed = true;
+        setSoftware(true);
+        return;
+      }
       state.surface = 'failed';
       setSurfaceReady(false);
       log('warn', `Skia renderer off, using the DOM renderer: ${reason}`);
@@ -114,6 +129,14 @@ export function SkiaLayer() {
     const makeSurface = () => {
       dropSurface();
       if (!ck || !canvas.width || !canvas.height) return;
+      if (software) {
+        surface = ck.MakeSWCanvasSurface(canvas);
+        if (!surface) return giveUp('could not create a software surface', true);
+        setSceneSurface(surface);
+        state.surface = 'ready';
+        setSurfaceReady(true);
+        return;
+      }
       if (!gr) {
         const handle = ck.GetWebGLContext(canvas, { antialias: 0 });
         gr = handle ? ck.MakeWebGLContext(handle) : null;
@@ -253,7 +276,7 @@ export function SkiaLayer() {
     };
     // CanvasKit aborting (e.g. out of WebAssembly memory) can surface as an uncaught error from inside the kit.
     const onError = (e: ErrorEvent) => {
-      if (/Aborted\(/.test(String(e.message ?? e.error))) giveUp('CanvasKit aborted');
+      if (/Aborted\(/.test(String(e.message ?? e.error))) giveUp('CanvasKit aborted', true);
     };
     window.addEventListener('error', onError);
     canvas.addEventListener('webglcontextlost', onLost);
@@ -292,7 +315,7 @@ export function SkiaLayer() {
         canvas.width = 0; // forces fitCanvas to size the canvas and build the surface
         fitCanvas();
       },
-      e => giveUp(`CanvasKit did not load (${e instanceof Error ? e.message : e})`),
+      e => giveUp(`CanvasKit did not load (${e instanceof Error ? e.message : e})`, true),
     );
 
     return () => {
@@ -326,7 +349,7 @@ export function SkiaLayer() {
       readPixel = () => null;
       if (state.surface !== 'failed') state.surface = 'none';
     };
-  }, []);
+  }, [software]);
 
-  return <canvas ref={ref} id="pen-skia" aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }} />;
+  return <canvas key={software ? 'software' : 'gpu'} ref={ref} id="pen-skia" aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }} />;
 }

@@ -74,25 +74,28 @@ const px2 = await probe();
 ok('context loss is noticed and the surface rebuilt on restore', sawLoss && back, JSON.stringify(await page.evaluate(() => window.__penSkia.skiaStatus())));
 ok('drawing recovers after the restore', isRed(px2), JSON.stringify(px2));
 
-// 4. Lost for good: fall back to the DOM renderer, frames still drawn, one toast.
+// 4. Lost for good: Skia draws in software, frames still drawn, one toast.
 await page.evaluate(() => window.__penSkia.setDebugRects([]));
 const framesBefore = await page.evaluate(() => document.querySelectorAll('#pen-world > [data-k]').length);
 await loseCtx(false);
-const fellBack = await waitFor(() => window.__penSkia.activeRenderer() === 'dom', 12000);
+// Never restored: Skia goes on drawing in software, on a new canvas (no graphics card needed).
+const fellBack = await waitFor(() => window.__penSkia.skiaStatus().mode === 'software' && window.__penSkia.skiaStatus().surface === 'ready', 12000);
 await sleep(500);
 const after = await page.evaluate(() => ({
   active: window.__penSkia.activeRenderer(),
-  failure: window.__penSkia.rendererFailure(),
+  mode: window.__penSkia.skiaStatus().mode,
   canvas: !!document.getElementById('pen-skia'),
   frames: document.querySelectorAll('#pen-world > [data-k]').length,
   toast: window.__penStore.getState().toast?.text ?? null,
 }));
-ok('context never restored: falls back to the DOM renderer', fellBack && !after.canvas, JSON.stringify({ active: after.active, failure: after.failure }));
+ok('context never restored: Skia draws in software', fellBack && after.canvas && after.active !== 'dom', JSON.stringify({ active: after.active, mode: after.mode }));
 ok('frames are still drawn after the fallback', after.frames > 0 && after.frames === framesBefore, `${framesBefore} -> ${after.frames} top-level frames`);
-ok('the user is told once', /GPU canvas/.test(after.toast ?? ''), after.toast ?? 'no toast');
+ok('the user is told once', /drawing in software/.test(after.toast ?? ''), after.toast ?? 'no toast');
 const diag = await page.evaluate(() => window.__penAgent('diagnose', {}));
-ok('diagnose_editor reports the renderer', diag.renderer?.requested === 'overview' && diag.renderer?.active === 'dom' && !!diag.renderer?.failure, JSON.stringify(diag.renderer));
-ok('no CanvasKit objects left alive', diag.renderer?.skia?.liveObjects?.total === 0, JSON.stringify(diag.renderer?.skia?.liveObjects));
+ok('diagnose_editor reports the renderer', diag.renderer?.requested === 'overview' && diag.renderer?.active === 'overview' && diag.renderer?.skia?.mode === 'software', JSON.stringify({ requested: diag.renderer?.requested, active: diag.renderer?.active, mode: diag.renderer?.skia?.mode }));
+const px3 = await probe();
+ok('and draws in software (readback of the known rectangle)', isRed(px3), JSON.stringify(px3));
+await page.evaluate(() => window.__penSkia.setDebugRects([]));
 
 await page.evaluate(() => localStorage.removeItem('pen.renderer'));
 await browser.close();
