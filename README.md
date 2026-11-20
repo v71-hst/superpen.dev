@@ -174,10 +174,8 @@ just say "polish this" or "review this screen".
 
 ## Big files
 
-- **GPU canvas (since 0.4.0).** Frames are drawn by Skia on the graphics card instead of as thousands of page
-  elements. Frames with an animated shader or a shader effect, and a frame whose text you are editing, are drawn
-  the previous way; still shader fills are drawn by Skia too. If the graphics card can't run it, the editor
-  switches back to the previous renderer by itself and says so once.
+- **GPU canvas.** Everything on the canvas is drawn by Skia on the graphics card, shaders included (since 1.1.0 there
+  is no other renderer). Without a usable graphics card it draws in software, slower but the same picture.
 - **Sections.** Group top-level frames into named sections (ask your chat to "group my frames into sections"). Hide or
   show whole sections from the **Sections** tab in the left panel; hidden frames aren't drawn at all. The zoom menu
   (the percentage in the top bar) switches to the **Sections** viewer, which shows one section at a time like slides.
@@ -194,8 +192,7 @@ just say "polish this" or "review this screen".
 
 - **Something looks broken** → use the "Reload editor" button if the editor shows an error, or Ctrl+Shift+P →
   **Reload Window**. Your document is never lost.
-- **Something is drawn wrong** → ask your AI chat to "set the renderer to dom". That switches this editor back to the
-  renderer used before 0.4.0 ("set the renderer to full" switches back). Please open an issue with a screenshot.
+- **Something is drawn wrong** → please open an issue with a screenshot (and the design, if you can share it).
 - **Logs**: VS Code → Output panel → **Superpencil**, or the file `~/.pen-editor/logs/webview.log`. A chat can also
   read the live state with the `diagnose_editor` tool.
 - **"claude" not found when registering MCP** → the registration command is copied to your clipboard; run it in a
@@ -209,6 +206,25 @@ just say "polish this" or "review this screen".
 ---
 
 ## What's new
+
+### 1.1.0
+One renderer: the GPU canvas draws everything, and the previous renderer is gone. Smoother zooming and editing, after
+reports from a tester on a real graphics card:
+- **No more freezes while zooming** in designs with shaders: shaders now run on the canvas's own graphics context
+  (translated to Skia's shader language), so their pictures never travel back from the graphics card, and each one
+  is compiled once. Shaders that can't be translated keep the previous shader engine.
+- **Every frame on the GPU canvas**, including animated shaders, shader effects, shaders that read what is behind them
+  or a path's outline, icons, scripts and text being edited. Without a usable graphics card it draws in software.
+- **Faster edits on big boards**: each layer of a board is kept as its own drawing, so an edit redraws only the layer
+  it changed (2.6 to 1.3 ms per edit on a 147-layer board; more on boards with many layers), and moving a board
+  redraws nothing.
+- **Smoother panning and dragging**: panning no longer re-renders the canvas, and the canvas draws at most twice per
+  screen refresh.
+- **New HTML and SVG export**, built from the design itself.
+- Screenshots, exports, the slideshow, thumbnails and checkLayout use the GPU renderer and the layout engine.
+- Fix: shader effects with `pencil:object` inputs drew black.
+- Removed: the renderer switch and the `set_renderer` MCP tool.
+Thanks to the tester who found the freezes and much of the list above.
 
 ### 1.0.1
 Speed on big designs, after a report of stutter. Measured on generated test designs (40,000 layers; 192 shader
@@ -298,7 +314,8 @@ performance, since React's dev mode is much slower).
 Project layout:
 
 - `src/` – the editor (React). `model/` file format, variables, operations and SVG import; `skia/` the GPU renderer;
-  `layout/` the layout engine it uses; `render/` the previous renderer, shaders and scripts; `editor/` state, file
+  `layout/` the layout engine it uses; `render/` paint helpers, the WebGL shader engine (fallback) and scripts;
+  `export/` HTML and SVG export; `editor/` state, file
   sync and the agent handler; `import/` Figma and HTML import; `ui/` panels.
 - `extension/` – the VS Code extension (custom editor, per-window MCP bridge with locking), the MCP server, and
   `skills/`, the design skills as Markdown.
