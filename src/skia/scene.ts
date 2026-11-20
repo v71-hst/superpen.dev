@@ -116,6 +116,8 @@ export function surfaceIsReady() {
 
 /** The Skia canvas's surface while there is one: far-zoom copies are made in its graphics context. */
 let gpu: Surface | null = null;
+/** The Skia canvas's surface (null while there is none): off-screen drawings that show live textures need its context. */
+export const sceneGpu = () => gpu;
 
 export function setSceneSurface(s: Surface | null) {
   if (s !== gpu) resetFarAtlas();

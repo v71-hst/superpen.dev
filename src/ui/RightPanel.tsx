@@ -1,4 +1,6 @@
 // Right island: the design/properties panel for the current selection.
+import { renderNodeImage } from '../skia/offscreen';
+import { activeRenderer } from '../skia/renderer';
 import React, { useState } from 'react';
 import {
   AlignCenterHorizontal,
@@ -1214,10 +1216,14 @@ function ExportSection({ n }: { n: RNode }) {
   const [format, setFormat] = useState('png');
   const notify = useStore(s => s.notify);
   const run = async () => {
-    const el = elFor(n.key);
-    if (!el) return;
     try {
-      const { dataUrl: url } = await rasterize(el, { format: format === 'jpeg' ? 'jpg' : (format as 'png' | 'svg'), pixelRatio: Number(scale) });
+      let url: string;
+      if (format !== 'svg' && activeRenderer() !== 'dom') url = (await renderNodeImage(n.key, { scale: Number(scale), maxSize: 16384, format: format === 'jpeg' ? 'jpg' : 'png' })).dataUrl;
+      else {
+        const el = elFor(n.key);
+        if (!el) throw new Error('the layer is not on the page');
+        url = (await rasterize(el, { format: format === 'jpeg' ? 'jpg' : (format as 'png' | 'svg'), pixelRatio: Number(scale) })).dataUrl;
+      }
       download(`${displayName(n.props)}${scale === '1' ? '' : `@${scale}x`}.${format === 'jpeg' ? 'jpg' : format}`, url);
     } catch (e) {
       notify(`Export failed: ${e instanceof Error ? e.message : e}`);

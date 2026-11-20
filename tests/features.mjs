@@ -87,16 +87,29 @@ await ev(async () => { const m = await import('/src/editor/store.ts'); });
 // --- prototype + present hover states
 await ev(() => window.__penStore.setState({ selection: [], presenting: 0 }));
 await new Promise(r => setTimeout(r, 400));
-const pinst = await ev(() => { const r = document.querySelector('.present [data-k="inst"]').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+// Slides are drawn by Skia (ui/SkiaStage.tsx): layers are found through its layout, colours read off the screen.
+const stageRect = key => ev(k => window.__penStage?.rectOf(k), key);
+await page.waitForFunction(() => window.__penStage?.rectOf('inst'), { timeout: 10000 });
+const ri = await stageRect('inst');
+const pinst = { x: ri.x + ri.width / 2, y: ri.y + ri.height / 2 };
 await page.mouse.move(pinst.x, pinst.y);
-await new Promise(r => setTimeout(r, 150));
-const hoverBg = await ev(() => { const s = getComputedStyle(document.querySelector('.present [data-k="inst"]')); return s.backgroundImage.match(/rgb\([^)]+\)/)?.[0] ?? s.backgroundColor; });
-check('present: hover state plays automatically', hoverBg === 'rgb(255, 0, 0)', hoverBg);
+// Just inside the button's corner: its background (the middle is its label). The slide is drawn again with the
+// hover state; give it a moment.
+let hoverPx = [0, 0, 0];
+for (let i = 0; i < 15; i++) {
+  await new Promise(r => setTimeout(r, 200));
+  const png = PNG.sync.read(Buffer.from(await page.screenshot({ clip: { x: Math.round(ri.x + 8), y: Math.round(ri.y + 8), width: 2, height: 2 } })));
+  hoverPx = [png.data[0], png.data[1], png.data[2]];
+  if (hoverPx[0] > 230 && hoverPx[1] < 40 && hoverPx[2] < 40) break;
+}
+check('present: hover state plays automatically', hoverPx[0] > 230 && hoverPx[1] < 40 && hoverPx[2] < 40, `rgb(${hoverPx.join(', ')})`);
 await page.mouse.click(pinst.x, pinst.y);
 await new Promise(r => setTimeout(r, 400));
 const p1 = await ev(() => window.__penStore.getState().presenting);
 check('present: clicking a link navigates', p1 === 1, `presenting=${p1}`);
-const back = await ev(() => { const r = document.querySelector('.present [data-k="back"]').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+await new Promise(r => setTimeout(r, 300));
+const rback = await stageRect('back');
+const back = { x: rback.x + rback.width / 2, y: rback.y + rback.height / 2 };
 await page.mouse.click(back.x, back.y);
 await new Promise(r => setTimeout(r, 300));
 check('present: back link returns', (await ev(() => window.__penStore.getState().presenting)) === 0);

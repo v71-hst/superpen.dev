@@ -87,6 +87,11 @@ export function liveShaderImage(id: string, configKey: string, config: () => Sha
   return l.image;
 }
 
+/** Whether the live shader under this key (liveKey) has its first frame. */
+export function liveReady(key: string): boolean {
+  return !!lives.get(key)?.image;
+}
+
 /** The error of live shader `id`, once it has failed (it is then drawn like a failing still shader). */
 export function liveShaderError(id: string): string {
   return lives.get(liveKey(id))?.runner.error ?? '';

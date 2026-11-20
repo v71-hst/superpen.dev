@@ -5,24 +5,17 @@ import { produce } from 'immer';
 import { useStore, applyProps } from '../editor/store';
 import { useTree, currentTree, buildDetachedTree, builderIndex } from '../editor/tree';
 import { stateNames } from '../model/resolve';
-import { NodeView, RenderCtx } from '../render/NodeView';
-import { makeUrlResolver } from '../editor/fileio';
 import type { RNode } from '../model/types';
-import { rasterize } from '../render/rasterize';
-import { ensureRendered } from '../editor/culling';
 import { inVsCode, post } from '../editor/host';
-import { elFor } from '../editor/ops';
 import { displayName } from '../model/doc';
+import { renderNodeImage } from '../skia/offscreen';
+import { SkiaStage, type StageHit } from './SkiaStage';
 
 /** VS Code webviews cannot print, so slides are exported as numbered PNGs into a folder instead. */
 async function exportSlidePngs(slides: RNode[]) {
   const files: { name: string; dataUrl: string }[] = [];
   for (let i = 0; i < slides.length; i++) {
-    const el = elFor(slides[i].key);
-    if (!el) continue;
-    ensureRendered([slides[i].key]);
-    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-    const { dataUrl } = await rasterize(el, { format: 'png', pixelRatio: 2 });
+    const { dataUrl } = await renderNodeImage(slides[i].key, { scale: 2, maxSize: 8192 });
     const safe = displayName(slides[i].props).replace(/[\\/:*?"<>|]+/g, '_');
     files.push({ name: `${String(i + 1).padStart(2, '0')} ${safe}.png`, dataUrl });
   }
@@ -33,44 +26,49 @@ function slidesOf(roots: RNode[]) {
   return roots.filter(n => (n.type === 'frame' || n.instanceOf) && n.props.enabled !== false);
 }
 
-function Placed({ n, w, h }: { n: RNode; w: number; h: number }) {
-  const placed = useMemo(() => ({ ...n, props: { ...n.props, x: 0, y: 0, rotation: undefined } }), [n]);
-  const fw = typeof n.props.width === 'number' ? n.props.width : 1280;
-  const fh = typeof n.props.height === 'number' ? n.props.height : 720;
-  const s = Math.min(w / fw, h / fh);
-  return (
-    <div className="present-stage" style={{ width: fw * s, height: fh * s }}>
-      <div style={{ transform: `scale(${s})` }}>
-        <NodeView n={placed} parentLayout="none" />
-      </div>
-    </div>
-  );
-}
-
-/** Keys under the pointer, innermost first. */
-function keysAt(el: Element | null): string[] {
-  const out: string[] = [];
-  for (let e = el; e && !e.classList.contains('present'); e = e.parentElement) {
-    const k = (e as HTMLElement).dataset?.k;
-    if (k) out.push(k);
-  }
-  return out;
-}
 
 export function Presenter() {
   const presenting = useStore(s => s.presenting);
   const baseTree = useTree();
   const doc = useStore(s => s.doc);
   const previewTheme = useStore(s => s.previewTheme);
-  const vars = doc?.variables;
-  const path = useStore(s => s.file?.path ?? null);
   const [size, setSize] = useState({ w: innerWidth, h: innerHeight });
   // Prototype playback: instances with "hover"/"pressed" states switch automatically; links navigate.
   const [hovered, setHovered] = useState<string[]>([]);
   const [pressed, setPressed] = useState<string | null>(null);
   const [transition, setTransition] = useState('instant');
   const history = useRef<number[]>([]);
-  const ctx = useMemo(() => ({ doc: { variables: vars }, resolveUrl: makeUrlResolver(path) }), [vars, path]);
+  // Layers under the pointer, innermost first (the slide's layout, SkiaStage).
+  const hit = useRef<StageHit | null>(null);
+  // React derives onPointerLeave from pointerout, and redrawing the slide makes the browser report the pointer
+  // leaving the slide's canvas for nowhere and coming straight back over it (which cleared the hover it had just
+  // set). A leave is real when the pointer does not come back over the slideshow a moment later.
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = root.current;
+    if (!el) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const leave = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        setHovered([]);
+        setPressed(null);
+      }, 80);
+    };
+    const over = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+    };
+    el.addEventListener('pointerleave', leave);
+    el.addEventListener('pointerover', over);
+    return () => {
+      if (timer) clearTimeout(timer);
+      el.removeEventListener('pointerleave', leave);
+      el.removeEventListener('pointerover', over);
+    };
+  }, [presenting === null]);
+  const keysAt = (e: { clientX: number; clientY: number }) => hit.current?.(e.clientX, e.clientY) ?? [];
   const tree = useMemo(() => {
     if (!doc || !baseTree || (!hovered.length && !pressed)) return baseTree;
     const want = new Map<string, string>();
@@ -134,9 +132,9 @@ export function Presenter() {
   };
   scan(n);
   const onClick = (e: React.MouseEvent) => {
-    const hit = keysAt(e.target as Element).find(k => linkOf(k));
-    if (hit) {
-      const l = linkOf(hit)!;
+    const target = keysAt(e).find(k => linkOf(k));
+    if (target) {
+      const l = linkOf(target)!;
       if (l.to === '__back') {
         const prev = history.current.pop();
         if (prev !== undefined) go(prev, l.transition ?? 'instant', false);
@@ -150,24 +148,22 @@ export function Presenter() {
     if (!slideHasLinks) go(Math.min(presenting + 1, slides.length - 1));
   };
   const onMove = (e: React.PointerEvent) => {
-    const ks = keysAt(e.target as Element).filter(k => tree.byKey.get(k)?.instanceOf || baseTree?.byKey.get(k)?.instanceOf);
+    const ks = keysAt(e).filter(k => tree.byKey.get(k)?.instanceOf || baseTree?.byKey.get(k)?.instanceOf);
     if (ks.join() !== hovered.join()) setHovered(ks);
   };
   const linkCursor = hovered.some(k => linkOf(k));
   return (
     <div
+      ref={root}
       className={'present' + (linkCursor ? ' present-hit' : '')}
       onClick={onClick}
       onPointerMove={onMove}
-      onPointerDown={e => setPressed(keysAt(e.target as Element).find(k => hovered.includes(k)) ?? null)}
+      onPointerDown={e => setPressed(keysAt(e).find(k => hovered.includes(k)) ?? null)}
       onPointerUp={() => setPressed(null)}
-      onPointerLeave={() => (setHovered([]), setPressed(null))}
     >
-      <RenderCtx.Provider value={ctx}>
-        <div key={n.key} className={'present-anim t-' + transition}>
-          <Placed n={n} w={size.w} h={size.h} />
-        </div>
-      </RenderCtx.Provider>
+      <div key={n.key} className={'present-anim t-' + transition}>
+        <SkiaStage n={n} width={size.w} height={size.h} hitRef={hit} />
+      </div>
       <div className="present-hud">
         {presenting + 1} / {slides.length} · ←/→ to navigate{slideHasLinks ? ' · click links to follow them' : ''} · Esc to exit
       </div>
@@ -192,23 +188,24 @@ export function printSlides() {
   style.textContent = `@page { size: ${pw}px ${ph}px; margin: 0 }`;
   document.head.appendChild(style);
   const root = createRoot(host);
-  const ctx = { doc: { variables: s.doc.variables }, resolveUrl: makeUrlResolver(s.file?.path ?? null) };
-  root.render(
-    <RenderCtx.Provider value={ctx}>
-      {slides.map(n => (
-        <div key={n.key} className="print-page" style={{ width: pw, height: ph }}>
-          <Placed n={n} w={pw} h={ph} />
-        </div>
-      ))}
-    </RenderCtx.Provider>,
-  );
-  document.body.classList.add('printing');
-  setTimeout(async () => {
-    await document.fonts.ready;
+  void (async () => {
+    // Each slide drawn by Skia at twice its size, fitted to the page like the slideshow does.
+    const pages = await Promise.all(slides.map(n => renderNodeImage(n.key, { scale: 2, maxSize: 8192 }).catch(() => null)));
+    root.render(
+      <>
+        {slides.map((n, i) => (
+          <div key={n.key} className="print-page" style={{ width: pw, height: ph, display: 'grid', placeItems: 'center' }}>
+            {pages[i] && <img src={pages[i]!.dataUrl} style={{ maxWidth: pw, maxHeight: ph }} alt="" />}
+          </div>
+        ))}
+      </>,
+    );
+    document.body.classList.add('printing');
+    await new Promise(r => setTimeout(r, 300));
     window.print();
     document.body.classList.remove('printing');
     root.unmount();
     host.remove();
     style.remove();
-  }, 600);
+  })();
 }

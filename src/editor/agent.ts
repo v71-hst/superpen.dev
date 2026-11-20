@@ -25,6 +25,7 @@ import { imageFillUrls, imageLodStats, imagesBusy, imagesIdle } from '../render/
 import { nextFrames } from '../render/frames';
 import { activeRenderer, rendererFailure, requestedRenderer, setRenderer } from '../skia/renderer';
 import { skiaStatus } from '../skia/SkiaLayer';
+import { renderNodeImage } from '../skia/offscreen';
 import { runBenchmark } from './benchmark';
 
 /** Things the agent should know after any call: review mode, and comments from the user waiting for an answer. */
@@ -124,6 +125,11 @@ async function picturesReady(key: string, ms = 6000) {
 }
 
 async function capture(key: string, format: 'png' | 'jpg' | 'svg', scale: number, maxSize: number) {
+  // Drawn by Skia off screen (skia/offscreen.ts): the layer's frame stays on the canvas, nothing is pinned live.
+  if (format !== 'svg' && activeRenderer() !== 'dom') {
+    const r = await renderNodeImage(key, { scale, maxSize, format });
+    return { dataUrl: r.dataUrl, width: r.width, height: r.height };
+  }
   ensureRendered([key]);
   await frames(3);
   await document.fonts.ready;
@@ -383,8 +389,10 @@ export async function handleAgentRequest(method: string, params: any): Promise<a
     case 'checkDrawing': {
       const key = String(params.id ?? '');
       requireNode(key);
-      ensureRendered([key]);
-      await frames(2);
+      if (activeRenderer() === 'dom') {
+        ensureRendered([key]);
+        await frames(2);
+      }
       const { issues } = checkDrawing(key);
       const regions: { x: number; y: number; w: number; h: number }[] = Array.isArray(params.regions) ? params.regions : [];
       if (!issues.length && !regions.length) return { issues, text: 'No problem joints found: every stroke end either sits on the line it meets or is clear of it.' };
@@ -407,9 +415,11 @@ export async function handleAgentRequest(method: string, params: any): Promise<a
       const key = String(params.id ?? '');
       requireNode(key);
       const ref = await imageSource({ image: params.image, id: params.reference_id });
-      ensureRendered([key]);
-      await frames(2);
-      if (!isRendered(key)) throw new Error(`node "${key}" is not rendered`);
+      if (activeRenderer() === 'dom') {
+        ensureRendered([key]);
+        await frames(2);
+        if (!isRendered(key)) throw new Error(`node "${key}" is not rendered`);
+      }
       // Render at the reference's pixel size so the two line up pixel for pixel.
       const k = ref.width / Math.max(1, nodeSize(key)!.w);
       const shot = await capture(key, 'png', k, 8192);
