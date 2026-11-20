@@ -9,6 +9,7 @@ import { parseShader, ShaderRunner, type ShapeSpec, type UniformInfo } from '../
 import { paintFills } from '../render/ShaderLayer';
 import { onAssetsChanged } from '../render/scripts';
 import { fillList } from '../render/paint';
+import { ellipseGeometry, pathGeometry, polygonGeometry } from '../render/geometry';
 import { perfLimits } from '../editor/perfLimits';
 import { kitIfLoaded } from './kit';
 import { bumpImageStamp, forgetImages, getImage, registerImageSource } from './images';
@@ -83,13 +84,27 @@ function radii(v: any): number[] {
   return r.slice(0, 4);
 }
 
-/** The outline a shader is told about (its @sdf input); undefined when Skia cannot supply it for this node. */
-function shapeFor(n: RNode, p: any, needsOutline: boolean): ShapeSpec | null | undefined {
+/**
+ * The outline a shader is told about (its @sdf input); undefined when Skia cannot supply it for this node. Without
+ * the node's size (w, h) it only answers whether it can.
+ */
+function shapeFor(n: RNode, p: any, needsOutline: boolean, w?: number, h?: number): ShapeSpec | null | undefined {
   if (n.type === 'frame' || n.type === 'rectangle') return { kind: 'rect', radius: radii(p.cornerRadius) };
   if (n.type === 'ellipse' && !num(p.innerRadius) && (p.sweepAngle === undefined || Math.abs(num(p.sweepAngle)) >= 360)) return { kind: 'ellipse' };
-  // Paths, polygons, partial ellipses: Skia clips the result to the outline itself, so only a shader that READS the
-  // outline needs it, and that stays with the page-element renderer.
-  return needsOutline ? undefined : null;
+  // Paths, polygons, partial ellipses, lines: Skia clips the result to the outline itself, so only a shader that READS
+  // the outline needs it.
+  if (!needsOutline) return null;
+  if (n.type !== 'path' && n.type !== 'polygon' && n.type !== 'ellipse' && n.type !== 'line') return undefined;
+  if (w === undefined || h === undefined) return { kind: 'path', d: '' };
+  // The same outline the page-element renderer gives this shader (NodeView ShapeView). Frames with such shapes used to
+  // stay on that renderer, and its zoomed-out snapshots skip frames with shaders: hundreds of live shader canvases
+  // far out (docs/SKIA_REWORK.md, 2026-11-20).
+  let d = '';
+  if (n.type === 'ellipse') d = ellipseGeometry(w, h, num(p.innerRadius), num(p.startAngle), p.sweepAngle === undefined ? 360 : num(p.sweepAngle, 360));
+  else if (n.type === 'polygon') d = polygonGeometry(w, h, num(p.polygonCount, 3), num(p.cornerRadius));
+  else if (n.type === 'path') d = pathGeometry(typeof p.geometry === 'string' ? p.geometry : '', w, h, p.viewBox);
+  else d = `M0 0L${w} ${h}`;
+  return { kind: 'path', d, evenodd: p.fillRule === 'evenodd' || (n.type === 'ellipse' && num(p.innerRadius) > 0) };
 }
 
 /**
@@ -127,12 +142,12 @@ export function shaderFillImage(resolveUrl: (u: string) => string, n: RNode, p: 
   const url = resolveUrl(f.url);
   const info = infoOf(url);
   if (info.state !== 'ready' || info.animated || info.backdrop || broken.has(url)) return null;
-  const shape = shapeFor(n, p, info.sdf);
+  const W = Math.round(w * 100) / 100, H = Math.round(h * 100) / 100;
+  const shape = shapeFor(n, p, info.sdf, W, H);
   if (shape === undefined) return null;
   const all = fillList(p.fill);
   const at = all.indexOf(f);
   const below = (at > 0 ? all.slice(0, at) : []).filter(x => !isShader(x));
-  const W = Math.round(w * 100) / 100, H = Math.round(h * 100) / 100;
   const key = PREFIX + hash(JSON.stringify([url, f.uniforms ?? {}, W, H, shape, below, assetEpoch]));
   registerImageSource(key, async side => {
     const maxScale = perfLimits().shaderMaxScale;

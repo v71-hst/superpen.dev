@@ -1,10 +1,12 @@
 // Writes a design with many shader fills, for timing what zooming costs when there are lots of shader canvases:
 // a grid of phone-sized frames, each with three shader-filled shapes (a still shader: no time input, so it only
-// redraws when its size on screen changes) and some text.
-// Usage: node make-shaders.mjs <out.spen> [frames=64]
+// redraws when its size on screen changes) and some text. `sdfPaths`: also that many path shapes per frame filled with
+// a still shader that reads the shape's outline (@sdf), like chrome or steel effects on icons: before 2026-11-20 such
+// frames stayed on the page-element renderer and were never snapshotted, so they kept every shader canvas live far out.
+// Usage: node make-shaders.mjs <out.spen> [frames=64] [sdfPaths=0]
 import fs from 'node:fs';
 import path from 'node:path';
-const [, , out, framesArg = '64'] = process.argv;
+const [, , out, framesArg = '64', sdfArg = '0'] = process.argv;
 if (!out) {
   console.error('usage: node make-shaders.mjs <out.spen> [frames]');
   process.exit(2);
@@ -44,6 +46,30 @@ void main() {
 }
 `,
 );
+// A still one that reads the shape's outline (@sdf): brushed metal, darker towards the edges.
+fs.writeFileSync(
+  path.join(dir, 'shaders', 'sdf-metal.glsl'),
+  `precision highp float;
+/** @resolution */ uniform vec2 u_resolution;
+/** @sdf */ uniform sampler2D u_shape;
+/**
+ * @label Tint
+ * @color
+ * @default #C0C8D8
+ */
+uniform vec3 u_tint;
+void main() {
+  vec2 uv = gl_FragCoord.xy / u_resolution;
+  float d = texture2D(u_shape, uv).r;
+  if (d < -1.0) { gl_FragColor = vec4(0.0); return; }
+  float inside = smoothstep(-1.0, 1.0, d);
+  float bevel = clamp(d / 6.0, 0.0, 1.0);
+  float brush = 0.5 + 0.5 * sin(uv.y * 240.0 + sin(uv.x * 9.0) * 3.0);
+  vec3 c = u_tint * (0.55 + 0.35 * bevel + 0.1 * brush);
+  gl_FragColor = vec4(c * inside, inside);
+}
+`,
+);
 // An animated one (it reads the time), not used by the design: shaderfill.mjs switches a fill to it.
 fs.writeFileSync(
   path.join(dir, 'shaders', 'moving.glsl'),
@@ -57,6 +83,9 @@ void main() {
 `,
 );
 const n = Number(framesArg);
+const sdfPaths = Number(sdfArg);
+// A star and a shield, in a 24-unit box like icon paths.
+const SHAPES = ['M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z', 'M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5z'];
 const cols = Math.ceil(Math.sqrt(n));
 const tints = ['#3A86FF', '#FF006E', '#8338EC', '#06D6A0', '#FFBE0B', '#FB5607'];
 const children = [];
@@ -69,8 +98,13 @@ for (let i = 0; i < n; i++) {
       { type: 'text', id: `f${i}t`, x: 24, y: 330, content: `Screen ${i + 1}`, fontFamily: 'Inter', fontSize: 28, fontWeight: '700', fill: '#FFFFFF' },
       { type: 'rectangle', id: `f${i}b`, x: 24, y: 400, width: 342, height: 180, cornerRadius: 24, fill: fill(1) },
       { type: 'ellipse', id: `f${i}c`, x: 115, y: 620, width: 160, height: 160, fill: fill(2) },
+      ...Array.from({ length: sdfPaths }, (_, k) => ({
+        type: 'path', id: `f${i}p${k}`, x: 24 + (k % 6) * 58, y: 300 + Math.floor(k / 6) * 58, width: 48, height: 48,
+        geometry: SHAPES[k % SHAPES.length], viewBox: [0, 0, 24, 24],
+        fill: { type: 'shader', url: './shaders/sdf-metal.glsl', uniforms: { u_tint: tints[(i + k) % tints.length] } },
+      })),
     ],
   });
 }
 fs.writeFileSync(out, JSON.stringify({ version: '2.21', children }, null, 1));
-console.log(`${out}: ${n} frames, ${n * 3} shader fills`);
+console.log(`${out}: ${n} frames, ${n * (3 + sdfPaths)} shader fills (${n * sdfPaths} on paths reading their outline)`);
