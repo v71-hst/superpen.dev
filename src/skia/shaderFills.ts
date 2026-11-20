@@ -3,7 +3,8 @@
 // the same picture for the same inputs, so it is run once into an image, and Skia draws that image like any picture
 // fill: a small version first, a larger one while something on screen shows it bigger (images.ts does both; here the
 // "file" is the shader run at the size asked for). Animated shaders, shaders that read what is behind them, and
-// shader effects keep the old path: their frames are drawn with page elements as before.
+// shader effects keep the old path: their frames are drawn with page elements as before. A still shader that fails
+// (compile error, unreadable file, no WebGL) is drawn as the same error marker that path shows (errorFill).
 import type { RNode } from '../model/types';
 import { parseShader, ShaderRunner, type ShapeSpec, type UniformInfo } from '../render/shaders';
 import { paintFills } from '../render/ShaderLayer';
@@ -25,8 +26,12 @@ export const shaderInfoKey = (url: string) => PREFIX + 'info/' + url;
 
 type Info = { state: 'loading' } | { state: 'ready'; animated: boolean; backdrop: boolean; sdf: boolean } | { state: 'failed' };
 const infos = new Map<string, Info>();
-/** Shader files that did not compile or run: their frames go back to page elements, which show the error on the node. */
-const broken = new Set<string>();
+/**
+ * Shader files that did not compile or run (or could not be read, or WebGL is missing), with the message: Skia draws
+ * the same error marker the page-element renderer shows (errorFill). Those frames used to go back to that renderer for
+ * the marker, which kept every node and shader canvas of the frame live at every zoom (docs/SKIA_REWORK.md, 2026-11-20).
+ */
+const broken = new Map<string, string>();
 /** The last image that was ready for a fill (by node and position), shown while a changed one is being made. */
 const lastReady = new Map<string, string>();
 let assetEpoch = 0;
@@ -113,10 +118,11 @@ function shapeFor(n: RNode, p: any, needsOutline: boolean, w?: number, h?: numbe
  */
 export function shaderFillBlocker(resolveUrl: (u: string) => string, n: RNode, p: any, f: any): string | null {
   const url = resolveUrl(f.url);
-  if (broken.has(url)) return `shader fill on ${n.key} (the shader has an error)`;
+  if (broken.has(url)) return null;
   const info = infoOf(url);
   if (info.state === 'loading') return SHADERS_LOADING;
-  if (info.state === 'failed') return `shader fill on ${n.key} (the file could not be read)`;
+  // Not readable: it is run anyway, and fails with the page-element renderer's own message (then drawn as an error).
+  if (info.state === 'failed') return null;
   if (info.animated) return `animated shader fill on ${n.key}`;
   if (info.backdrop) return `shader fill on ${n.key} reads what is behind it`;
   if (shapeFor(n, p, info.sdf) === undefined) return `shader fill on ${n.key} reads the outline of a ${n.type}`;
@@ -140,10 +146,12 @@ function hash(s: string): string {
 export function shaderFillImage(resolveUrl: (u: string) => string, n: RNode, p: any, f: any, w: number, h: number): any | null {
   if (!isShader(f) || !(w > 0) || !(h > 0)) return null;
   const url = resolveUrl(f.url);
-  const info = infoOf(url);
-  if (info.state !== 'ready' || info.animated || info.backdrop || broken.has(url)) return null;
   const W = Math.round(w * 100) / 100, H = Math.round(h * 100) / 100;
-  const shape = shapeFor(n, p, info.sdf, W, H);
+  const message = broken.get(url);
+  if (message !== undefined) return errorFill(message, W, H);
+  const info = infoOf(url);
+  if (info.state === 'loading' || (info.state === 'ready' && (info.animated || info.backdrop))) return null;
+  const shape = shapeFor(n, p, info.state === 'ready' && info.sdf, W, H);
   if (shape === undefined) return null;
   const all = fillList(p.fill);
   const at = all.indexOf(f);
@@ -168,7 +176,7 @@ export function shaderFillImage(resolveUrl: (u: string) => string, n: RNode, p: 
       });
       if (runner.error) {
         // The page-element renderer shows the message on the node: hand the frame back to it.
-        broken.add(url);
+        broken.set(url, runner.error);
         bumpImageStamp(shaderInfoKey(url));
         throw new Error(runner.error);
       }
@@ -195,6 +203,62 @@ export function shaderFillImage(resolveUrl: (u: string) => string, n: RNode, p: 
     if (prev && prev !== key && getImage(prev, false).status === 'ready') use = prev;
   }
   return { type: 'image', url: use, wanted: key, mode: 'stretch', opacity: f.opacity, blendMode: f.blendMode, shader: true };
+}
+
+/**
+ * The page-element renderer's marker for a shader that fails (ShaderLayer.tsx ShaderError: a dashed red box with
+ * "Shader error: …" in it, over a cleared canvas) as a picture fill of the node's size. Not given the fill's opacity
+ * or blend mode: the marker there is a separate element without them.
+ */
+function errorFill(message: string, W: number, H: number) {
+  const key = PREFIX + 'error/' + hash(JSON.stringify([message, W, H]));
+  registerImageSource(key, async side => {
+    const maxScale = perfLimits().shaderMaxScale;
+    const k = Math.max(0.05, Math.min(maxScale, side / Math.max(W, H)));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(W * k));
+    canvas.height = Math.max(1, Math.round(H * k));
+    const g = canvas.getContext('2d')!;
+    g.scale(canvas.width / W, canvas.height / H);
+    g.fillStyle = 'rgba(244,63,94,0.06)';
+    g.fillRect(0, 0, W, H);
+    g.strokeStyle = '#f43f5e';
+    g.lineWidth = 1;
+    g.setLineDash([3, 3]);
+    g.strokeRect(0.5, 0.5, W - 1, H - 1);
+    // 10px system-ui, 4px padding inside the 1px border, words wrapped to the box; a line that does not fit in it is
+    // left out (there a cut-off line shows nothing, the room left under the last line being only its leading).
+    g.save();
+    g.fillStyle = '#f43f5e';
+    g.font = '10px system-ui';
+    g.textBaseline = 'top';
+    const width = W - 10;
+    let line = '', y = 5;
+    for (const word of `Shader error: ${message}`.split(/\s+/)) {
+      const next = line ? line + ' ' + word : word;
+      if (line && g.measureText(next).width > width) {
+        g.fillText(line, 5, y);
+        y += 12;
+        line = word;
+        if (y + 12 > H - 1) {
+          line = '';
+          break;
+        }
+      } else line = next;
+    }
+    if (line && y + 12 <= H - 1) g.fillText(line, 5, y);
+    g.restore();
+    return {
+      w0: Math.max(1, Math.round(W * maxScale)),
+      h0: Math.max(1, Math.round(H * maxScale)),
+      make: () => {
+        const ck = kitIfLoaded();
+        return ck ? ck.MakeImageFromCanvasImageSource(canvas) : null;
+      },
+      discard: () => undefined,
+    };
+  });
+  return { type: 'image', url: key, mode: 'stretch', shader: true, errorMarker: true };
 }
 
 /** Forget everything (Skia switched off, or another design). */

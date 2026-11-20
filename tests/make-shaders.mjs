@@ -3,12 +3,14 @@
 // redraws when its size on screen changes) and some text. `sdfPaths`: also that many path shapes per frame filled with
 // a still shader that reads the shape's outline (@sdf), like chrome or steel effects on icons: before 2026-11-20 such
 // frames stayed on the page-element renderer and were never snapshotted, so they kept every shader canvas live far out.
-// Usage: node make-shaders.mjs <out.spen> [frames=64] [sdfPaths=0]
+// `broken=1`: those paths use a shader with a compile error instead (sdf-broken.glsl): such a frame used to go back to the
+// page-element renderer too, for its error marker.
+// Usage: node make-shaders.mjs <out.spen> [frames=64] [sdfPaths=0] [broken=0]
 import fs from 'node:fs';
 import path from 'node:path';
-const [, , out, framesArg = '64', sdfArg = '0'] = process.argv;
+const [, , out, framesArg = '64', sdfArg = '0', brokenArg = '0'] = process.argv;
 if (!out) {
-  console.error('usage: node make-shaders.mjs <out.spen> [frames]');
+  console.error('usage: node make-shaders.mjs <out.spen> [frames] [sdfPaths] [broken]');
   process.exit(2);
 }
 const dir = path.dirname(path.resolve(out));
@@ -70,6 +72,18 @@ void main() {
 }
 `,
 );
+// The same with a compile error (an undeclared name), as a shader being written or one from an older version might have.
+fs.writeFileSync(
+  path.join(dir, 'shaders', 'sdf-broken.glsl'),
+  `precision highp float;
+/** @resolution */ uniform vec2 u_resolution;
+/** @sdf */ uniform sampler2D u_shape;
+void main() {
+  float d = texture2D(u_shape, gl_FragCoord.xy / u_resolution).r;
+  gl_FragColor = vec4(chrome(d), 1.0);
+}
+`,
+);
 // An animated one (it reads the time), not used by the design: shaderfill.mjs switches a fill to it.
 fs.writeFileSync(
   path.join(dir, 'shaders', 'moving.glsl'),
@@ -101,7 +115,7 @@ for (let i = 0; i < n; i++) {
       ...Array.from({ length: sdfPaths }, (_, k) => ({
         type: 'path', id: `f${i}p${k}`, x: 24 + (k % 6) * 58, y: 300 + Math.floor(k / 6) * 58, width: 48, height: 48,
         geometry: SHAPES[k % SHAPES.length], viewBox: [0, 0, 24, 24],
-        fill: { type: 'shader', url: './shaders/sdf-metal.glsl', uniforms: { u_tint: tints[(i + k) % tints.length] } },
+        fill: { type: 'shader', url: Number(brokenArg) ? './shaders/sdf-broken.glsl' : './shaders/sdf-metal.glsl', uniforms: { u_tint: tints[(i + k) % tints.length] } },
       })),
     ],
   });

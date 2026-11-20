@@ -461,9 +461,11 @@ function drawBox(r: Rec, pn: PaintNode, p: any, fx: any[]) {
     // background-blend-mode blends a box's layers with each other only: isolate them.
     const isolate = fills.some((f: any) => f && typeof f === 'object' && f.blendMode && f.blendMode !== 'normal');
     if (isolate) c.saveLayer();
-    for (const f of fills) drawFill(r, pn.world, isShaderFill(f) ? shaderFillImage(r.ctx.resolveUrl, pn.node, p, f, w, h) : f, 0, 0, w, h, false);
+    const made = fills.map(f => (isShaderFill(f) ? shaderFillImage(r.ctx.resolveUrl, pn.node, p, f, w, h) : f));
+    for (const f of made) if (!f?.errorMarker) drawFill(r, pn.world, f, 0, 0, w, h, false);
     if (isolate) c.restore();
     c.restore();
+    drawErrorMarkers(r, pn, made, w, h);
   }
   // Inset box-shadows.
   const inner = shadows.filter(e => e.shadowType === 'inner');
@@ -710,6 +712,14 @@ function shapePath(ck: CanvasKit, scope: Scope, type: string, p: any, w: number,
   return { path, evenodd };
 }
 
+/**
+ * A failing shader's error marker (shaderFills.ts errorFill) covers the node's whole box, not clipped to its outline or
+ * corners: on the page-element renderer it is a separate box over the fills.
+ */
+function drawErrorMarkers(r: Rec, pn: PaintNode, made: any[], w: number, h: number) {
+  for (const f of made) if (f?.errorMarker) drawFill(r, pn.world, f, 0, 0, w, h, false);
+}
+
 function drawShape(r: Rec, pn: PaintNode, p: any) {
   const { c, ck, scope } = r;
   const type = pn.node.type;
@@ -721,8 +731,10 @@ function drawShape(r: Rec, pn: PaintNode, p: any) {
   if (fills.length) {
     c.save();
     c.clipPath(path, ck.ClipOp.Intersect, true);
-    for (const f of fills) drawFill(r, pn.world, isShaderFill(f) ? shaderFillImage(r.ctx.resolveUrl, pn.node, p, f, w, h) : f, 0, 0, w, h, true);
+    const made = fills.map(f => (isShaderFill(f) ? shaderFillImage(r.ctx.resolveUrl, pn.node, p, f, w, h) : f));
+    for (const f of made) if (!f?.errorMarker) drawFill(r, pn.world, f, 0, 0, w, h, true);
     c.restore();
+    drawErrorMarkers(r, pn, made, w, h);
   }
   const s = normalizeStroke(p, open ? 'center' : type === 'ellipse' ? 'center' : 'inner');
   if (!s) return;

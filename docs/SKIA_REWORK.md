@@ -323,7 +323,7 @@ to run, what to look at. The owner builds and installs with `npm run package` an
 | 2026-11-19 | Gate (owner's PC) | Started; full mode tuned | First benchmarks on the owner's PC, then a tuning pass there. See the gate notes at the end. Next: the owner re-runs the benchmark on the tuned build, then memory and the look check. |
 | 2026-11-19 | Gate (owner's PC) | Memory fixed | Pictures in two sizes; `full` now uses less memory than `dom` in normal mode at every step. See the last section. Next: the owner tries it in VS Code, then the look check, real use and the 16 GB machine. |
 | 2026-11-19 | 5 | Default switched (owner's decision) | Merged to `main` as 0.4.0 with `full` as the default; the `skia-rework` branch is gone. `dom` and `overview` stay selectable. The clean-up half of stage 5 is not started. See the last section. |
-| 2026-11-20 | After 1.0.1 | Far-zoom speed fix (branch `far-zoom-perf`) | "About 10 fps at 2%": far-zoom copies drawn from shared atlas pages, frame labels moved as one box, and frames with outline-reading (`@sdf`) shaders on paths now drawn by Skia (the friend's file). See the last section. Not merged. |
+| 2026-11-20 | After 1.0.1 | Far-zoom speed fix (branch `far-zoom-perf`) | "About 10 fps at 2%": far-zoom copies drawn from shared atlas pages, frame labels moved as one box, and frames with outline-reading (`@sdf`) shaders on paths, or shaders with an error, now drawn by Skia (the friend's file). See the last section. Not merged. |
 
 ### 2026-11-18, stage 0 notes
 
@@ -792,6 +792,30 @@ Still costing time on a slow processor at 2% (4× slower: ~100 ms per pan step l
 lifecycle (layerize and commit) for the 600 frame stand-ins and labels. On the normal container processor this was
 under a frame. The browser's `GLES2::ReadPixels` in traces is the container's software compositing, not the editor.
 
+**Shaders with an error (the friend's second finding).** A still shader fill that fails (a compile error, a file that
+cannot be read, no WebGL) also sent its whole frame back to the DOM renderer, only so that renderer could show its
+error marker, and that frame then stayed live at every zoom like the `@sdf` ones above, its working shaders included.
+Now Skia draws the marker itself (`errorFill` in `shaderFills.ts`): the same dashed red box with "Shader error: …"
+over the node's whole box (not clipped to the outline, as on the DOM renderer; `drawErrorMarkers` in `painter.ts`),
+made as a picture like a still shader's output. The design check (`checkLayout`) still lists every shader error: it
+renders the checked frames as page elements and reads their markers, on both renderers (30 of 30 on the test file).
+Animated shaders and shaders that read the backdrop are unchanged (they go back to the DOM renderer anyway).
+
+Test file: `make-shaders.mjs broken28.spen 28 30 1` (the same 28 frames, the 840 paths on `sdf-broken.glsl`, which
+does not compile). `farzoom.mjs`, normal processor:
+
+| 28 frames with failing shaders | Before (`f4196b9`) | After |
+|---|---|---|
+| Frames drawn by Skia | 0 of 28 ("the shader has an error") | 28 of 28 |
+| 2% zoom: 30 steps took | 11.2 s, 12 fps, 60 long tasks (5.5 s) | 2.0 s, 60 fps, 0 long tasks |
+| 2% pan | 16 fps, 29 long tasks | 60 fps, 0 long tasks |
+| 9% zoom: 30 steps took | 13.4 s, 10 fps, 71 long tasks (7.1 s) | 2.0 s, 60 fps, 0 long tasks |
+| 9% pan | 16 fps, 30 long tasks | 60 fps, 0 long tasks |
+
+Slower than the working-shader case before its fix (the 840 error boxes are text the browser lays out), and the
+closest to the reported 10 fps of anything measured here. Look: `paint-diff.mjs` on a 3-frame version, 98.7 / 98.4 /
+98.2% (text anti-aliasing in the boxes; checked by eye); the working `@sdf` version still 100%.
+
 **Suites** on the final branch (dev server; `stress`, `shaderfill`, `sharpen` on generated files): `features` 20/20
 (default and `&renderer=dom`), `v1` 49/49 (the other 6 need the Figma samples, not in the repo), `skia-smoke` 11/11,
 `shaderfill` 8/8, `sharpen` 10/11, `stress` no errors (default and `&renderer=dom`). The `sharpen` failure ("fine
@@ -806,6 +830,7 @@ Questions for the friend, with this build:
 1. `diagnose_editor` → `renderer.skia.pictures`: is `eligible` now 28 more than before, and what does `reasons` still
    list? Any frame left there is still on the DOM renderer, and the reason says why.
 2. Do chrome, steel, slate, halftone or crt use `@time` or read the backdrop? (Those frames stay on the DOM renderer.)
+   Do any of their shapes show the red "Shader error" box? (Now drawn by Skia, but fixing the shader is still best.)
 3. Still slow? Only while zooming/panning, or also when nothing moves? Only in the first minute after opening?
 4. If so, `diagnose_editor` while it is slow (`renderer.skia.overview.atlas`, `gpu`, `drawMs`), and whether VS Code
    uses the graphics card at all: Windows Task Manager, the GPU column for "Code" while zooming (theory 4).
