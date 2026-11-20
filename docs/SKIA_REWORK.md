@@ -326,6 +326,7 @@ to run, what to look at. The owner builds and installs with `npm run package` an
 | 2026-11-20 | After 1.0.1 | Far-zoom speed fix (branch `far-zoom-perf`) | "About 10 fps at 2%": far-zoom copies drawn from shared atlas pages, frame labels moved as one box, and frames with outline-reading (`@sdf`) shaders on paths, or shaders with an error, now drawn by Skia (the friend's file). See the last section. Not merged. |
 | 2026-11-20 | Skia only (owner's decision) | Done (branch `skia-only`, not merged) | The DOM renderer is removed. Every frame is drawn by Skia (on the GPU, or in software without one); screenshots, exports, the slideshow, thumbnails and checkLayout use Skia and the layout engine; HTML/SVG export has a new exporter. See the last two sections. |
 | 2026-11-20 | Skia only: shaders on Skia's GPU | Done (branch `skia-only`, not merged) | "Zooming still freezes sometimes": design shaders are translated to SkSL and run on Skia's own GPU context, no WebGL readback. See the last section. The friend's test build on a real GPU: zooming "all perfect now". |
+| 2026-11-20 | Skia only: layers recorded on their own | Done (branch `skia-only`, not merged) | The friend's last item: each layer directly inside a board is its own picture, kept while unchanged; an edit records only its layer again. See the last section. |
 
 ### 2026-11-18, stage 0 notes
 
@@ -951,4 +952,24 @@ them on the CPU instead of reading them back from the GPU.
 the broken one is rejected and keeps WebGL. Here (software GL) zooming fx28 is unchanged, as expected: 34.4 to 36.4
 fps, long tasks 1640 to 1588 ms; the read-backs this removes are cheap without a GPU. **On a real GPU** (the friend's test
 build, `skia-only-test-build` at 6e65b06): "all perfect now", no more freezes while zooming.
+
+### 2026-11-20, each layer of a board recorded on its own
+
+**Before:** any edit inside a board recorded the whole board's picture again (layout and every node). **Now:** each
+node directly inside a top-level frame is recorded as its own picture (`painter.ts drawLayer`) and the board's picture
+draws those. A layer's picture is reused while its node (same `RNode`, so nothing in it changed), its box, its place
+in the board, the variables, the fonts and pictures (their global epochs), the picture sizes in use (`detail`) and
+what is left out of it (the text being edited, AI Pen) are the same. Pictures are in the board's units, so moving a
+board keeps all of them (where they draw pictures is shifted). Recorded fresh every time: a layer with a shader that
+reads its backdrop (it depends on the other layers) and one showing an animated shader. The pictures are kept with
+the frame's entry (`frames.ts`) and freed when the layer goes, when the frame goes, or with a new document. The
+layout still runs for the whole board on each edit.
+
+**Measured** (`tests/editrec.mjs`, 40 colour edits of a text deep inside the largest board, 147 nodes in 6 layers;
+recording time includes the layout): big.spen 2.60 to 1.27 ms per edit, big2k.spen 2.30 to 1.25 ms. A board with more
+layers gains more (the friend's: 11.7 to 1.8 ms). The rest of an edit's time here is the browser painting the page in
+software (a CPU profile: about 53 of 73 ms is the browser's own work, our JavaScript about 10 ms).
+
+**Checked:** the board on screen, after the edits, after moving it and after an edit in another layer, is
+pixel-identical to the same board recorded afresh in one piece (`compareRecordedForTest`, 0 of 695,744 pixels differ).
 

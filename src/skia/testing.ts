@@ -105,3 +105,49 @@ export function engineLayout(root: RNode): PaintNode | null {
   const ctx = paintContext(ck);
   return layoutTree(root, skiaMeasureText(ctx), { doc: ctx.doc });
 }
+
+/**
+ * Frame `key`'s picture on the canvas (made from its layers' reused pictures) against the frame recorded afresh in one
+ * piece, both drawn at 1 px per unit: how many pixels differ (tests/editrec.mjs).
+ */
+export async function compareRecordedForTest(key: string) {
+  const ck = await loadKit();
+  const ctx = paintContext(ck);
+  const got = (await import('./frames')).recordedPicture(key);
+  const root = currentTree()?.byKey.get(key);
+  if (!got || !root) return { error: 'frame not recorded' };
+  const pn = engineLayout(root);
+  if (!pn) return { error: 'not laid out' };
+  const fresh = recordPicture(ctx, pn, undefined, got.detail, undefined, got.hidden);
+  const r = fresh.cullRect();
+  const x0 = Math.floor(r[0]), y0 = Math.floor(r[1]);
+  const w = Math.max(1, Math.min(4096, Math.ceil(r[2]) - x0)), h = Math.max(1, Math.min(4096, Math.ceil(r[3]) - y0));
+  const px = (pic: typeof fresh) => {
+    const surface = ck.MakeSurface(w, h)!;
+    try {
+      const c = surface.getCanvas();
+      c.clear(ck.TRANSPARENT);
+      c.translate(-x0, -y0);
+      c.drawPicture(pic);
+      surface.flush();
+      const img = surface.makeImageSnapshot();
+      const out = img.readPixels(0, 0, { width: w, height: h, colorType: ck.ColorType.RGBA_8888, alphaType: ck.AlphaType.Unpremul, colorSpace: ck.ColorSpace.SRGB }) as Uint8Array;
+      img.delete();
+      return out;
+    } finally {
+      surface.delete();
+    }
+  };
+  try {
+    const a = px(got.picture), b = px(fresh);
+    let differ = 0, worst = 0;
+    for (let i = 0; i < a.length; i += 4) {
+      const d = Math.max(Math.abs(a[i] - b[i]), Math.abs(a[i + 1] - b[i + 1]), Math.abs(a[i + 2] - b[i + 2]), Math.abs(a[i + 3] - b[i + 3]));
+      if (d > 0) differ++;
+      worst = Math.max(worst, d);
+    }
+    return { pixels: w * h, differ, worst };
+  } finally {
+    free(fresh);
+  }
+}

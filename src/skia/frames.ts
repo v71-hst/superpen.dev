@@ -9,7 +9,7 @@ import { free } from './lifetime';
 import { useStore } from '../editor/store';
 import { fontEpoch, fontStamp } from './fonts';
 import { KEEP_MS, imageEpoch, imageStamp, wantImage } from './images';
-import { newDeps, recordPicture, skiaEligible, type FrameDeps, type ImageUse, type PaintContext, type PaintNode } from './painter';
+import { freeLayers, layerBytes, newDeps, newLayerCache, recordPicture, skiaEligible, type FrameDeps, type ImageUse, type LayerCache, type PaintContext, type PaintNode } from './painter';
 
 type Entry = {
   rnode: RNode;
@@ -39,7 +39,11 @@ type Entry = {
   detail: boolean;
   /** When it was last seen like that. */
   detailAt: number;
+  /** Its layers' own pictures (painter.ts drawLayer): an edit records only the layer it is in again. */
+  layers: LayerCache;
 };
+
+const keepLayer = (pending: string[]) => !pending.some(isLiveKey);
 
 const cache = new Map<string, Entry>();
 let records = 0;
@@ -84,7 +88,7 @@ function entry(ctx: PaintContext, root: RNode, editingKey: string | null): Entry
   const deps = newDeps();
   const reason = skiaEligible(ctx, root, editing, deps);
   const detail = e?.detail ?? false;
-  const next: Entry = { rnode: root, vars: ctx.doc.variables, editing, hidden, deps, fonts: fontsOf(deps), images: imageStamp(deps.images, detail), seenFonts: fontEpoch(), seenImages: imageEpoch(), reason, picture: null, uses: e?.uses ?? [], live: e?.live ?? [], liveSeen: -1, detail, detailAt: e?.detailAt ?? 0 };
+  const next: Entry = { rnode: root, vars: ctx.doc.variables, editing, hidden, deps, fonts: fontsOf(deps), images: imageStamp(deps.images, detail), seenFonts: fontEpoch(), seenImages: imageEpoch(), reason, picture: null, uses: e?.uses ?? [], live: e?.live ?? [], liveSeen: -1, detail, detailAt: e?.detailAt ?? 0, layers: e?.layers ?? newLayerCache(keepLayer) };
   cache.set(root.key, next);
   return next;
 }
@@ -111,7 +115,7 @@ export function framePicture(ctx: PaintContext, root: RNode, layout: () => Paint
     if (!l) return null;
     const uses: ImageUse[] = [];
     const asked = new Set<string>();
-    e.picture = recordPicture(ctx, l, uses, e.detail, asked, e.hidden ? e.hidden.split('\n') : null);
+    e.picture = recordPicture(ctx, l, uses, e.detail, asked, e.hidden ? e.hidden.split('\n') : null, e.layers);
     e.uses = uses;
     // Made pictures (still shaders) are only known once the layout gives their size: from now on the frame depends
     // on them like on its other pictures, and records again when one arrives or gets a sharper version.
@@ -132,6 +136,12 @@ export function framePicture(ctx: PaintContext, root: RNode, layout: () => Paint
 /** The live shader textures a frame's picture draws (empty when it has none or is not recorded). */
 export function frameLiveKeys(key: string): readonly string[] {
   return cache.get(key)?.live ?? [];
+}
+
+/** The frame's recorded picture as it is (tests: compared with a fresh recording, tests/editrec.mjs). */
+export function recordedPicture(key: string): { picture: SkPicture; detail: boolean; hidden: string[] } | null {
+  const e = cache.get(key);
+  return e?.picture ? { picture: e.picture, detail: e.detail, hidden: e.hidden ? e.hidden.split('\n') : [] } : null;
 }
 
 /** World-space bounds of everything a frame's recorded picture draws (overflowing children and shadows included). */
@@ -190,19 +200,27 @@ export function pruneFrames(liveKeys: Set<string>) {
       free(e.picture);
       pictureListeners.forEach(l => l(k));
     }
+    freeLayers(e.layers);
     cache.delete(k);
   }
 }
 
 export function clearFrames() {
-  for (const e of cache.values()) free(e.picture);
+  for (const e of cache.values()) {
+    free(e.picture);
+    freeLayers(e.layers);
+  }
   cache.clear();
 }
 
 export function frameStats() {
   const reasons: Record<string, number> = {};
-  let eligible = 0, recorded = 0, bytes = 0;
+  let eligible = 0, recorded = 0, bytes = 0, layerHits = 0, layerRecords = 0, layers = 0;
   for (const e of cache.values()) {
+    layerHits += e.layers.hits;
+    layerRecords += e.layers.misses;
+    layers += e.layers.pics.size;
+    bytes += layerBytes(e.layers);
     if (!e.reason) eligible++;
     else {
       const r = e.reason.replace(/ on \S+$/, '').replace(/"[^"]*"/g, '"…"');
@@ -213,5 +231,5 @@ export function frameStats() {
       bytes += e.picture.approximateBytesUsed();
     }
   }
-  return { frames: cache.size, eligible, recorded, pictureMB: Math.round(bytes / 104857.6) / 10, fallback: cache.size - eligible, reasons, recordings: records, recordMs: Math.round(recordMs), slowestRecordMs: Math.round(slowestRecordMs) };
+  return { frames: cache.size, eligible, recorded, pictureMB: Math.round(bytes / 104857.6) / 10, fallback: cache.size - eligible, reasons, recordings: records, recordMs: Math.round(recordMs), slowestRecordMs: Math.round(slowestRecordMs), layers, layerHits, layerRecords };
 }

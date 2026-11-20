@@ -12,7 +12,7 @@ import { weightNum } from '../render/fonts';
 import { scriptState } from '../editor/scriptHost';
 import { Scope, free, own } from './lifetime';
 import { DEFAULT_FAMILY, familyList, fontBlocker, fontCollection, fontEpoch, fontStyleKey, iconFontKey, iconFontText, isIconFont } from './fonts';
-import { getImage } from './images';
+import { getImage, imageEpoch } from './images';
 import { SHADERS_LOADING, effectMargin, isShaderEffect, shaderEffectBlocker, shaderEffectImage, shaderFillBlocker, shaderFillImage, shaderInfoKey, type ShaderEnv } from './shaderFills';
 import { nodeScreenRect } from '../editor/measure';
 import { useStore } from '../editor/store';
@@ -346,7 +346,106 @@ type Rec = {
   /** The top-level frame being recorded, and (once asked) what it looks like: for those backdrops. */
   root?: PaintNode;
   rootSig?: string;
+  /** Pictures of the root's layers, reused while they are unchanged (recordPicture's `layers`). */
+  layers?: LayerCache;
+  /** The recording read what the frame looks like (a shader's @backdrop): it depends on the other layers. */
+  usedRoot?: boolean;
 };
+
+/** One layer of a top-level frame (a node directly inside it) recorded on its own, in the frame's units. */
+type LayerPic = { rnode: RNode; w: number; h: number; m: Mat; rootM: Mat; hidden: string; detail: boolean; vars: unknown; fonts: number; images: number; pic: SkPicture; uses: ImageUse[]; pending: string[] };
+
+/**
+ * The layers of one top-level frame, kept between its recordings (frames.ts): an edit records only the layer it is
+ * in again. `keep`: whether a layer whose recording asked for these pictures may be kept (not live shaders, which
+ * change every frame of their animation).
+ */
+export type LayerCache = { pics: Map<string, LayerPic>; seen: Set<string>; keep: (pending: string[]) => boolean; hits: number; misses: number };
+
+export const newLayerCache = (keep: (pending: string[]) => boolean): LayerCache => ({ pics: new Map(), seen: new Set(), keep, hits: 0, misses: 0 });
+
+/** Frees the layers not drawn by the last recording (gone, or no longer kept). */
+export function pruneLayers(L: LayerCache) {
+  for (const [k, e] of L.pics) {
+    if (L.seen.has(k)) continue;
+    free(e.pic);
+    L.pics.delete(k);
+  }
+}
+
+export function freeLayers(L: LayerCache) {
+  for (const e of L.pics.values()) free(e.pic);
+  L.pics.clear();
+}
+
+export function layerBytes(L: LayerCache): number {
+  let b = 0;
+  for (const e of L.pics.values()) b += e.pic.approximateBytesUsed();
+  return b;
+}
+
+function inTree(n: RNode, key: string): boolean {
+  return n.key === key || n.children.some(c => inTree(c, key));
+}
+
+/**
+ * Draws layer `ch` of the top-level frame `pn` from its own picture: recorded again only when the layer, its box or
+ * place in the frame, the variables, the fonts, the pictures or what is left out of it changed. Moving the frame
+ * keeps every layer's picture (they are in the frame's units).
+ */
+function drawLayer(r: Rec, ch: PaintNode, pn: PaintNode) {
+  const L = r.layers!;
+  const { ck } = r;
+  const local = mul(invert(pn.world), ch.world);
+  const hidden = r.hide ? [...r.hide].filter(k => inTree(ch.node, k)).sort().join('\n') : '';
+  const rootM = pn.world;
+  let e = L.pics.get(ch.key);
+  const same =
+    !!e && e.rnode === ch.node && e.w === ch.w && e.h === ch.h && e.hidden === hidden && e.detail === r.detail && e.vars === r.ctx.doc.variables &&
+    e.fonts === fontEpoch() && e.images === imageEpoch() && e.m.every((v, i) => v === local[i]) && e.rootM.slice(0, 4).every((v, i) => v === rootM[i]);
+  if (same) {
+    L.hits++;
+    for (const u of e!.pending) r.pending?.add(u);
+    if (r.uses) {
+      const dx = rootM[4] - e!.rootM[4], dy = rootM[5] - e!.rootM[5];
+      for (const u of e!.uses) r.uses.push(dx || dy ? { ...u, x: u.x + dx, y: u.y + dy } : u);
+    }
+    L.seen.add(ch.key);
+    r.c.drawPicture(e!.pic);
+    return;
+  }
+  L.misses++;
+  if (e) {
+    free(e.pic);
+    L.pics.delete(ch.key);
+  }
+  const [a, b, c2, d, tx, ty] = local;
+  const xs = [tx, tx + a * ch.w, tx + c2 * ch.h, tx + a * ch.w + c2 * ch.h], ys = [ty, ty + b * ch.w, ty + d * ch.h, ty + b * ch.w + d * ch.h];
+  const m = 2000;
+  const scope = new Scope();
+  const rec = new ck.PictureRecorder();
+  const uses: ImageUse[] = [];
+  const pending = new Set<string>();
+  const sub: Rec = { c: rec.beginRecording(ck.LTRBRect(Math.min(...xs) - m, Math.min(...ys) - m, Math.max(...xs) + m, Math.max(...ys) + m), true), ck, scope, ctx: r.ctx, uses: r.uses ? uses : undefined, detail: r.detail, pending, hide: r.hide, root: r.root };
+  let pic: SkPicture;
+  try {
+    drawNode(sub, ch, pn.world);
+    pic = own(rec.finishRecordingAsPicture(), 'picture');
+  } finally {
+    rec.delete();
+    scope.dispose();
+  }
+  for (const u of pending) r.pending?.add(u);
+  r.uses?.push(...uses);
+  r.c.drawPicture(pic);
+  if (sub.usedRoot || !L.keep([...pending])) {
+    free(pic);
+    return;
+  }
+  e = { rnode: ch.node, w: ch.w, h: ch.h, m: local, rootM: [...rootM] as Mat, hidden, detail: r.detail, vars: r.ctx.doc.variables, fonts: fontEpoch(), images: imageEpoch(), pic, uses, pending: [...pending] };
+  L.pics.set(ch.key, e);
+  L.seen.add(ch.key);
+}
 
 function drawNode(r: Rec, pn: PaintNode, parentWorld: Mat) {
   const { c, ck } = r;
@@ -425,11 +524,13 @@ function shaderEnv(r: Rec, pn: PaintNode): ShaderEnv {
   return {
     backdropSig: () => {
       if (!root) return '';
+      r.usedRoot = true;
       r.rootSig ??= nodeSignature(ctx, root);
       return r.rootSig;
     },
     backdrop: (k, margin) => {
       if (!root) return null;
+      r.usedRoot = true;
       const { ck } = ctx;
       const [a, b, c, d, e, f] = pn.world;
       const xs = [e, e + a * pn.w, e + c * pn.h, e + a * pn.w + c * pn.h], ys = [f, f + b * pn.w, f + d * pn.h, f + b * pn.w + d * pn.h];
@@ -613,7 +714,8 @@ function drawChildren(r: Rec, pn: PaintNode, masks: boolean) {
       c.concat(skMat(invert(local)));
       continue;
     }
-    drawNode(r, ch, pn.world);
+    if (r.layers && pn === r.root && !r.bare) drawLayer(r, ch, pn);
+    else drawNode(r, ch, pn.world);
   }
   for (let i = 0; i < saved; i++) c.restore();
 }
@@ -1158,7 +1260,7 @@ function drawNote(r: Rec, pn: PaintNode, p: any) {
  * Records a laid-out top-level frame (or any subtree) as a picture in world coordinates. `uses` collects where it
  * draws pictures; `detail` false draws them from their small versions even when a larger one is loaded.
  */
-export function recordPicture(ctx: PaintContext, root: PaintNode, uses?: ImageUse[], detail = true, pending?: Set<string>, hide?: Iterable<string> | null): SkPicture {
+export function recordPicture(ctx: PaintContext, root: PaintNode, uses?: ImageUse[], detail = true, pending?: Set<string>, hide?: Iterable<string> | null, layers?: LayerCache): SkPicture {
   const { ck } = ctx;
   const scope = new Scope();
   const rec = new ck.PictureRecorder();
@@ -1174,7 +1276,9 @@ export function recordPicture(ctx: PaintContext, root: PaintNode, uses?: ImageUs
     // Left out: the text being edited (edited in a box over the canvas, ui/TextEditOverlay.tsx) and shapes AI Pen has
     // not traced yet (they appear as its pen reaches them, ui/AiPen.tsx).
     const hidden = hide ? new Set(hide) : undefined;
-    drawNode({ c, ck, scope, ctx, uses, detail, pending, root, hide: hidden?.size ? hidden : undefined }, root, [1, 0, 0, 1, 0, 0]);
+    layers?.seen.clear();
+    drawNode({ c, ck, scope, ctx, uses, detail, pending, root, hide: hidden?.size ? hidden : undefined, layers }, root, [1, 0, 0, 1, 0, 0]);
+    if (layers) pruneLayers(layers);
     return own(rec.finishRecordingAsPicture(), 'picture');
   } finally {
     rec.delete();
