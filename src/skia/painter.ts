@@ -11,10 +11,10 @@ import { ellipseGeometry, pathGeometry, polygonGeometry } from '../render/geomet
 import { weightNum } from '../render/fonts';
 import { scriptState } from '../editor/scriptHost';
 import { Scope, free, own } from './lifetime';
-import { familyList, fontBlocker, fontCollection, fontEpoch, fontStyleKey } from './fonts';
+import { familyList, fontBlocker, fontCollection, fontEpoch, fontStyleKey, iconFontKey, iconFontText, isIconFont } from './fonts';
 import { getImage } from './images';
 import { SHADERS_LOADING, effectMargin, isShaderEffect, shaderEffectBlocker, shaderEffectImage, shaderFillBlocker, shaderFillImage, shaderInfoKey } from './shaderFills';
-import { iconLibrarySupported, iconPaths } from './icons';
+import { iconLibraryBlocker, iconPaths } from './icons';
 import { meshOf, tessellate } from '../render/mesh';
 
 export type Mat = [number, number, number, number, number, number];
@@ -126,8 +126,13 @@ export function skiaEligible(ctx: PaintContext, n: RNode, editingKey?: string | 
     }
     case 'icon':
     case 'icon_font':
-      if (!iconLibrarySupported(String(p.library ?? p.iconFontFamily ?? 'lucide'))) return `icon font "${p.library ?? p.iconFontFamily}"`;
+    {
+      const library = String(p.library ?? p.iconFontFamily ?? 'lucide');
+      if (isIconFont(library)) deps?.fonts.add(iconFontKey(library));
+      const why = iconLibraryBlocker(library);
+      if (why) return why;
       break;
+    }
     case 'script': {
       const st = scriptState(n.props, n.theme, n.key);
       if (!st || st.status !== 'ok') return `script ${st ? st.status : 'without a file'}`;
@@ -880,7 +885,9 @@ function drawIcon(r: Rec, pn: PaintNode, p: any) {
   const { c, ck, scope } = r;
   const size = Math.min(pn.w, pn.h);
   const library = String(p.library ?? p.iconFontFamily ?? 'lucide');
-  const paths = iconPaths(library, String(p.icon ?? p.iconFontName ?? ''));
+  const name = String(p.icon ?? p.iconFontName ?? '');
+  if (isIconFont(library)) return drawIconFont(r, pn, p, library, name, size);
+  const paths = iconPaths(library, name);
   c.save();
   c.translate((pn.w - size) / 2, (pn.h - size) / 2);
   if (!paths) {
@@ -912,6 +919,36 @@ function drawIcon(r: Rec, pn: PaintNode, p: any) {
 }
 
 // ---------- notes ----------
+
+/**
+ * An icon from an icon font, as the page shows it: the glyph at font-size = the box's shorter side, line-height 1,
+ * centred in the box; Material Symbols with its weight (default 400) and the optical size the browser picks for that
+ * font size (font-optical-sizing: auto, within the font's 20-48 range).
+ */
+function drawIconFont(r: Rec, pn: PaintNode, p: any, library: string, name: string, size: number) {
+  const { c, ck } = r;
+  const got = iconFontText(library, name);
+  if (!got || !got.text || !(size > 0)) return;
+  const fill = primaryColor(fillList(p.fill).filter(isEnabled)) ?? '#000000';
+  const material = !library.toLowerCase().startsWith('phosphor');
+  const style = new ck.ParagraphStyle({
+    textStyle: {
+      color: color(ck, fill),
+      fontFamilies: [got.alias],
+      fontSize: size,
+      heightMultiplier: 1,
+      halfLeading: true,
+      fontVariations: material ? [{ axis: 'wght', value: num(p.weight, 0) || 400 }, { axis: 'opsz', value: Math.max(20, Math.min(48, size)) }] : undefined,
+    },
+    textAlign: ck.TextAlign.Left,
+  });
+  const builder = r.scope.own(ck.ParagraphBuilder.MakeFromFontCollection(style, fontCollection(ck)), 'paragraphBuilder');
+  builder.addText(got.text);
+  const para = r.scope.own(builder.build(), 'paragraph');
+  para.layout(1e6);
+  const tw = para.getMaxIntrinsicWidth(), th = para.getHeight();
+  c.drawParagraph(para, (pn.w - tw) / 2, (pn.h - th) / 2);
+}
 
 const NOTE_COLORS: Record<string, [string, string]> = { note: ['#FDF6C3', '#3f3a1a'], prompt: ['#EDE9FE', '#2e1065'], context: ['#E0F2FE', '#0c4a6e'] };
 

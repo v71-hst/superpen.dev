@@ -172,6 +172,68 @@ export function requestFont(family: string, weight: any = 400, italic = false): 
   return 'loading';
 }
 
+// ---------- icon fonts ----------
+// Material Symbols (one variable font: weight and optical size are set per icon) and Phosphor (codepoints by name,
+// from its stylesheet), fetched from the same addresses the page-element renderer uses (render/fonts.ts).
+
+type IconFont = { status: 'loading' | 'ready' | 'failed'; alias: string; codepoints?: Map<string, string>; error?: string };
+const iconFonts = new Map<string, IconFont>();
+
+/** The key an icon library's font is tracked under (in FrameDeps.fonts, for fontStamp). */
+export const iconFontKey = (library: string) => `icon|${library.trim().toLowerCase()}`;
+
+const isMaterial = (lib: string) => lib.startsWith('material symbols');
+const PHOSPHOR_CSS = 'https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css';
+
+/** Whether this library is an icon font Skia draws as text (Material Symbols, Phosphor). */
+export function isIconFont(library: string) {
+  const lib = library.trim().toLowerCase();
+  return isMaterial(lib) || lib === 'phosphor';
+}
+
+/** Starts loading an icon library's font (no-op when loaded or loading); its state, as for requestFont. */
+export function requestIconFont(library: string): IconFont['status'] {
+  if (!provider) return 'failed';
+  const k = iconFontKey(library);
+  const known = iconFonts.get(k);
+  if (known) return known.status;
+  const lib = library.trim().toLowerCase();
+  const state: IconFont = { status: 'loading', alias: `Icons: ${library.trim()}` };
+  iconFonts.set(k, state);
+  (async () => {
+    const cssUrl = isMaterial(lib)
+      ? `https://fonts.googleapis.com/css2?family=${library.trim().replace(/ /g, '+')}:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block`
+      : PHOSPHOR_CSS;
+    const css = await fetch(cssUrl).then(r => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`))));
+    const src = css.match(/url\((['"]?)([^'")]+\.(?:woff2|ttf|otf)[^'")]*)\1\)/)?.[2];
+    if (!src) throw new Error('no font file in the stylesheet');
+    const buf = await fetch(new URL(src, cssUrl).href).then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`HTTP ${r.status}`))));
+    register(buf, state.alias);
+    if (!isMaterial(lib)) {
+      // .ph.ph-acorn:before { content: "\e9b4"; }
+      state.codepoints = new Map();
+      for (const m of css.matchAll(/\.ph-([\w-]+):before\s*\{\s*content:\s*"\\([0-9a-fA-F]+)"/g)) state.codepoints.set(m[1], String.fromCodePoint(parseInt(m[2], 16)));
+    }
+    state.status = 'ready';
+    changed(k);
+  })().catch(e => {
+    state.status = 'failed';
+    state.error = e instanceof Error ? e.message : String(e);
+    changed(k);
+  });
+  return 'loading';
+}
+
+/**
+ * What to draw for an icon from an icon font: the font's alias and the text (Material Symbols: the name, which the
+ * font turns into the icon by ligature; Phosphor: its codepoint, '' for an unknown name), or null until loaded.
+ */
+export function iconFontText(library: string, name: string): { alias: string; text: string } | null {
+  const f = iconFonts.get(iconFontKey(library));
+  if (!f || f.status !== 'ready') return null;
+  return { alias: f.alias, text: f.codepoints ? (f.codepoints.get(name) ?? '') : name };
+}
+
 /** Aliases of a family for a style: the exact weight/italic, or (`others`) the remaining loaded styles, nearest first. */
 function styleAliases(family: string, w: number, italic: boolean, others = false): string[] {
   const styles = aliasesByFamily.get(family.toLowerCase());
@@ -235,6 +297,7 @@ export function resetFonts() {
   if (provider) free(provider);
   provider = null;
   families.clear();
+  iconFonts.clear();
   aliasesByFamily.clear();
   registeredFiles.clear();
   styleEpochs.clear();

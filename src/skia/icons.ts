@@ -1,8 +1,9 @@
 // Lucide and Feather icons as SVG path strings (24×24 viewBox, stroked), for Skia. Lucide components carry their
 // shape list (`iconNode`) on the element they render; Feather ships SVG markup. Icon fonts (Material Symbols,
-// Phosphor) are not converted: frames using them stay on the DOM renderer.
+// Phosphor) are drawn as text in their font (fonts.ts requestIconFont, painter.ts drawIcon).
 import feather from 'feather-icons';
 import { lucideIcon } from '../render/NodeView';
+import { isIconFont, requestIconFont } from './fonts';
 
 const cache = new Map<string, string[] | null>();
 
@@ -77,8 +78,13 @@ export function iconPaths(library: string, name: string): string[] | null {
   return cache.get(k)!;
 }
 
-/** Whether Skia can draw icons from this library at all (icon fonts can't be). */
-export function iconLibrarySupported(library: string) {
-  const lib = library.toLowerCase();
-  return lib === 'lucide' || lib === 'feather';
+/**
+ * Why Skia cannot draw icons from this library now: null when it can. Icon fonts (Material Symbols, Phosphor) are
+ * drawn as text once their font has loaded; an unknown library is drawn as a missing glyph, as on the page.
+ */
+export function iconLibraryBlocker(library: string): string | null {
+  if (!isIconFont(library)) return null;
+  const st = requestIconFont(library);
+  if (st === 'ready') return null;
+  return st === 'loading' ? `icon font "${library}" loading` : `icon font "${library}" could not be loaded`;
 }
