@@ -19,22 +19,39 @@ import { perfLimits } from '../editor/perfLimits';
 
 export type StageHit = (clientX: number, clientY: number) => string[];
 
-export function SkiaStage({ n, width, height, hitRef }: { n: RNode; width: number; height: number; hitRef?: React.MutableRefObject<StageHit | null> }) {
+export function SkiaStage({ n, width, height, hitRef, maxScale = Infinity, lazy = false, className = 'present-stage' }: { n: RNode; width: number; height: number; hitRef?: React.MutableRefObject<StageHit | null>; maxScale?: number; lazy?: boolean; className?: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const layout = useRef<{ root: LayoutNode; s: number } | null>(null);
   const [changed, setChanged] = useState(0);
   const [box, setBox] = useState({ w: 0, h: 0 });
+  // `lazy` (lists of thumbnails): drawn only while on screen.
+  const [visible, setVisible] = useState(!lazy);
+  useEffect(() => {
+    if (!lazy || !ref.current) return;
+    const io = new IntersectionObserver(es => setVisible(es.some(e => e.isIntersecting)));
+    io.observe(ref.current);
+    return () => io.disconnect();
+  }, [lazy]);
   const placed = useMemo(() => ({ ...n, props: { ...n.props, x: 0, y: 0, rotation: undefined } }) as RNode, [n]);
   useEffect(() => {
-    const bump = () => setChanged(c => c + 1);
+    // Fonts and pictures arrive in bursts: one redraw for a burst.
+    let t: ReturnType<typeof setTimeout> | null = null;
+    const bump = () => {
+      t ??= setTimeout(() => {
+        t = null;
+        setChanged(c => c + 1);
+      }, 150);
+    };
     const a = onFontsChanged(bump);
     const b = onImagesChanged(bump);
     return () => {
       a();
       b();
+      if (t) clearTimeout(t);
     };
   }, []);
   useEffect(() => {
+    if (!visible) return;
     let stop = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const draw = async () => {
@@ -44,7 +61,7 @@ export function SkiaStage({ n, width, height, hitRef }: { n: RNode; width: numbe
       if (stop || !canvas) return;
       const ctx = paintContext(ck);
       const root = layoutTree(placed, skiaMeasureText(ctx), { doc: ctx.doc });
-      const s = Math.min(width / Math.max(1, root.w), height / Math.max(1, root.h));
+      const s = Math.min(width / Math.max(1, root.w), height / Math.max(1, root.h), maxScale);
       layout.current = { root, s };
       setBox(b => (b.w === root.w * s && b.h === root.h * s ? b : { w: root.w * s, h: root.h * s }));
       const dpr = devicePixelRatio || 1;
@@ -85,9 +102,9 @@ export function SkiaStage({ n, width, height, hitRef }: { n: RNode; width: numbe
       stop = true;
       if (timer) clearTimeout(timer);
     };
-  }, [placed, width, height, changed]);
+  }, [placed, width, height, changed, visible, maxScale]);
   // Tests: where a layer is on screen (the slide's elements used to be found on the page).
-  if (import.meta.env.DEV || import.meta.env.VITE_PEN_HOOKS)
+  if (hitRef && (import.meta.env.DEV || import.meta.env.VITE_PEN_HOOKS))
     (window as any).__penStage = {
       hit: (x: number, y: number) => hitRef?.current?.(x, y) ?? null,
       rectOf: (key: string) => {
@@ -109,5 +126,7 @@ export function SkiaStage({ n, width, height, hitRef }: { n: RNode; width: numbe
       const r = el.getBoundingClientRect();
       return hitChain(l.root, (x - r.left) / l.s, (y - r.top) / l.s).reverse();
     };
-  return <canvas ref={ref} className="present-stage" style={{ display: 'block', width: box.w, height: box.h }} />;
+  // Until it has been laid out (or seen, when lazy), the box it will fill.
+  const w = box.w || width, h = box.h || (lazy ? Math.min(height, 40) : height);
+  return <canvas ref={ref} className={className} style={{ display: 'block', width: w, height: h }} />;
 }

@@ -5,8 +5,7 @@ import { useStore, keySource, applyProps } from '../editor/store';
 import { useTree, type Tree } from '../editor/tree';
 import { displayName, allIds, newId, locate } from '../model/doc';
 import type { RNode } from '../model/types';
-import { NodeView, RenderCtx, type RenderContextValue } from '../render/NodeView';
-import { makeUrlResolver } from '../editor/fileio';
+import { SkiaStage } from './SkiaStage';
 import { moveNode, toggleComponent, zoomToKeys, clientToWorld, worldRectOf } from '../editor/ops';
 import { elementAtPoint } from '../editor/measure';
 import { layerIconFor } from './common';
@@ -290,33 +289,15 @@ const LayerRow = memo(function LayerRow({
 
 // ---------------- thumbnails ----------------
 
+/** Was the page-element renderer's context for thumbnails; Skia thumbnails need none. */
 export function ThumbProvider({ children }: { children: React.ReactNode }) {
-  const vars = useStore(s => s.doc?.variables);
-  const path = useStore(s => s.file?.path ?? null);
-  const value: RenderContextValue = useMemo(() => ({ doc: { variables: vars }, resolveUrl: makeUrlResolver(path) }), [vars, path]);
-  return <RenderCtx.Provider value={value}>{children}</RenderCtx.Provider>;
+  return <>{children}</>;
 }
 
+/** A layer fitted into maxW x maxH (at most 4x its size), drawn by Skia while it is on screen. Hidden layers show. */
 export function Thumb({ n, maxW, maxH }: { n: RNode; maxW: number; maxH: number }) {
-  const placed = useMemo(() => ({ ...n, props: { ...n.props, x: 0, y: 0, rotation: undefined, enabled: true } }), [n]);
-  const ref = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState<[number, number]>([typeof n.props.width === 'number' ? n.props.width : 0, typeof n.props.height === 'number' ? n.props.height : 0]);
-  useEffect(() => {
-    const el = ref.current?.firstElementChild as HTMLElement | null;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setSize(s => (s[0] === el.offsetWidth && s[1] === el.offsetHeight ? s : [el.offsetWidth, el.offsetHeight])));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  const [w, h] = size;
-  const scale = w && h ? Math.min(maxW / w, maxH / h, 4) : 0.1;
-  return (
-    <div className="thumb" style={{ width: Math.max(1, w * scale), height: Math.max(1, h * scale) }}>
-      <div ref={ref} style={{ transform: `scale(${scale})` }}>
-        <NodeView n={placed} parentLayout="none" />
-      </div>
-    </div>
-  );
+  const shown = useMemo(() => ({ ...n, props: { ...n.props, enabled: true } }), [n]);
+  return <SkiaStage n={shown} width={maxW} height={maxH} maxScale={4} lazy className="thumb" />;
 }
 
 // ---------------- slides ----------------
