@@ -6,7 +6,7 @@ import React, { useLayoutEffect, useRef, useState } from 'react';
 import { useStore, applyProps } from '../editor/store';
 import { currentTree } from '../editor/tree';
 import { clientToWorld, worldRectOf } from '../editor/ops';
-import { resolveProps } from '../render/NodeView';
+import { resolveProps } from '../model/props';
 import { colorCss, fillList, linearEndpoints } from '../render/paint';
 import { meshOf, meshToPoints, type Mesh } from '../render/mesh';
 

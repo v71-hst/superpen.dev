@@ -7,7 +7,7 @@ import { useStore, applyProps } from '../editor/store';
 import { currentTree } from '../editor/tree';
 import { isAbsolutelyPositioned, worldRectOf } from '../editor/ops';
 import { makeUrlResolver } from '../editor/fileio';
-import { resolveProps } from '../render/NodeView';
+import { resolveProps } from '../model/props';
 import { fillList, imageTransform } from '../render/paint';
 
 type Rect = { x: number; y: number; w: number; h: number };

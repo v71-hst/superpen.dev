@@ -11,7 +11,7 @@ import { allIds, cloneWithNewIds, locate, newId } from '../model/doc';
 import { materializeRef } from '../model/resolve';
 import { applyProps, keySource, useStore } from './store';
 import { builderIndex, currentTree } from './tree';
-import { parseSizing } from '../render/NodeView';
+import { parseSizing } from '../model/props';
 import { ensureRendered } from './culling';
 import { viewChangeSource } from './diagnostics';
 import { svgToNodes, looksLikeSvg } from '../model/svgImport';

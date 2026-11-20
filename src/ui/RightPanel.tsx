@@ -55,7 +55,7 @@ import { deepResolve, isVarRef, resolveVariable } from '../model/resolve';
 import { allIds, displayName, indexDoc, locate, newId } from '../model/doc';
 import { scaleSubtree } from '../model/scale';
 import { fillList, parseColor, toHex } from '../render/paint';
-import { parseSizing } from '../render/NodeView';
+import { parseSizing } from '../model/props';
 import { align, detachInstance, elFor, goToComponent, parentLayoutOf, removeBackgroundOf, toggleComponent, vectorizeNode, worldRectOf } from '../editor/ops';
 import { CheckRow, NumberField, Seg, Select, fmt, layerIconFor, useMenu } from './common';
 import { PaintPopover, paintSwatch } from './ColorPicker';

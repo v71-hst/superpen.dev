@@ -2,7 +2,7 @@
 // shape list (`iconNode`) on the element they render; Feather ships SVG markup. Icon fonts (Material Symbols,
 // Phosphor) are drawn as text in their font (fonts.ts requestIconFont, painter.ts drawIcon).
 import feather from 'feather-icons';
-import { lucideIcon } from '../render/NodeView';
+import { lucideIcon } from '../model/props';
 import { isIconFont, requestIconFont } from './fonts';
 
 const cache = new Map<string, string[] | null>();

@@ -8,7 +8,7 @@ import { useStore } from '../editor/store';
 import type { Tree } from '../editor/tree';
 import { nodeRect, skiaOwns } from '../editor/measure';
 import { canvasRect } from '../editor/ops';
-import { resolveProps } from '../render/NodeView';
+import { resolveProps } from '../model/props';
 import { usePictureFramesVersion } from '../skia/pictureFrames';
 
 const MIN_SCREEN_WIDTH = 160;

@@ -6,7 +6,7 @@ import type { CSSProperties } from 'react';
 import { useStore } from '../editor/store';
 import type { Tree } from '../editor/tree';
 import { nodeRect, skiaOwns } from '../editor/measure';
-import { resolveProps } from '../render/NodeView';
+import { resolveProps } from '../model/props';
 import { fillList, isEnabled, primaryColor } from '../render/paint';
 import { ensureFont, weightNum } from '../render/fonts';
 

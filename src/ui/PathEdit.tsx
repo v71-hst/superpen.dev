@@ -6,7 +6,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useStore, applyProps } from '../editor/store';
 import { currentTree } from '../editor/tree';
 import { clientToWorld, isAbsolutelyPositioned, worldRectOf } from '../editor/ops';
-import { resolveProps } from '../render/NodeView';
+import { resolveProps } from '../model/props';
 import { pathBox } from '../render/geometry';
 import { clonePath, insertAnchor, nearestSide, parsePath, removeAnchor, serializePath, sidesOf, toggleSmooth, type Pt, type SubPath } from '../editor/pathModel';
 

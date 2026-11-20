@@ -5,7 +5,7 @@
 // frame stays on the DOM renderer.
 import type { Canvas, CanvasKit, Paint, Paragraph, Path, SkPicture, Shader } from 'canvaskit-wasm';
 import type { PenDoc, RNode } from '../model/types';
-import { resolveProps } from '../render/NodeView';
+import { resolveProps } from '../model/props';
 import { effectList, fillList, imageTransform, isEnabled, linearEndpoints, normalizeStroke, parseColor, primaryColor, type StrokeInfo } from '../render/paint';
 import { ellipseGeometry, pathGeometry, polygonGeometry } from '../render/geometry';
 import { weightNum } from '../render/fonts';

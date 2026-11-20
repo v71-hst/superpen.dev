@@ -8,7 +8,7 @@
 // (compile error, unreadable file, no WebGL) is drawn as the same error marker that path shows (errorFill).
 import type { RNode } from '../model/types';
 import { parseShader, ShaderRunner, type ShapeSpec, type UniformInfo } from '../render/shaders';
-import { paintFills } from '../render/ShaderLayer';
+import { paintFills } from '../render/paintFills';
 import { onAssetsChanged } from '../render/scripts';
 import { fillList } from '../render/paint';
 import { ellipseGeometry, pathGeometry, polygonGeometry } from '../render/geometry';
