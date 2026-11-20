@@ -173,7 +173,7 @@ export function drawFarAtlas(c: SkCanvas) {
     if (!p.dirty) continue;
     // A snapshot shares the page's texture until the page is drawn into again.
     free(p.image);
-    p.image = own(p.surface.makeImageSnapshot(), 'image');
+    p.image = own(p.surface.makeImageSnapshot(), 'atlasImage');
     p.dirty = false;
   }
   paint ??= own(new ck.Paint(), 'paint');
