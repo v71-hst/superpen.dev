@@ -1,5 +1,5 @@
 // Infinite canvas: renders the document, selection/hover overlay, frame labels and all pointer gestures.
-import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { NodeView, RenderCtx, type RenderContextValue } from '../render/NodeView';
 import { SkiaLayer } from '../skia/SkiaLayer';
 import { activeRenderer, useActiveRenderer } from '../skia/renderer';
@@ -920,6 +920,42 @@ function PenPreview({ points, hover }: { points: Anchor[]; hover: { x: number; y
   );
 }
 
+/**
+ * A top-level frame's name above it, placed relative to the view's origin (the frame-labels layer is moved by the
+ * view's offset). Memoized: a pan changes no label's props, so none of them re-render.
+ */
+const FrameLabel = memo(function FrameLabel({ nodeKey: key, cls, x, y, w, name, storedName, renaming, setRenaming }: { nodeKey: string; cls: string; x: number; y: number; w: number; name: string; storedName: any; renaming: boolean; setRenaming: (k: string | null) => void }) {
+  return (
+    <div
+      className={cls}
+      data-label-k={key}
+      style={{ left: x, top: y - 20, maxWidth: Math.max(w, 24), pointerEvents: 'auto', height: 18 }}
+      onDoubleClick={() => keySource(key).kind === 'real' && setRenaming(key)}
+    >
+      {renaming ? (
+        <input
+          className="rename"
+          autoFocus
+          defaultValue={name}
+          onPointerDown={e => e.stopPropagation()}
+          onKeyDown={e => {
+            e.stopPropagation();
+            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+            if (e.key === 'Escape') setRenaming(null);
+          }}
+          onBlur={e => {
+            const v = e.target.value.trim();
+            setRenaming(null);
+            if (v && v !== storedName) useStore.getState().edit(d => applyProps(d, key, { name: v }));
+          }}
+        />
+      ) : (
+        name
+      )}
+    </div>
+  );
+});
+
 /** Selection boxes, hover outline, handles, size badge and top-level frame labels (screen space). */
 function Overlay({ tree, onResizeStart, draft }: { tree: Tree; onResizeStart: (e: React.PointerEvent, key: string, handle: string) => void; draft: any }) {
   const selection = useStore(s => s.selection);
@@ -952,15 +988,20 @@ function Overlay({ tree, onResizeStart, draft }: { tree: Tree; onResizeStart: (e
     // Label positions come from the document and the view where possible: measuring every frame on each zoom step
     // forces a layout of the whole design.
     const hiddenIds = canvasHiddenIds(useStore.getState());
+    // Labels are placed relative to the view's origin (inside a layer moved by the view's offset), so a pan moves one
+    // layer instead of re-rendering and repainting every label: at 2% zoom with hundreds of frames in view that was a
+    // third of each pan step on a slow PC (docs/SKIA_REWORK.md, 2026-11-20).
     const labels = tree.roots
       .filter(n => n.props.enabled !== false && !(hiddenIds.has(n.key) && !selection.includes(n.key)) && (n.type === 'frame' || n.instanceOf || n.isComponent || n.type === 'group'))
       .map(n => {
         const w = rootWorldRect(n);
-        if (w) return { key: n.key, r: { x: view.x + w.x * view.zoom, y: view.y + w.y * view.zoom, w: w.w * view.zoom, h: w.h * view.zoom } as Rect | null };
+        if (w) return { key: n.key, r: { x: w.x * view.zoom, y: w.y * view.zoom, w: w.w * view.zoom, h: w.h * view.zoom } as Rect | null };
         const b = screenRectOf(n.key, { ownBox: true });
-        return { key: n.key, r: b ? toLocal(b) : null };
+        if (!b) return { key: n.key, r: null };
+        const l = toLocal(b);
+        return { key: n.key, r: { x: l.x - view.x, y: l.y - view.y, w: l.w, h: l.h } };
       })
-      .filter((x): x is { key: string; r: Rect } => !!x.r && x.r.x + x.r.w > 0 && x.r.x < c.width && x.r.y + x.r.h > -24 && x.r.y - 24 < c.height);
+      .filter((x): x is { key: string; r: Rect } => !!x.r && view.x + x.r.x + x.r.w > 0 && view.x + x.r.x < c.width && view.y + x.r.y + x.r.h > -24 && view.y + x.r.y - 24 < c.height);
     setBoxes({ sel, hover: hr ? toLocal(hr) : null, labels });
   }, [tree, doc, viewerKey, selection, hover, view, tick, editingKey]);
 
@@ -980,43 +1021,16 @@ function Overlay({ tree, onResizeStart, draft }: { tree: Tree; onResizeStart: (e
 
   return (
     <div className="overlay">
-      {boxes.labels.map(({ key, r }) => {
-        // Label boxes are measured after render, so they can still list a frame an edit just deleted.
-        const n = tree.byKey.get(key);
-        if (!n) return null;
-        // Hover does not restyle labels: any DOM change forces the browser to re-process the whole document's paint.
-        const cls = 'frame-label' + (selection.includes(key) ? ' sel' : '') + (n.isComponent ? ' component' : '');
-        return (
-          <div
-            key={key}
-            className={cls}
-            data-label-k={key}
-            style={{ left: r.x, top: r.y - 20, maxWidth: Math.max(r.w, 24), pointerEvents: 'auto', height: 18 }}
-            onDoubleClick={() => keySource(key).kind === 'real' && setRenaming(key)}
-          >
-            {renaming === key ? (
-              <input
-                className="rename"
-                autoFocus
-                defaultValue={displayName(n.props)}
-                onPointerDown={e => e.stopPropagation()}
-                onKeyDown={e => {
-                  e.stopPropagation();
-                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                  if (e.key === 'Escape') setRenaming(null);
-                }}
-                onBlur={e => {
-                  const v = e.target.value.trim();
-                  setRenaming(null);
-                  if (v && v !== n.props.name) useStore.getState().edit(d => applyProps(d, key, { name: v }));
-                }}
-              />
-            ) : (
-              displayName(n.props)
-            )}
-          </div>
-        );
-      })}
+      <div className="frame-labels" style={{ transform: `translate(${view.x}px, ${view.y}px)` }}>
+        {boxes.labels.map(({ key, r }) => {
+          // Label boxes are measured after render, so they can still list a frame an edit just deleted.
+          const n = tree.byKey.get(key);
+          if (!n) return null;
+          // Hover does not restyle labels: any DOM change forces the browser to re-process the whole document's paint.
+          const cls = 'frame-label' + (selection.includes(key) ? ' sel' : '') + (n.isComponent ? ' component' : '');
+          return <FrameLabel key={key} nodeKey={key} cls={cls} x={r.x} y={r.y} w={r.w} name={displayName(n.props)} storedName={n.props.name} renaming={renaming === key} setRenaming={setRenaming} />;
+        })}
+      </div>
       <HoverCanvas rect={draft?.target ? null : boxes.hover} color={hoverNode?.isComponent ? '#d946ef' : hoverNode?.instanceOf ? '#8b5cf6' : '#3d99ff'} />
       {draft?.target &&
         (() => {

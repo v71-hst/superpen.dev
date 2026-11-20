@@ -160,6 +160,12 @@ html.light ::-webkit-scrollbar-thumb {
   height: 0;
   transform-origin: 0 0;
 }
+/* Frame labels sit in one box moved by the view's offset (Canvas.tsx Overlay): a pan changes one style, not every label. No will-change: its own layer made zooming slower (repainted each step). */
+.frame-labels {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
 .frame-label {
   position: absolute;
   font-size: 11px;
