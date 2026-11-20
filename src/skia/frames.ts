@@ -6,6 +6,7 @@ import { isLiveKey, liveStamp } from './liveShaders';
 import type { SkPicture } from 'canvaskit-wasm';
 import type { RNode } from '../model/types';
 import { free } from './lifetime';
+import { useStore } from '../editor/store';
 import { fontEpoch, fontStamp } from './fonts';
 import { KEEP_MS, imageEpoch, imageStamp, wantImage } from './images';
 import { newDeps, recordPicture, skiaEligible, type FrameDeps, type ImageUse, type PaintContext, type PaintNode } from './painter';
@@ -14,6 +15,8 @@ type Entry = {
   rnode: RNode;
   vars: unknown;
   editing: string | null;
+  /** Nodes left out of the picture (the edited text, shapes AI Pen has yet to trace), as one string. */
+  hidden: string;
   deps: FrameDeps;
   /** State of the frame's own fonts and pictures when it was last checked. */
   fonts: number;
@@ -52,8 +55,8 @@ function inSubtree(root: RNode, key: string): boolean {
 
 const fontsOf = (d: FrameDeps) => (d.anyFont ? fontEpoch() : fontStamp(d.fonts));
 
-function current(e: Entry, root: RNode, vars: unknown, editing: string | null): boolean {
-  if (e.rnode !== root || e.vars !== vars || e.editing !== editing) return false;
+function current(e: Entry, root: RNode, vars: unknown, editing: string | null, hidden: string): boolean {
+  if (e.rnode !== root || e.vars !== vars || e.editing !== editing || e.hidden !== hidden) return false;
   const f = fontEpoch(), i = imageEpoch();
   if (e.seenFonts === f && e.seenImages === i) return true;
   if (fontsOf(e.deps) !== e.fonts || imageStamp(e.deps.images, e.detail) !== e.images) return false;
@@ -62,17 +65,26 @@ function current(e: Entry, root: RNode, vars: unknown, editing: string | null): 
   return true;
 }
 
+/** The keys a frame's picture leaves out, as one string: the edited text, and shapes AI Pen has not traced yet. */
+function hiddenIn(root: RNode, editing: string | null): string {
+  const keys = new Set<string>();
+  if (editing) keys.add(editing);
+  for (const p of useStore.getState().aiPenPasses ?? []) for (const k of (p as any).keys ?? []) if (inSubtree(root, k)) keys.add(k);
+  return [...keys].sort().join('\n');
+}
+
 function entry(ctx: PaintContext, root: RNode, editingKey: string | null): Entry {
   const e = cache.get(root.key);
   const editing = editingKey && inSubtree(root, editingKey) ? editingKey : null;
-  if (e && current(e, root, ctx.doc.variables, editing)) return e;
+  const hidden = hiddenIn(root, editing);
+  if (e && current(e, root, ctx.doc.variables, editing, hidden)) return e;
   // The picture is recorded again when it is next drawn. Its far-zoom copy stays until then: an out-of-date copy for
   // a moment, not a flash of the frame's flat colour.
   if (e?.picture) free(e.picture);
   const deps = newDeps();
   const reason = skiaEligible(ctx, root, editing, deps);
   const detail = e?.detail ?? false;
-  const next: Entry = { rnode: root, vars: ctx.doc.variables, editing, deps, fonts: fontsOf(deps), images: imageStamp(deps.images, detail), seenFonts: fontEpoch(), seenImages: imageEpoch(), reason, picture: null, uses: e?.uses ?? [], live: e?.live ?? [], liveSeen: -1, detail, detailAt: e?.detailAt ?? 0 };
+  const next: Entry = { rnode: root, vars: ctx.doc.variables, editing, hidden, deps, fonts: fontsOf(deps), images: imageStamp(deps.images, detail), seenFonts: fontEpoch(), seenImages: imageEpoch(), reason, picture: null, uses: e?.uses ?? [], live: e?.live ?? [], liveSeen: -1, detail, detailAt: e?.detailAt ?? 0 };
   cache.set(root.key, next);
   return next;
 }
@@ -99,7 +111,7 @@ export function framePicture(ctx: PaintContext, root: RNode, layout: () => Paint
     if (!l) return null;
     const uses: ImageUse[] = [];
     const asked = new Set<string>();
-    e.picture = recordPicture(ctx, l, uses, e.detail, asked, e.editing);
+    e.picture = recordPicture(ctx, l, uses, e.detail, asked, e.hidden ? e.hidden.split('\n') : null);
     e.uses = uses;
     // Made pictures (still shaders) are only known once the layout gives their size: from now on the frame depends
     // on them like on its other pictures, and records again when one arrives or gets a sharper version.

@@ -1103,6 +1103,8 @@ function Roots({ tree }: { tree: Tree }) {
   const selection = useStore(s => s.selection);
   const editingKey = useStore(s => s.editingKey);
   const pinnedRoots = useStore(s => s.pinnedRoots);
+  // AI Pen's shapes still to trace are left out of their frames' pictures (frames.ts): drawn again as they appear.
+  useStore(s => s.aiPenPasses);
   useStore(s => s.lodVersion);
   const doc = useStore(s => s.doc);
   const viewer = useStore(s => s.viewer);

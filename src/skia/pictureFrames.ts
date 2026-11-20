@@ -52,17 +52,10 @@ let pendingTimer: ReturnType<typeof setTimeout> | null = null;
 /** Whether the Skia surface has been ready since the layer started: a context lost later shows frames as DOM at once. */
 let everReady = false;
 
-function inSubtree(root: RNode, keys: Set<string>): boolean {
-  if (keys.has(root.key)) return true;
-  return root.children.some(c => inSubtree(c, keys));
-}
-
 /** Why a frame must stay DOM for reasons outside its content, or null. */
 function heldLive(n: RNode): string | null {
   const s = useStore.getState();
   if ((s.pinnedRoots[n.key] ?? 0) > Date.now()) return 'pinned live';
-  const pen = s.aiPenPasses ?? [];
-  if (pen.length && inSubtree(n, new Set(pen.flatMap((p: any) => p.keys)))) return 'AI Pen drawing';
   return null;
 }
 

@@ -338,8 +338,11 @@ type Rec = {
   pending?: Set<string>;
   /** The node drawn alone for its shader effects' @content: without those effects, its opacity and its filters. */
   bare?: string;
-  /** A node left out (with everything in it): what is behind it, for shaders that read their backdrop. */
-  hide?: string;
+  /**
+   * Nodes left out (with everything in them): what is behind a node, for shaders that read their backdrop; the text
+   * being edited; shapes AI Pen has not traced yet.
+   */
+  hide?: ReadonlySet<string>;
   /** The top-level frame being recorded, and (once asked) what it looks like: for those backdrops. */
   root?: PaintNode;
   rootSig?: string;
@@ -349,7 +352,7 @@ function drawNode(r: Rec, pn: PaintNode, parentWorld: Mat) {
   const { c, ck } = r;
   const p = propsOf(r.ctx, pn.node);
   // A mask is a shape that clips its later siblings (drawChildren); it paints nothing itself.
-  if (p.enabled === false || p.mask === true || r.hide === pn.key) return;
+  if (p.enabled === false || p.mask === true || r.hide?.has(pn.key)) return;
   c.save();
   c.concat(skMat(mul(invert(parentWorld), pn.world)));
   let layers = 0;
@@ -437,7 +440,7 @@ function shaderEnv(r: Rec, pn: PaintNode): ShaderEnv {
       const cv = rec.beginRecording(ck.LTRBRect(x0, y0, x0 + w, y0 + h));
       let pic: SkPicture;
       try {
-        drawNode({ c: cv, ck, scope, ctx, detail: true, hide: pn.key, root }, root, [1, 0, 0, 1, 0, 0]);
+        drawNode({ c: cv, ck, scope, ctx, detail: true, hide: new Set([pn.key]), root }, root, [1, 0, 0, 1, 0, 0]);
         pic = own(rec.finishRecordingAsPicture(), 'picture');
       } finally {
         rec.delete();
@@ -1155,7 +1158,7 @@ function drawNote(r: Rec, pn: PaintNode, p: any) {
  * Records a laid-out top-level frame (or any subtree) as a picture in world coordinates. `uses` collects where it
  * draws pictures; `detail` false draws them from their small versions even when a larger one is loaded.
  */
-export function recordPicture(ctx: PaintContext, root: PaintNode, uses?: ImageUse[], detail = true, pending?: Set<string>, hide?: string | null): SkPicture {
+export function recordPicture(ctx: PaintContext, root: PaintNode, uses?: ImageUse[], detail = true, pending?: Set<string>, hide?: Iterable<string> | null): SkPicture {
   const { ck } = ctx;
   const scope = new Scope();
   const rec = new ck.PictureRecorder();
@@ -1168,8 +1171,10 @@ export function recordPicture(ctx: PaintContext, root: PaintNode, uses?: ImageUs
   // cullRect() is what was actually drawn.
   const c = rec.beginRecording(ck.LTRBRect(Math.min(...xs) - m, Math.min(...ys) - m, Math.max(...xs) + m, Math.max(...ys) + m), true);
   try {
-    // The text being edited is left out: it is edited in a box over the canvas (ui/TextEditOverlay.tsx).
-    drawNode({ c, ck, scope, ctx, uses, detail, pending, root, hide: hide ?? undefined }, root, [1, 0, 0, 1, 0, 0]);
+    // Left out: the text being edited (edited in a box over the canvas, ui/TextEditOverlay.tsx) and shapes AI Pen has
+    // not traced yet (they appear as its pen reaches them, ui/AiPen.tsx).
+    const hidden = hide ? new Set(hide) : undefined;
+    drawNode({ c, ck, scope, ctx, uses, detail, pending, root, hide: hidden?.size ? hidden : undefined }, root, [1, 0, 0, 1, 0, 0]);
     return own(rec.finishRecordingAsPicture(), 'picture');
   } finally {
     rec.delete();

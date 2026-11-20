@@ -39,6 +39,8 @@ ok('pass 1 creates frame in the box', !!r1.frame_id && r1.added === 1, JSON.stri
 await new Promise(r => setTimeout(r, 300));
 ok('cursor visible while tracing', !!(await page.$('.aipen-cursor')));
 ok('real shape hidden until traced', await page.evaluate(() => [...document.querySelectorAll('.aipen-layer style')].some(x => /visibility:hidden/.test(x.textContent))));
+// Skia: the frame stays on the canvas while the pen traces; its untraced shapes are left out of its picture (frames.ts).
+if (!url.includes('renderer=dom')) ok('the frame stays with Skia while tracing', await page.evaluate(id => !!document.querySelector(`#pen-world [data-k="${id}"][data-skia]`), r1.frame_id));
 await page.screenshot({ path: shotDir + '/pen_tracing.png' });
 await page.waitForFunction(() => window.__penStore.getState().aiPenPasses.length === 0, { timeout: 10000 });
 const pass2 = `<path id="crown" d="M ${W*0.32} ${H*0.24} L ${W*0.32} ${H*0.08} L ${W*0.41} ${H*0.16} L ${W*0.5} ${H*0.05} L ${W*0.59} ${H*0.16} L ${W*0.68} ${H*0.08} L ${W*0.68} ${H*0.24} Z" fill="none" stroke="#fff" stroke-width="5" stroke-linejoin="round"/><circle id="gem" cx="${W*0.5}" cy="${H*0.55}" r="${W*0.08}" fill="#ffd84d"/><script>window.__pwned=1</script><rect id="evil" onload="window.__pwned=2" x="0" y="0" width="1" height="1" fill="none"/>`;
