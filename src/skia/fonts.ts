@@ -1,7 +1,8 @@
 // Fonts for Skia text. CanvasKit cannot see the browser's fonts, so font files are fetched and registered with one
 // TypefaceFontProvider: Google Fonts families on demand (each @font-face subset of a family is registered under its
 // own alias, so a paragraph's family list falls back through the subsets), and Inter bundled with the extension so
-// text always draws. A family that cannot be fetched makes the frames using it fall back to the DOM renderer.
+// text always draws. A family that cannot be fetched is drawn in Inter (as the page's font stack does), and fonts
+// installed on the computer are drawn in open stand-ins (skiaFamily).
 import type { CanvasKit, FontCollection, TypefaceFontProvider } from 'canvaskit-wasm';
 import { free, own } from './lifetime';
 import { weightNum } from '../render/fonts';
@@ -36,7 +37,7 @@ export function fontEpoch() {
 
 /** The key a text style is tracked under; what fontStamp() takes. */
 export function fontStyleKey(family: string, weight: any = 400, italic = false) {
-  return key(family || DEFAULT_FAMILY, weightNum(weight), italic);
+  return key(skiaFamily(family), weightNum(weight), italic);
 }
 
 /**
@@ -255,6 +256,7 @@ function styleAliases(family: string, w: number, italic: boolean, others = false
  * weight; other weights come last so they only supply glyphs nothing else has (never the weight of normal text).
  */
 export function familyList(family: string, weight: any = 400, italic = false): string[] {
+  family = skiaFamily(family);
   const w = weightNum(weight);
   const isInter = family.toLowerCase() === DEFAULT_FAMILY.toLowerCase();
   const list = styleAliases(family, w, italic);
@@ -266,19 +268,46 @@ export function familyList(family: string, weight: any = 400, italic = false): s
   return list;
 }
 
-const SYSTEM = new Set(['system-ui', 'sans-serif', 'serif', 'monospace', 'arial', 'helvetica', 'times new roman', 'segoe ui', 'georgia', 'courier new', 'verdana']);
+/**
+ * Fonts installed on the computer, which Skia cannot read (it only uses font files): the open fonts drawn instead.
+ * Arimo, Tinos and Cousine have the same metrics as Arial, Times New Roman and Courier New (text wraps the same), and
+ * Gelasio as Georgia; the system's UI fonts become Inter, the editor's own font. The same on every computer.
+ */
+const SYSTEM: Record<string, string> = {
+  arial: 'Arimo',
+  helvetica: 'Arimo',
+  'helvetica neue': 'Arimo',
+  'times new roman': 'Tinos',
+  times: 'Tinos',
+  serif: 'Tinos',
+  'courier new': 'Cousine',
+  courier: 'Cousine',
+  monospace: 'Cousine',
+  georgia: 'Gelasio',
+  'system-ui': DEFAULT_FAMILY,
+  'sans-serif': DEFAULT_FAMILY,
+  'segoe ui': DEFAULT_FAMILY,
+  verdana: DEFAULT_FAMILY,
+  tahoma: DEFAULT_FAMILY,
+  '-apple-system': DEFAULT_FAMILY,
+};
+
+/** The family Skia draws for `family`: itself, or the open font standing in for a system font. */
+export function skiaFamily(family: string): string {
+  const fam = (family || DEFAULT_FAMILY).trim();
+  return SYSTEM[fam.toLowerCase()] ?? fam;
+}
 
 /**
  * Whether text in this family can be drawn by Skia now: null if yes, else the reason (for skiaEligible).
  * Starts loading what's missing; Inter is always drawable (bundled, Google copy preferred when loaded).
  */
 export function fontBlocker(family: string, weight: any, italic: boolean): string | null {
-  const fam = family || DEFAULT_FAMILY;
-  if (SYSTEM.has(fam.toLowerCase())) return `system font "${fam}" (Skia can only use font files)`;
+  const fam = skiaFamily(family);
   const st = requestFont(fam, weight, italic);
   if (fam.toLowerCase() === DEFAULT_FAMILY.toLowerCase()) return null;
-  if (st === 'ready') return null;
-  return st === 'loading' ? `font "${fam}" loading` : `font "${fam}" could not be loaded`;
+  // A family that cannot be loaded is drawn in Inter, as the page does ("<family>", "Inter", ...).
+  return st === 'loading' ? `font "${fam}" loading` : null;
 }
 
 export function fontStats() {

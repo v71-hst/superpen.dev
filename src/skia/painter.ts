@@ -11,7 +11,7 @@ import { ellipseGeometry, pathGeometry, polygonGeometry } from '../render/geomet
 import { weightNum } from '../render/fonts';
 import { scriptState } from '../editor/scriptHost';
 import { Scope, free, own } from './lifetime';
-import { familyList, fontBlocker, fontCollection, fontEpoch, fontStyleKey, iconFontKey, iconFontText, isIconFont } from './fonts';
+import { DEFAULT_FAMILY, familyList, fontBlocker, fontCollection, fontEpoch, fontStyleKey, iconFontKey, iconFontText, isIconFont } from './fonts';
 import { getImage } from './images';
 import { SHADERS_LOADING, effectMargin, isShaderEffect, shaderEffectBlocker, shaderEffectImage, shaderFillBlocker, shaderFillImage, shaderInfoKey } from './shaderFills';
 import { iconLibraryBlocker, iconPaths } from './icons';
@@ -133,13 +133,10 @@ export function skiaEligible(ctx: PaintContext, n: RNode, editingKey?: string | 
       if (why) return why;
       break;
     }
-    case 'script': {
-      const st = scriptState(n.props, n.theme, n.key);
-      if (!st || st.status !== 'ok') return `script ${st ? st.status : 'without a file'}`;
-      break;
-    }
+    // A script that has not run, or failed, is drawn with the page's marker (drawScript); a browser node as its box
+    // (the live page is an overlay, BrowserOverlays); any other type as the page's placeholder (drawPlaceholder).
     default:
-      return `${n.type} node`;
+      break;
   }
   // Pictures that are still loading do not stop the walk: stopping at the first one asked for a frame's pictures
   // one per try, each only after the one before it had arrived.
@@ -391,9 +388,17 @@ function drawNode(r: Rec, pn: PaintNode, parentWorld: Mat) {
     case 'context':
       drawNote(r, pn, p);
       break;
-    default:
-      // group, script: just their children
+    case 'group':
       drawChildren(r, pn, true);
+      break;
+    case 'script':
+      drawScript(r, pn, p);
+      break;
+    case 'browser':
+      drawBrowser(r, pn, p);
+      break;
+    default:
+      drawPlaceholder(r, pn);
   }
   for (let i = 0; i < layers; i++) c.restore();
   c.restore();
@@ -948,6 +953,80 @@ function drawIconFont(r: Rec, pn: PaintNode, p: any, library: string, name: stri
   para.layout(1e6);
   const tw = para.getMaxIntrinsicWidth(), th = para.getHeight();
   c.drawParagraph(para, (pn.w - tw) / 2, (pn.h - th) / 2);
+}
+
+/**
+ * Centred text in a box (the page's markers: script states, placeholders): 11px Inter, wrapped to the box less
+ * `pad` on each side, cut off at the box.
+ */
+function drawBoxText(r: Rec, w: number, h: number, text: string, fill: string, pad: number) {
+  const { c, ck } = r;
+  const style = new ck.ParagraphStyle({ textStyle: { color: color(ck, fill), fontFamilies: familyList(DEFAULT_FAMILY, 400, false), fontSize: 11 }, textAlign: ck.TextAlign.Center });
+  const builder = r.scope.own(ck.ParagraphBuilder.MakeFromFontCollection(style, fontCollection(ck)), 'paragraphBuilder');
+  builder.addText(text);
+  const para = r.scope.own(builder.build(), 'paragraph');
+  para.layout(Math.max(1, w - pad * 2));
+  c.save();
+  c.clipRect(ck.XYWHRect(0, 0, w, h), ck.ClipOp.Intersect, true);
+  c.drawParagraph(para, pad, (h - para.getHeight()) / 2);
+  c.restore();
+}
+
+function dashedRect(r: Rec, w: number, h: number, stroke: string, fill?: string) {
+  const { c, ck, scope } = r;
+  if (fill) c.drawRect(ck.XYWHRect(0, 0, w, h), scope.own(paintWith(ck, pt => pt.setColor(color(ck, fill))), 'paint'));
+  const pt = scope.own(new ck.Paint(), 'paint');
+  pt.setStyle(ck.PaintStyle.Stroke);
+  pt.setStrokeWidth(1);
+  pt.setColor(color(ck, stroke));
+  pt.setPathEffect(scope.own(ck.PathEffect.MakeDash([3, 3], 0)!, 'pathEffect'));
+  c.drawRect(ck.XYWHRect(0.5, 0.5, w - 1, h - 1), pt);
+}
+
+/** A script node: its children, and (NodeView ScriptView) a marker while it has not run, has no file or failed. */
+function drawScript(r: Rec, pn: PaintNode, p: any) {
+  const { c, ck } = r;
+  const clip = p.clip === true;
+  if (clip) {
+    c.save();
+    c.clipRect(ck.XYWHRect(0, 0, pn.w, pn.h), ck.ClipOp.Intersect, true);
+  }
+  drawChildren(r, pn, true);
+  if (clip) c.restore();
+  const st = scriptState(pn.node.props, pn.node.theme, pn.key);
+  if (st && st.status === 'ok') return;
+  const failed = st?.status === 'error';
+  const ink = failed ? '#f43f5e' : '#a1a1aa';
+  dashedRect(r, pn.w, pn.h, ink, failed ? 'rgba(244,63,94,0.06)' : undefined);
+  drawBoxText(r, pn.w, pn.h, !st ? 'Script: no file set' : st.status === 'pending' ? 'Running script…' : `Script error: ${(st as any).message}`, ink, 7);
+}
+
+/** A browser node's box (NodeView BrowserView): white, its corners rounded; the page itself is a BrowserOverlays frame. */
+function drawBrowser(r: Rec, pn: PaintNode, p: any) {
+  const { c, ck, scope } = r;
+  const rad = radii(p.cornerRadius).map(v => Math.min(v, pn.w / 2, pn.h / 2));
+  c.drawRRect(rrect(0, 0, pn.w, pn.h, rad), scope.own(paintWith(ck, pt => (pt.setColor(ck.WHITE), pt.setAntiAlias(true))), 'paint'));
+  if (!p.url) {
+    c.save();
+    c.clipRRect(rrect(0, 0, pn.w, pn.h, rad), ck.ClipOp.Intersect, true);
+    const style = new ck.ParagraphStyle({ textStyle: { color: color(ck, '#71717a'), fontFamilies: familyList(DEFAULT_FAMILY, 400, false), fontSize: 14 }, textAlign: ck.TextAlign.Center });
+    const builder = scope.own(ck.ParagraphBuilder.MakeFromFontCollection(style, fontCollection(ck)), 'paragraphBuilder');
+    builder.addText('No URL');
+    const para = scope.own(builder.build(), 'paragraph');
+    para.layout(pn.w);
+    c.drawParagraph(para, 0, (pn.h - para.getHeight()) / 2);
+    c.restore();
+  }
+}
+
+/** A node of a type nothing draws (a missing component, an unknown type): NodeView PlaceholderView. */
+function drawPlaceholder(r: Rec, pn: PaintNode) {
+  dashedRect(r, pn.w, pn.h, '#a1a1aa');
+  drawBoxText(r, pn.w, pn.h, pn.node.type === 'missing_ref' ? 'Missing component' : pn.node.type, '#a1a1aa', 0);
+  r.c.save();
+  r.c.clipRect(r.ck.XYWHRect(0, 0, pn.w, pn.h), r.ck.ClipOp.Intersect, true);
+  drawChildren(r, pn, true);
+  r.c.restore();
 }
 
 const NOTE_COLORS: Record<string, [string, string]> = { note: ['#FDF6C3', '#3f3a1a'], prompt: ['#EDE9FE', '#2e1065'], context: ['#E0F2FE', '#0c4a6e'] };
