@@ -323,6 +323,7 @@ to run, what to look at. The owner builds and installs with `npm run package` an
 | 2026-11-19 | Gate (owner's PC) | Started; full mode tuned | First benchmarks on the owner's PC, then a tuning pass there. See the gate notes at the end. Next: the owner re-runs the benchmark on the tuned build, then memory and the look check. |
 | 2026-11-19 | Gate (owner's PC) | Memory fixed | Pictures in two sizes; `full` now uses less memory than `dom` in normal mode at every step. See the last section. Next: the owner tries it in VS Code, then the look check, real use and the 16 GB machine. |
 | 2026-11-19 | 5 | Default switched (owner's decision) | Merged to `main` as 0.4.0 with `full` as the default; the `skia-rework` branch is gone. `dom` and `overview` stay selectable. The clean-up half of stage 5 is not started. See the last section. |
+| 2026-11-20 | After 1.0.1 | Far-zoom speed fix (branch `far-zoom-perf`) | "About 10 fps at 2%": far-zoom copies drawn from shared atlas pages, frame labels moved as one box, and frames with outline-reading (`@sdf`) shaders on paths now drawn by Skia (the friend's file). See the last section. Not merged. |
 
 ### 2026-11-18, stage 0 notes
 
@@ -695,3 +696,116 @@ For tests: a URL without `&renderer=` now runs in `full`. The suites about the D
 Left of stage 5: nothing of the DOM renderer has been removed (`lod.ts`, `imageLod.ts`, `subpixel.ts`, `culling.ts`
 are all still needed by `dom` mode, by frames Skia cannot draw, and by screenshots and exports). Removing any of it
 waits until `full` has been the default for a while without reports.
+
+
+### 2026-11-20, slow far out (about 10 fps at 2%): cause and fix
+
+The report: a friend on a 16 GB PC with a large design, on 1.0.1: about 10 fps at 2% zoom (the whole design on
+screen, as before 1.0.1), twice as fast as before at 9%, performance mode makes no difference. No file, frame count or
+diagnostics from them. Branch `far-zoom-perf` (from `main` at `738601a`).
+
+**Reproduced** on generated designs: `make-big.mjs` 600 frames (75,552 nodes), `make-shaders.mjs` 300 frames, and a
+copy of it where half the frames use the animated `moving.glsl`. New script `tests/farzoom.mjs` (zoom to 2% and 9%,
+wait until Skia stops drawing, then idle / 30 Ctrl+wheel zoom steps / 30 pans, counting long tasks, Skia draw time,
+DOM changes, and the Skia counters). Container numbers (Chromium headless, SwiftShader): compare counts and long tasks,
+not absolute frame times. With the processor slowed 4× (`PEN_CPU_SLOW=4`) the old code ran at 13 fps at 2%, close to
+the report, and performance mode changed nothing, also as reported.
+
+**Cause: drawing hundreds of separate far-zoom copies.** Far out each frame is drawn from its own small copy
+(`pictureTextures.ts`), one texture per frame: one texture switch per frame per draw. Experiments at 2%, 600 frames:
+Skia drawing 0 frames → 0 long tasks per 30 steps; 150 frames → 1; 600 frames → 30 (every step). The same 600 draws
+all from one texture → 1 long task and 2 ms of Skia work per draw instead of 18 ms. So the cost is the number of
+textures, not the pixels, React or the labels.
+
+The theories in the brief, checked:
+1. Frames handed to the DOM renderer: not it on these files. 150 of 300 frames with an animated shader go to the DOM
+   renderer (reason "animated shader fill"); at 2% they are snapshots: panning 60 → 45 fps, 0–1 long tasks.
+2. Frame labels: real but secondary. Not drawing Skia frames at all (labels and React still running) gave 0 long tasks
+   on the normal processor; with the processor 4× slower the labels were about a third of what was left per pan step
+   (fixed below).
+3. Far-zoom copies over budget: not it. 600 frames at 2% use 4 MB of the 192 MB budget, 0 evictions, 0 replays.
+4. No graphics card: cannot be checked here (no GPU in the container); still a question for the friend.
+
+Also seen: for about 40 s after opening the 600-frame file, the close-up warm-up (`takeProgramStep`, 424 steps) redraws
+the whole scene once per step, so far zoom is busy until it finishes (85 draws per 5 s, then 0). Not changed.
+
+**Fixes** (speed only; same pixels):
+- `src/skia/farAtlas.ts`: far-zoom copies are packed into up to four 2048-px atlas pages (two in performance mode,
+  16 MB each on the graphics card) and drawn with one `drawAtlas` per page. Packing waits until the view is still
+  (scene's settle timer): packing during a pan made the graphics context copy the whole page every draw, which first
+  made 9% panning slower than before (7–8 long tasks vs 1–4); deferred, it is back to parity. Copies not packed yet,
+  too large (> 512 px), or with no room are drawn on their own as before; anything drawn another way flushes the
+  queued sprites first, so frame order is kept. Pages are cleared and refilled when full.
+- Frame labels (`Canvas.tsx` Overlay): placed relative to the view's origin in one box translated by the view's
+  offset, each label memoized, so a pan changes one style instead of 600. A `will-change` layer on the box made zoom
+  9% slower and was dropped.
+- `diagnose_editor`: `renderer.skia.drawMs` / `sceneMs` (time spent drawing) and `overview.atlas` (pages, slots,
+  packed, resets, unpacked).
+
+**Numbers** (600 frames, 2%, 30 steps each, before → after; two runs each where shown):
+
+| | Before | After |
+|---|---|---|
+| Zoom: long tasks | 29, 29 | 0, 0 |
+| Pan: long tasks | 30, 30 | 0, 2 |
+| Skia draw time (30 draws) | 386–552 ms | 35–42 ms |
+| Page frame rate (zoom / pan) | ~35 / ~35 fps | ~54 / ~56 fps |
+| Processor 4× slower: frame rate | 13 / 12 fps | 19–24 fps |
+| Processor 4× slower: Skia draw time | 2,129 ms | 150–180 ms |
+| Processor 4× slower: pan long tasks | 6.3 s | 3.0–3.2 s |
+| Performance mode: zoom long tasks | 30 | 0 |
+| 9%: Skia draw time | 114–141 ms | 78–90 ms |
+| 9%: long tasks (zoom / pan) | 15, 9 / 4, 1 | 10, 13 / 1, 3 (same range) |
+
+**The friend's own file: shaders that read a path's outline.** After the above, the friend found it in their file:
+28 frames with shaders do the damage. `lod.ts` never snapshots a frame that contains a shader, and Skia handed those
+frames to the DOM renderer, so all 28 kept 3,875 nodes and 840 shader canvases live at every zoom. 811 of the canvases
+are paths filled with chrome, steel, slate, halftone or crt, and all five declare `/** @sdf */` (the shader reads the
+shape's outline). In `src/skia/shaderFills.ts`, `shapeFor` only built that outline for rectangles, frames and full
+ellipses; for a path, polygon, partial ellipse or line it gave up, and the whole frame left Skia with the reason "shader
+fill on … reads the outline of a path".
+
+Fix: `shapeFor` builds the outline for those shapes too, from the same geometry the DOM renderer uses
+(`pathGeometry`, `polygonGeometry`, `ellipseGeometry` in `src/render/geometry.ts`; even-odd for rings and paths that
+ask for it). The frames are then Skia-eligible, so far out they are drawn from far-zoom copies like any other frame
+(and packed in the atlas), and no shader canvases stay live. Same pixels: `paint-diff.mjs` on a 3-frame version
+(90 outline-reading paths) is 100% / 100% / 100%, checked by eye in the side-by-side images too.
+
+Reproduced with `make-shaders.mjs sdf28.spen 28 30` (28 frames, 840 paths with an `@sdf` still shader, plus 84 other
+shader fills), `farzoom.mjs`, normal processor:
+
+| 28 `@sdf` frames | Before (`738601a`) | After |
+|---|---|---|
+| Frames drawn by Skia | 0 of 28 (all "reads the outline of a path") | 28 of 28 |
+| 2% zoom: 30 steps took | 6.8 s, 24 fps, 23 long tasks (1.3 s) | 2.0 s, 60 fps, 0 long tasks |
+| 2% pan: frame rate / median frame | 23 fps / 50 ms | 60 fps / 16.7 ms |
+| 9% zoom: 30 steps took | 7.1 s, 23 fps, 26 long tasks (1.7 s) | 2.0 s, 60 fps, 0 long tasks |
+| 9% pan: frame rate / median frame | 23 fps / 50 ms | 60 fps / 16.7 ms |
+| Skia draw time (30 zoom draws, 2%) | 0 (nothing drawn by Skia) | 16 ms |
+
+This matches the report better than the 600-frame case (slow at 2% and at 9%, performance mode no help: the DOM
+renderer's shader canvases don't depend on it). `lod.ts` still never snapshots shader frames on the DOM renderer
+(`?renderer=dom`); that is the DOM renderer's behaviour and unchanged here. Frames with an animated shader, or one that
+reads the backdrop, still go to the DOM renderer as before.
+
+Still costing time on a slow processor at 2% (4× slower: ~100 ms per pan step left): React and the browser's paint
+lifecycle (layerize and commit) for the 600 frame stand-ins and labels. On the normal container processor this was
+under a frame. The browser's `GLES2::ReadPixels` in traces is the container's software compositing, not the editor.
+
+**Suites** on the final branch (dev server; `stress`, `shaderfill`, `sharpen` on generated files): `features` 20/20
+(default and `&renderer=dom`), `v1` 49/49 (the other 6 need the Figma samples, not in the repo), `skia-smoke` 11/11,
+`shaderfill` 8/8, `sharpen` 10/11, `stress` no errors (default and `&renderer=dom`). The `sharpen` failure ("fine
+detail: dom 3.79, full 2.35") is the same, with the same numbers, on `main` at `738601a`: not from this branch.
+
+**Unverified:** the friend's file and PC. The `@sdf` fix is checked on generated shaders (one brushed-metal
+shader), not on their chrome, steel, slate, halftone and crt: if any of those also reads the time or the backdrop, its
+frame still goes to the DOM renderer, by design. No GPU numbers: everything here is software rendering. Whether
+their slowness was during the first minute after opening (the warm-up above) or all the time.
+
+Questions for the friend, with this build:
+1. `diagnose_editor` → `renderer.skia.pictures`: is `eligible` now 28 more than before, and what does `reasons` still
+   list? Any frame left there is still on the DOM renderer, and the reason says why.
+2. Do chrome, steel, slate, halftone or crt use `@time` or read the backdrop? (Those frames stay on the DOM renderer.)
+3. Still slow? Only while zooming/panning, or also when nothing moves? Only in the first minute after opening?
+4. If so, `diagnose_editor` while it is slow (`renderer.skia.overview.atlas`, `gpu`, `drawMs`), and whether VS Code
+   uses the graphics card at all: Windows Task Manager, the GPU column for "Code" while zooming (theory 4).
