@@ -286,12 +286,20 @@ export function SkiaLayer() {
     ro.observe(canvas);
     window.addEventListener('resize', fitCanvas);
     let lastView = useStore.getState().view;
+    let viewDraws = 0;
+    let viewDrawReset = 0;
     const unsub = useStore.subscribe(s => {
       if (s.view !== lastView) {
         lastView = s.view;
         noteViewChange();
-        // Synchronously, so the canvas moves in the same frame as the DOM frames above it.
-        drawNow();
+        // Synchronously, so the canvas moves in the same frame as the boxes and overlays above it; but at most twice per
+        // screen refresh: a fast wheel or trackpad sends several view changes per refresh, and each was a whole draw.
+        // Further changes in the same refresh are drawn once, on the next frame.
+        if (viewDraws < 2) {
+          viewDraws++;
+          drawNow();
+          if (!viewDrawReset) viewDrawReset = requestAnimationFrame(() => ((viewDraws = 0), (viewDrawReset = 0)));
+        } else requestDraw();
       }
     });
 

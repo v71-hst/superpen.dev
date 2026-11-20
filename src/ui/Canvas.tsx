@@ -113,7 +113,6 @@ function nodeColorClass(n: RNode | undefined) {
 export function Canvas() {
   const doc = useStore(s => s.doc);
   const file = useStore(s => s.file);
-  const view = useStore(s => s.view);
   const tool = useStore(s => s.tool);
   const editingKey = useStore(s => s.editingKey);
   const tree = useTree();
@@ -866,9 +865,7 @@ export function Canvas() {
           The canvas could not be drawn ({failure}). Reload the editor to try again.
         </div>
       )}
-      <div id="pen-world" aria-hidden style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` }}>
-        {tree && <Roots tree={tree} />}
-      </div>
+      <World>{tree && <Roots tree={tree} />}</World>
       {tree && <BrowserOverlays tree={tree} />}
       {tree && <TextEditOverlay tree={tree} onCommit={onTextCommit} />}
       {tree && <Overlay tree={tree} onResizeStart={onResizeStart} draft={draft} />}
@@ -1076,6 +1073,19 @@ function Overlay({ tree, onResizeStart, draft }: { tree: Tree; onResizeStart: (e
       {draft?.marquee && <div className="marquee" style={{ left: draft.marquee.x, top: draft.marquee.y, width: draft.marquee.w, height: draft.marquee.h }} />}
       {draft?.draw && <div className="draw-box" style={{ left: draft.draw.x, top: draft.draw.y, width: draft.draw.w, height: draft.draw.h }} />}
       {draft?.dropLine && <div className="drop-line" style={{ left: draft.dropLine.x, top: draft.dropLine.y, width: draft.dropLine.w, height: draft.dropLine.h }} />}
+    </div>
+  );
+}
+
+/**
+ * The layer of frame boxes, moved by the view. The only part of the canvas that re-renders on a pan step: the frames
+ * inside it are the same element each time, so React leaves them alone.
+ */
+function World({ children }: { children: React.ReactNode }) {
+  const view = useStore(s => s.view);
+  return (
+    <div id="pen-world" aria-hidden style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` }}>
+      {children}
     </div>
   );
 }

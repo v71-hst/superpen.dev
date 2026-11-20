@@ -6,12 +6,24 @@
 import React from 'react';
 import { useStore } from '../editor/store';
 import type { Tree } from '../editor/tree';
+import type { RNode } from '../model/types';
 import { nodeRect, skiaOwns } from '../editor/measure';
 import { canvasRect } from '../editor/ops';
 import { resolveProps } from '../model/props';
 import { usePictureFramesVersion } from '../skia/pictureFrames';
 
 const MIN_SCREEN_WIDTH = 160;
+
+/** The browser nodes of a tree (found once per tree, not on every pan step: designs have thousands of nodes). */
+const browsersOf = new WeakMap<Tree, RNode[]>();
+function browserNodes(tree: Tree): RNode[] {
+  let list = browsersOf.get(tree);
+  if (!list) {
+    list = [...tree.byKey.values()].filter(n => n.type === 'browser');
+    browsersOf.set(tree, list);
+  }
+  return list;
+}
 const MAX_PAGES = 8;
 
 export function BrowserOverlays({ tree }: { tree: Tree }) {
@@ -21,8 +33,8 @@ export function BrowserOverlays({ tree }: { tree: Tree }) {
   if (!doc) return null;
   const c = canvasRect();
   const shown: { key: string; url: string; x: number; y: number; w: number; h: number; radius: any; area: number }[] = [];
-  for (const n of tree.byKey.values()) {
-    if (n.type !== 'browser' || !skiaOwns(n.key)) continue;
+  for (const n of browserNodes(tree)) {
+    if (!skiaOwns(n.key)) continue;
     const p = resolveProps(doc, n.props, n.theme);
     if (p.enabled === false || !p.url) continue;
     const r = nodeRect(n.key);
