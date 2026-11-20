@@ -325,6 +325,7 @@ to run, what to look at. The owner builds and installs with `npm run package` an
 | 2026-11-19 | 5 | Default switched (owner's decision) | Merged to `main` as 0.4.0 with `full` as the default; the `skia-rework` branch is gone. `dom` and `overview` stay selectable. The clean-up half of stage 5 is not started. See the last section. |
 | 2026-11-20 | After 1.0.1 | Far-zoom speed fix (branch `far-zoom-perf`) | "About 10 fps at 2%": far-zoom copies drawn from shared atlas pages, frame labels moved as one box, and frames with outline-reading (`@sdf`) shaders on paths, or shaders with an error, now drawn by Skia (the friend's file). See the last section. Not merged. |
 | 2026-11-20 | Skia only (owner's decision) | Done (branch `skia-only`, not merged) | The DOM renderer is removed. Every frame is drawn by Skia (on the GPU, or in software without one); screenshots, exports, the slideshow, thumbnails and checkLayout use Skia and the layout engine; HTML/SVG export has a new exporter. See the last two sections. |
+| 2026-11-20 | Skia only: shaders on Skia's GPU | Done (branch `skia-only`, not merged) | "Zooming still freezes sometimes": design shaders are translated to SkSL and run on Skia's own GPU context, no WebGL readback. See the last section. Not checked on a real GPU yet. |
 
 ### 2026-11-18, stage 0 notes
 
@@ -925,3 +926,29 @@ and showcase 97.7% (its shader frames). `&renderer=dom` runs are gone with the s
 **Unverified:** a real graphics card, VS Code itself (only the browser build was run), the browser-node iframe strip
 seen in the headless browser, Phosphor icons (host blocked here). The extension's `.vsix` built from this branch is a
 test build only (`skia-only-test-build`), not a release.
+
+### 2026-11-20, design shaders on Skia's GPU (the zoom freezes)
+
+**Report (friend, real GPU):** dragging at full speed, zooming "a little better but still freezes sometimes". A Chrome
+trace of zooming here showed the long tasks waiting on the GPU process (`CommandBufferProxyImpl::WaitForGetOffset`).
+Most of that is the container's software compositor, but two of the waits are ours and cost far more on a graphics
+card: every shader texture was drawn by the WebGL engine (`render/shaders.ts`) and copied back through a 2D canvas
+(`drawImage` of a WebGL canvas: a GPU read-back, Chrome's "GPU stall due to ReadPixels"), and its shaders compiled
+in the middle of a zoom (`getShaderParameter` waits for the compile; slow on Windows/ANGLE).
+
+**Change:** `src/skia/sksl.ts` translates a design's GLSL to an SkSL runtime effect and draws it on the scene's own
+GPU surface, so the texture never leaves the GPU and Skia compiles it once per shader source (cached). Same inputs as
+the WebGL engine: `@content`, `@backdrop` and `pencil:object` images as child shaders, `@sdf` as an 8-bit-pair
+distance texture decoded with bilinear sampling and its gradient, `gl_FragCoord`/`u_resolution` in node units,
+textures premultiplied, multi-pass chains. Used by still fills and effects (`shaderFills.ts`) and live (animated)
+shaders (`liveShaders.ts`: one new GPU image per frame, not while the view moves). A shader the translator can't
+handle (derivatives, uniform arrays, `#if`, `texture2DLod`, ...) or that Skia rejects keeps the WebGL engine, as before.
+The CPU-side canvases read back as pixels (`paintFills`, painter) are now `willReadFrequently`, so the browser keeps
+them on the CPU instead of reading them back from the GPU.
+
+**Checked:** `tests/sksl.mjs` runs every shader both ways: still-noise 100%, still-halftone 100%, frost 100%, objfx
+100%, sdf-metal 99.35% of pixels within 6/255 (the outline's edge), the animated ones compile and move (anim.spen),
+the broken one is rejected and keeps WebGL. Here (software GL) zooming fx28 is unchanged, as expected: 34.4 to 36.4
+fps, long tasks 1640 to 1588 ms; the read-backs this removes are cheap without a GPU. **Not checked on a real GPU:**
+the friend's test build is the check.
+

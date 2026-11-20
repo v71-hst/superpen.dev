@@ -1,18 +1,38 @@
-// Animated shaders (fills and effects that read the time or the pointer) in frames Skia draws. Each one is a
-// ShaderRunner animating an offscreen canvas on the shared animation loop (render/shaders.ts); its pixels are copied
-// into one GPU texture per frame of animation (Surface.updateTextureFromSource), and the frame's recorded picture
-// draws that texture, so the picture never has to be recorded again for the animation to move. A frame holding one
-// is drawn by replaying its picture at every zoom (scene.ts: never from a still copy) and drawn again while its
-// shaders animate. A shader not drawn for a moment stops animating; one not drawn for a while is freed.
+// Animated shaders (fills and effects that read the time or the pointer) in frames Skia draws. Each frame of
+// animation is drawn by Skia into a new GPU texture (sksl.ts: the shader translated to SkSL, its inputs made once), so
+// nothing is read back from the graphics card. A shader that can't run on Skia keeps the WebGL engine: a ShaderRunner
+// animating an offscreen canvas, copied into a texture each frame (Surface.updateTextureFromSource). Either way the
+// frame's picture is recorded again for each new frame of animation (liveStamp), a frame holding one is replayed at
+// every zoom (scene.ts: never from a still copy), and a shader not drawn for a moment stops; one not drawn for a while
+// is freed.
 import type { Image as SkImage, Surface } from 'canvaskit-wasm';
 import { ShaderRunner, type ShaderConfig } from '../render/shaders';
 import { bumpImageStamp } from './images';
 import { free, own } from './lifetime';
 import { kitIfLoaded } from './kit';
+import { skslPrepare, type SkslPrepared } from './sksl';
 import { useStore } from '../editor/store';
 import { perfLimits } from '../editor/perfLimits';
 
-type Live = { runner: ShaderRunner; canvas: HTMLCanvasElement; image: SkImage | null; w: number; h: number; usedAt: number; config: string; version: number };
+type Live = {
+  /** The WebGL engine's runner, for a shader that can't run on Skia (null while that is being found out, or on Skia). */
+  runner: ShaderRunner | null;
+  canvas: HTMLCanvasElement;
+  /** On Skia: the prepared shader, and when its last frame was drawn. */
+  sk: SkslPrepared | null;
+  skAt: number;
+  cfg: ShaderConfig;
+  screenRect: () => DOMRect | null;
+  image: SkImage | null;
+  w: number;
+  h: number;
+  usedAt: number;
+  config: string;
+  version: number;
+};
+const T0 = performance.now();
+let pointer: [number, number] | null = null;
+let viewMovedAt = 0;
 
 const PREFIX = 'blob:pen-live/';
 const PAUSE_MS = 400;
@@ -39,10 +59,12 @@ function watchZoom() {
   watching = true;
   // Zooming changes how many pixels each needs (its texture is made again at the new size, see ensureImage).
   useStore.subscribe((st, prev) => {
+    if (st.view !== prev.view) viewMovedAt = performance.now();
     if (st.view.zoom === prev.view.zoom) return;
     const scale = liveScale();
-    for (const l of lives.values()) l.runner.setScale(scale);
+    for (const l of lives.values()) l.runner?.setScale(scale);
   });
+  window.addEventListener('pointermove', e => (pointer = [e.clientX, e.clientY]), { passive: true });
 }
 
 /** The key a live shader's image is tracked under (a frame lists it among its pictures and records again on a bump). */
@@ -76,15 +98,35 @@ export function liveShaderImage(id: string, configKey: string, config: () => Sha
   }
   if (!l) {
     watchZoom();
-    const canvas = document.createElement('canvas');
-    const runner = new ShaderRunner(canvas, true);
-    runner.screenRect = screenRect;
-    l = { runner, canvas, image: null, w: 0, h: 0, usedAt: performance.now(), config: configKey, version: 0 };
+    const cfg = config();
+    l = { runner: null, canvas: document.createElement('canvas'), sk: null, skAt: 0, cfg, screenRect, image: null, w: 0, h: 0, usedAt: performance.now(), config: configKey, version: 0 };
     lives.set(k, l);
     const made = l;
-    void runner.update(config()).then(() => {
+    void (async () => {
+      // On Skia if the shader translates; else the WebGL engine.
+      const ck = kitIfLoaded();
+      let prep: SkslPrepared | null = null;
+      if (ck) {
+        try {
+          const content = cfg.content ? await cfg.content() : null;
+          const backdrop = cfg.backdrop ? await cfg.backdrop() : null;
+          prep = await skslPrepare(ck, { passes: cfg.passes, w: cfg.width, h: cfg.height, margin: cfg.margin, shape: cfg.shape, resolveUrl: cfg.resolveUrl, content: () => content, backdrop: () => backdrop }, cfg.scale);
+        } catch {
+          prep = null;
+        }
+      }
+      if (lives.get(k) !== made) return prep?.release();
+      if (prep) {
+        made.sk = prep;
+        drawSk(made);
+      } else {
+        const runner = new ShaderRunner(made.canvas, true);
+        runner.screenRect = screenRect;
+        made.runner = runner;
+        await runner.update(cfg);
+      }
       if (lives.get(k) === made) bumpImageStamp(k);
-    });
+    })();
   }
   l.usedAt = performance.now();
   ensureImage(k, l);
@@ -99,11 +141,31 @@ export function liveReady(key: string): boolean {
 
 /** The error of live shader `id`, once it has failed (it is then drawn like a failing still shader). */
 export function liveShaderError(id: string): string {
-  return lives.get(liveKey(id))?.runner.error ?? '';
+  return lives.get(liveKey(id))?.runner?.error ?? '';
+}
+
+/** Draws the next frame of a live shader on Skia (time, pointer, the zoom's pixels) into a new texture. */
+function drawSk(l: Live) {
+  if (!l.sk) return;
+  const now = performance.now();
+  let mouse: [number, number] | undefined;
+  const r = pointer && l.screenRect();
+  if (r && pointer && r.width && r.height) {
+    const fullW = l.cfg.width + l.cfg.margin * 2, fullH = l.cfg.height + l.cfg.margin * 2;
+    mouse = [((pointer[0] - r.left) / r.width) * fullW - l.cfg.margin, ((pointer[1] - r.top) / r.height) * fullH - l.cfg.margin];
+  }
+  const img = l.sk.draw({ scale: liveScale(), time: (now - T0) / 1000, mouse }, gpu);
+  l.skAt = now;
+  if (!img) return;
+  free(l.image);
+  l.image = own(img, 'liveImage');
+  l.w = img.width();
+  l.h = img.height();
+  l.version++;
 }
 
 function ensureImage(k: string, l: Live) {
-  if (!gpu || !l.canvas.width || !l.canvas.height) return;
+  if (!l.runner || !gpu || !l.canvas.width || !l.canvas.height) return;
   if (l.image && l.w === l.canvas.width && l.h === l.canvas.height) return;
   // A new size (the zoom changed how many pixels it needs) needs a new texture: the frame records again with it.
   const had = !!l.image;
@@ -143,7 +205,7 @@ export function noteLiveDrawn(keys: Iterable<string>) {
   for (const k of keys) {
     const l = lives.get(k);
     if (!l) continue;
-    if (now - l.usedAt > PAUSE_MS) l.runner.pause(false);
+    if (now - l.usedAt > PAUSE_MS) l.runner?.pause(false);
     l.usedAt = now;
   }
   tick();
@@ -156,6 +218,8 @@ function tick() {
     ticking = false;
     const now = performance.now();
     let any = false;
+    // A live shader not due for its next frame yet: look again on the next frame (nothing else would ask).
+    let waiting = false;
     for (const [k, l] of lives) {
       const idle = now - l.usedAt;
       if (idle > FREE_MS) {
@@ -163,7 +227,15 @@ function tick() {
         continue;
       }
       if (idle > PAUSE_MS) {
-        l.runner.pause(true);
+        l.runner?.pause(true);
+        continue;
+      }
+      if (l.sk) {
+        // At the shader frame rate, and not while the view moves (as the WebGL engine's loop does).
+        if (now - l.skAt >= perfLimits().shaderFrameMs - 2 && now - viewMovedAt >= 140) {
+          drawSk(l);
+          any = true;
+        } else waiting = true;
         continue;
       }
       ensureImage(k, l);
@@ -181,11 +253,13 @@ function tick() {
       }
     }
     if (any) requestDraw();
+    else if (waiting) tick();
   });
 }
 
 function disposeLive(k: string, l: Live) {
-  l.runner.dispose();
+  l.runner?.dispose();
+  l.sk?.release();
   free(l.image);
   lives.delete(k);
 }

@@ -16,6 +16,8 @@ import { perfLimits } from '../editor/perfLimits';
 import { kitIfLoaded } from './kit';
 import { bumpImageStamp, forgetImages, getImage, registerImageSource } from './images';
 import { liveKey, liveScale, liveShaderError, liveShaderImage } from './liveShaders';
+import { skslImage } from './sksl';
+import { sceneGpu } from './scene';
 
 /** Addresses of shader images: nothing is fetched from them (see registerImageSource); url resolvers leave blob: alone. */
 const PREFIX = 'blob:pen-shader/';
@@ -204,6 +206,12 @@ export function shaderFillImage(resolveUrl: (u: string) => string, n: RNode, p: 
   const key = PREFIX + hash(JSON.stringify([url, f.uniforms ?? {}, W, H, shape, below, assetEpoch, backdropSig]));
   registerImageSource(key, async side => {
     const maxScale = perfLimits().shaderMaxScale;
+    // On Skia's own graphics context when the shader translates (sksl.ts): nothing is read back from the GPU.
+    const ck = kitIfLoaded();
+    const viaSkia = ck
+      ? await skslImage(ck, { passes: [{ url: f.url, uniforms: f.uniforms ?? {} }], w: W, h: H, margin: 0, shape, resolveUrl, content: k => paintFills(below, W, H, k, shape), backdrop: readsBackdrop ? k => env!.backdrop(k, 0) : null }, side, maxScale, sceneGpu).catch(() => null)
+      : null;
+    if (viaSkia) return viaSkia;
     const scale = Math.max(0.05, Math.min(maxScale, side / Math.max(W, H)));
     const canvas = document.createElement('canvas');
     const runner = new ShaderRunner(canvas, true);
@@ -338,6 +346,11 @@ export function shaderEffectImage(
   const key = PREFIX + 'fx/' + hash(JSON.stringify([urls, passes.map(p => p.uniforms), W, H, margin, signature, assetEpoch, backdropSig]));
   registerImageSource(key, async side => {
     const maxScale = perfLimits().shaderMaxScale;
+    const ck = kitIfLoaded();
+    const viaSkia = ck
+      ? await skslImage(ck, { passes, w: W, h: H, margin, shape: null, resolveUrl, content, backdrop: readsBackdrop ? k => env!.backdrop(k, margin) : null }, side, maxScale, sceneGpu).catch(() => null)
+      : null;
+    if (viaSkia) return viaSkia;
     const scale = Math.max(0.05, Math.min(maxScale, side / Math.max(fullW, fullH)));
     const canvas = document.createElement('canvas');
     const runner = new ShaderRunner(canvas, true);

@@ -8,7 +8,8 @@ export function paintFills(fills: any[], w: number, h: number, scale: number, sh
   const c = document.createElement('canvas');
   c.width = Math.max(1, Math.round(w * scale));
   c.height = Math.max(1, Math.round(h * scale));
-  const g = c.getContext('2d')!;
+  // Kept on the CPU (read back as pixels for Skia, see skia/sksl.ts): a GPU-backed canvas would stall to read back.
+  const g = c.getContext('2d', { willReadFrequently: true })!;
   g.scale(scale, scale);
   g.beginPath();
   if (shape?.kind === 'ellipse') g.ellipse(w / 2, h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);

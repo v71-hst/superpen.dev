@@ -420,7 +420,7 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   return p;
 }
 
-function shapeMask(shape: ShapeSpec | null, w: number, h: number, tw: number, th: number): Uint8ClampedArray {
+export function shapeMask(shape: ShapeSpec | null, w: number, h: number, tw: number, th: number): Uint8ClampedArray {
   const c = document.createElement('canvas');
   c.width = tw;
   c.height = th;

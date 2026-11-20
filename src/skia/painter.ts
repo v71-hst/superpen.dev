@@ -479,7 +479,7 @@ function pictureToCanvas(ck: CanvasKit, pic: SkPicture, w: number, h: number, k:
     const canvas = document.createElement('canvas');
     canvas.width = pw;
     canvas.height = ph;
-    canvas.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(px.buffer, px.byteOffset, px.byteLength), pw, ph), 0, 0);
+    canvas.getContext('2d', { willReadFrequently: true })!.putImageData(new ImageData(new Uint8ClampedArray(px.buffer, px.byteOffset, px.byteLength), pw, ph), 0, 0);
     return canvas;
   } finally {
     surface.delete();
@@ -545,7 +545,7 @@ function drawShaderEffects(r: Rec, pn: PaintNode, p: any, effects: any[]): boole
       const canvas = document.createElement('canvas');
       canvas.width = w;
       canvas.height = h;
-      canvas.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(px.buffer, px.byteOffset, px.byteLength), w, h), 0, 0);
+      canvas.getContext('2d', { willReadFrequently: true })!.putImageData(new ImageData(new Uint8ClampedArray(px.buffer, px.byteOffset, px.byteLength), w, h), 0, 0);
       return canvas;
     } finally {
       free(pic);
