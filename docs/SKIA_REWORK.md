@@ -324,7 +324,7 @@ to run, what to look at. The owner builds and installs with `npm run package` an
 | 2026-11-19 | Gate (owner's PC) | Memory fixed | Pictures in two sizes; `full` now uses less memory than `dom` in normal mode at every step. See the last section. Next: the owner tries it in VS Code, then the look check, real use and the 16 GB machine. |
 | 2026-11-19 | 5 | Default switched (owner's decision) | Merged to `main` as 0.4.0 with `full` as the default; the `skia-rework` branch is gone. `dom` and `overview` stay selectable. The clean-up half of stage 5 is not started. See the last section. |
 | 2026-11-20 | After 1.0.1 | Far-zoom speed fix (branch `far-zoom-perf`) | "About 10 fps at 2%": far-zoom copies drawn from shared atlas pages, frame labels moved as one box, and frames with outline-reading (`@sdf`) shaders on paths, or shaders with an error, now drawn by Skia (the friend's file). See the last section. Not merged. |
-| 2026-11-20 | Skia only (owner's decision) | In progress (branch `skia-only`) | The owner decided to remove the DOM renderer completely. Every frame is drawn by Skia now (no fallback reasons left), screenshots/exports/slideshow/thumbnails/checkLayout no longer use it, and a missing graphics card means software drawing. Left: the new HTML exporter, then deleting the DOM renderer. See the last section. |
+| 2026-11-20 | Skia only (owner's decision) | Done (branch `skia-only`, not merged) | The DOM renderer is removed. Every frame is drawn by Skia (on the GPU, or in software without one); screenshots, exports, the slideshow, thumbnails and checkLayout use Skia and the layout engine; HTML/SVG export has a new exporter. See the last two sections. |
 
 ### 2026-11-18, stage 0 notes
 
@@ -891,3 +891,37 @@ its layout, colours read off the screen), aipen (the frame stays with Skia while
 
 **Unverified:** a real graphics card (all of this ran on software GL); the browser-node iframe left a strip of the
 canvas unpainted below it in the headless test browser; Phosphor (its host is blocked in this container).
+
+### 2026-11-20, the DOM renderer removed
+
+**The new HTML exporter** (`src/export/html.ts`, the owner's choice over keeping NodeView as an exporter): a layer as
+HTML with inline CSS, every node type NodeView rendered, boxes from the layout engine (absolute positions, rotations
+kept). `src/export/svg.ts` puts it in an SVG `<foreignObject>` with pictures and the latin subsets of its fonts inlined,
+as the old SVG export did with the cloned DOM. Against the old export (the DOM renderer's elements cloned), before the
+deletion: features.pen 100%, showcase.spen 99.7%, layout.pen 98.0% average over 64 frames (4 below 97%: a top-level
+`fill_container` rectangle the engine sizes 0, and text in hug-width containers, where the engine and the DOM differ;
+`layout-diff.mjs` territory). Shader fills and effects are left out (they can't be HTML), as is the script marker.
+Copy HTML and Export HTML did nothing for Skia-drawn frames before (they looked for the frame's elements).
+
+**Removed:** `render/NodeView.tsx`, `render/ShaderLayer.tsx`, `render/rasterize.ts`, `render/imageLod.ts`,
+`render/subpixel.ts`, `editor/lod.ts`, `editor/culling.ts` (about 3,400 lines), the renderer switch (`pen.renderer`,
+`?renderer=`, `dom`/`overview`/`full`) and the `set_renderer` MCP tool. `renderer.ts` now only says whether Skia failed
+altogether (CanvasKit did not load or aborted), which the canvas reports with a message. Moved out first:
+`resolveProps`, `parseSizing`, `lucideIcon` (`model/props.ts`) and `paintFills` (`render/paintFills.ts`).
+
+**Changed with it:** geometry comes from the layout engine for every frame, also while Skia is still starting (a frame
+not yet drawn had no elements to measure any more); the frame list (`Roots`) is one case: a picture frame, or its colour
+while Skia gets ready; checkLayout reports fonts Skia could not load (the page no longer loads the design's fonts).
+
+**Tests.** Removed with the renderer (they tested its machinery or compared against it): blank, images, invisible,
+layout-diff, overview, paint-diff, lodswitch, zoomout, imgzoom, svgretain2. Changed: full.mjs compares the frame on
+screen with the same frame drawn off screen (two ways of drawing that must agree; was: against the DOM renderer, 99.97%),
+sharpen.mjs compares zooming in with a page opened close up (was: the DOM renderer, whose fine-detail check had failed
+since before this work), htmlexport.mjs scores the exporter against Skia, skia-smoke checks no layer is a page element.
+The suites, on the final branch (dev server): features 20/20, v1 49/49 (55 with the Figma samples, not in the repo),
+skia-smoke 11/11, shaderfill 8/8, sharpen 11/11, full 13/13, aipen 17/17, stress no errors, htmlexport features 100%
+and showcase 97.7% (its shader frames). `&renderer=dom` runs are gone with the switch.
+
+**Unverified:** a real graphics card, VS Code itself (only the browser build was run), the browser-node iframe strip
+seen in the headless browser, Phosphor icons (host blocked here). The extension's `.vsix` built from this branch is a
+test build only (`skia-only-test-build`), not a release.
