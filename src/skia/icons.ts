@@ -79,6 +79,16 @@ export function iconPaths(library: string, name: string): string[] | null {
 }
 
 /**
+ * Whether an icon is drawn as the missing-glyph box (the page-element renderer marked it data-missing): a Lucide or
+ * Feather name that does not exist, or a library no one knows. Icon fonts are not checked (an unknown name shows as
+ * text or nothing there too).
+ */
+export function iconMissing(library: string, name: string): boolean {
+  if (isIconFont(library)) return false;
+  return iconPaths(library, name) === null;
+}
+
+/**
  * Why Skia cannot draw icons from this library now: null when it can. Icon fonts (Material Symbols, Phosphor) are
  * drawn as text once their font has loaded; an unknown library is drawn as a missing glyph, as on the page.
  */

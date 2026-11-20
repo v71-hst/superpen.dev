@@ -26,6 +26,12 @@ import { nextFrames } from '../render/frames';
 import { activeRenderer, rendererFailure, requestedRenderer, setRenderer } from '../skia/renderer';
 import { skiaStatus } from '../skia/SkiaLayer';
 import { renderNodeImage } from '../skia/offscreen';
+import { skiaTextMeasurer } from '../skia/layoutIndex';
+import { propsOf } from '../skia/painter';
+import { shaderErrorsOf } from '../skia/shaderFills';
+import { iconMissing } from '../skia/icons';
+import { scriptState } from './scriptHost';
+import { makeUrlResolver } from './fileio';
 import { runBenchmark } from './benchmark';
 
 /** Things the agent should know after any call: review mode, and comments from the user waiting for an answer. */
@@ -164,9 +170,18 @@ export async function checkLayout(rootKey?: string): Promise<string[]> {
   const s = useStore.getState();
   const tree = currentTree()!;
   const roots = rootKey ? [requireNode(rootKey)] : tree.roots;
-  ensureRendered(roots.map(r => r.key));
-  await frames(3);
+  // Skia: the frames are checked from the layout engine and what Skia knows (its text measurer, icon libraries, the
+  // shaders that failed when run); drawing them small first runs their shaders. The DOM renderer: pinned live and read.
+  const skia = activeRenderer() !== 'dom';
+  if (skia) {
+    for (const r of roots.slice(0, 30)) await renderNodeImage(r.key, { scale: 0.2, maxSize: 400, waitMs: 4000 }).catch(() => undefined);
+  } else {
+    ensureRendered(roots.map(r => r.key));
+    await frames(3);
+  }
   await document.fonts.ready;
+  const measure = skia ? skiaTextMeasurer() : null;
+  const resolveUrl = makeUrlResolver(s.file?.path ?? null);
   const issues: string[] = [];
   const vars = s.doc?.variables ?? {};
   const fontsUsed = new Set<string>();
@@ -185,12 +200,21 @@ export async function checkLayout(rootKey?: string): Promise<string[]> {
       scan(v);
     }
     if (typeof p.fontFamily === 'string' && !p.fontFamily.startsWith('$')) fontsUsed.add(p.fontFamily);
-    const el = elFor(n.key);
-    if (el) {
-      const r = nodeScreenRect(n.key, { ownBox: true })!;
-      if (n.type === 'text' && p.textGrowth === 'fixed-width-height' && el.scrollHeight > el.clientHeight + 1) issues.push(`warning: ${label(n)} text overflows its fixed-height box (${el.scrollHeight}px of content in ${el.clientHeight}px)`);
-      if (n.type === 'text' && p.textGrowth === 'fixed-width' && el.scrollWidth > el.clientWidth + 1) issues.push(`warning: ${label(n)} has a word wider than its fixed width`);
-      if ((n.type === 'icon' || n.type === 'icon_font') && el.querySelector('[data-missing]')) issues.push(`error: ${label(n)} icon "${p.icon ?? p.iconFontName}" not found in library "${p.library ?? p.iconFontFamily ?? 'lucide'}"`);
+    const el = skia ? null : elFor(n.key);
+    const r = el || skia ? nodeScreenRect(n.key, { ownBox: true }) : null;
+    if (r) {
+      if (n.type === 'text' && (p.textGrowth === 'fixed-width-height' || p.textGrowth === 'fixed-width')) {
+        // Content size against the box: the page's scroll sizes, or Skia's paragraph at the box's width.
+        const size = nodeSize(n.key);
+        const content = el ? { w: el.scrollWidth, h: el.scrollHeight } : size && measure ? measure(n, size.w) : null;
+        const box = el ? { w: el.clientWidth, h: el.clientHeight } : size;
+        if (content && box && p.textGrowth === 'fixed-width-height' && content.h > box.h + 1) issues.push(`warning: ${label(n)} text overflows its fixed-height box (${Math.round(content.h)}px of content in ${Math.round(box.h)}px)`);
+        // Long words break onto the next line (overflow-wrap: break-word on the page, and Skia's paragraphs), so this
+        // only ever came from the page's scroll width.
+        if (el && content && box && p.textGrowth === 'fixed-width' && content.w > box.w + 1) issues.push(`warning: ${label(n)} has a word wider than its fixed width`);
+      }
+      const missing = el ? !!el.querySelector('[data-missing]') : iconMissing(String(p.library ?? p.iconFontFamily ?? 'lucide'), String(p.icon ?? p.iconFontName ?? ''));
+      if ((n.type === 'icon' || n.type === 'icon_font') && missing) issues.push(`error: ${label(n)} icon "${p.icon ?? p.iconFontName}" not found in library "${p.library ?? p.iconFontFamily ?? 'lucide'}"`);
       if ((r.width < 0.5 || r.height < 0.5) && n.type !== 'group' && n.type !== 'line' && n.type !== 'path') issues.push(`warning: ${label(n)} has zero size`);
       if (p.clip === true && n.children.length) {
         for (const c of n.children) {
@@ -218,8 +242,22 @@ export async function checkLayout(rootKey?: string): Promise<string[]> {
     n.children.forEach(visit);
   };
   roots.forEach(visit);
-  // Script and shader errors are rendered as markers inside the affected node.
-  for (const r of roots) {
+  // Script and shader errors: Skia's records of them, or the markers the DOM renderer puts inside the node.
+  if (skia) {
+    const visitErrors = (n: RNode) => {
+      const p = propsOf({ doc: s.doc! }, n);
+      if (p.enabled === false) return;
+      for (const e of shaderErrorsOf(resolveUrl, n, p)) issues.push(`error: ${label(n)}: ${e}`);
+      if (n.type === 'script') {
+        const st = scriptState(n.props, n.theme, n.key);
+        if (!st) issues.push(`error: ${label(n)}: Script node has no scriptUri`);
+        else if (st.status === 'error') issues.push(`error: ${label(n)}: Script error: ${(st as any).message}`);
+      }
+      n.children.forEach(visitErrors);
+    };
+    roots.forEach(visitErrors);
+  }
+  for (const r of skia ? [] : roots) {
     elFor(r.key)?.querySelectorAll<HTMLElement>('[data-asset-error]').forEach(m => {
       const k = ownerNodeKey(m.parentElement) ?? r.key;
       const n = tree.byKey.get(k);

@@ -18,6 +18,11 @@ let measureFor: { ck: unknown; vars: unknown; fonts: number; fn: MeasureText } |
  * One text measurer per kit, variables and font epoch: layoutAll caches each frame's layout by measurer identity, so
  * a stable measurer keeps unchanged frames cached, and a new one after a font loads re-measures their text.
  */
+/** The text measurer the layout uses (Skia's paragraphs once the kit is loaded). */
+export function skiaTextMeasurer(): MeasureText {
+  return measurer();
+}
+
 function measurer(): MeasureText {
   const s = useStore.getState();
   const ck = kitIfLoaded();

@@ -372,6 +372,26 @@ export function shaderEffectImage(
 }
 
 /**
+ * The errors of node `n`'s shaders that have run and failed, worded as the page-element renderer's markers were
+ * (data-asset-error): for the design check (agent.ts checkLayout).
+ */
+export function shaderErrorsOf(resolveUrl: (u: string) => string, n: RNode, p: any): string[] {
+  const out: string[] = [];
+  for (const f of fillList(p.fill)) {
+    if (!isShader(f)) continue;
+    const m = broken.get(resolveUrl(f.url));
+    if (m !== undefined) out.push(`Shader error: ${m}`);
+  }
+  const fx = (Array.isArray(p.effect) ? p.effect : p.effect ? [p.effect] : []).filter(isShaderEffect);
+  if (fx.length) {
+    const urls = fx.map((e: any) => resolveUrl(e.url));
+    const m = brokenEffects.get(JSON.stringify(urls)) ?? urls.map((u: string) => broken.get(u)).find((x: string | undefined) => x !== undefined);
+    if (m !== undefined) out.push(`Shader effect error: ${m}`);
+  }
+  return out;
+}
+
+/**
  * The page-element renderer's marker for a shader that fails (ShaderLayer.tsx ShaderError: a dashed red box with
  * "Shader error: …" in it, over a cleared canvas) as a picture fill of the node's size. Not given the fill's opacity
  * or blend mode: the marker there is a separate element without them.
