@@ -3,6 +3,7 @@
 // on the DOM renderer while its text is edited, while it is pinned live (agent screenshots and exports copy the DOM),
 // while AI Pen replays strokes in it, or when skiaEligible() names a reason. Deciding is cheap: the picture itself is
 // recorded only when the frame is drawn on screen. measure.ts gets these frames' geometry from here.
+import { useSyncExternalStore } from 'react';
 import type { SkPicture } from 'canvaskit-wasm';
 import type { RNode } from '../model/types';
 import { useStore } from '../editor/store';
@@ -137,11 +138,31 @@ export function pictureFramePending(n: RNode): boolean {
  * frames that are gone are freed.
  */
 export function setPictureFrames(frames: (Box & { key: string })[], live: Set<string>) {
+  const before = drawn;
   drawn = frames.map(f => f.key);
   drawnSet = new Set(drawn);
+  if (drawn.length !== before.length || drawn.some((k, i) => k !== before[i])) {
+    framesVersion++;
+    // After the render that reported them: a listener re-rendering now would be updating during another render.
+    queueMicrotask(() => framesListeners.forEach(l => l()));
+  }
   boxes = new Map(frames.map(f => [f.key, f]));
   pruneFrames(live);
   for (const k of pendingSince.keys()) if (!live.has(k)) pendingSince.delete(k);
+}
+
+let framesVersion = 0;
+const framesListeners = new Set<() => void>();
+
+/** Re-renders when the set of frames drawn from pictures changes (what measure.ts skiaOwns answers from). */
+export function usePictureFramesVersion() {
+  return useSyncExternalStore(
+    l => {
+      framesListeners.add(l);
+      return () => framesListeners.delete(l);
+    },
+    () => framesVersion,
+  );
 }
 
 export function pictureFrameKeys(): readonly string[] {

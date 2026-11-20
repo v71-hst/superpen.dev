@@ -108,7 +108,8 @@ let skia: SkiaGeometry | null = null;
 export function setSkiaGeometry(g: SkiaGeometry | null) {
   skia = g;
 }
-const skiaOwns = (key: string) => {
+/** Whether the node is in a top-level frame Skia draws (its geometry comes from the layout engine). */
+export const skiaOwns = (key: string) => {
   if (!skia) return false;
   const r = skia.rootOf(key);
   return !!r && skia.drawn(r);

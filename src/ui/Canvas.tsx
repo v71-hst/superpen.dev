@@ -1,4 +1,5 @@
 // Infinite canvas: renders the document, selection/hover overlay, frame labels and all pointer gestures.
+import { BrowserOverlays } from './BrowserOverlays';
 import React, { memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { NodeView, RenderCtx, type RenderContextValue } from '../render/NodeView';
 import { SkiaLayer } from '../skia/SkiaLayer';
@@ -879,6 +880,7 @@ export function Canvas() {
       <div id="pen-world" aria-hidden style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` }}>
         <RenderCtx.Provider value={renderCtx}>{tree && <Roots tree={tree} />}</RenderCtx.Provider>
       </div>
+      {tree && renderer !== 'dom' && <BrowserOverlays tree={tree} />}
       {tree && <Overlay tree={tree} onResizeStart={onResizeStart} draft={draft} />}
       {tree && <CanvasExtras tree={tree} draft={draft} onGapStart={onGapStart} dragging={!!drag.current} />}
       <CropOverlay />
