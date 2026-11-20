@@ -69,6 +69,9 @@ export function parseShader(src: string): UniformInfo[] {
   return out;
 }
 
+/** An image input that names the layer itself (pen.dev's `pencil:object`), not a picture file. */
+export const isObjectRef = (v: any) => typeof v === 'string' && v.trim().toLowerCase() === 'pencil:object';
+
 export function isUserUniform(u: UniformInfo) {
   return !(u.resolution || u.time || u.mouse || u.sdf || u.content || u.backdrop);
 }
@@ -507,6 +510,8 @@ export class ShaderRunner {
   private cfg: ShaderConfig | null = null;
   private srcs: string[] = [];
   private tex = new Map<string, { src: TexSource; key: object; version: number }>();
+  /** Image inputs (`pass:uniform`) that take the layer itself (`pencil:object`) instead of a picture file. */
+  private objectInputs = new Set<string>();
   private version = 0;
   private mouse: [number, number] | null = null;
   private visible = true;
@@ -559,7 +564,12 @@ export class ShaderRunner {
       const fullW = cfg.width + cfg.margin * 2;
       const fullH = cfg.height + cfg.margin * 2;
       const tex = new Map<string, { src: TexSource; key: object; version: number }>();
-      const content = all.some(u => u.content) || (all.some(u => u.sdf) && !cfg.shape) ? await cfg.content?.() : null;
+      // Image inputs set to `pencil:object` (pen.dev files) are the layer itself, as @content is.
+      const objectInputs = new Set<string>();
+      for (const [i, p] of progs.entries())
+        for (const u of (p as any).uniforms as UniformInfo[])
+          if (u.type === 'sampler2D' && isUserUniform(u) && isObjectRef(cfg.passes[i].uniforms?.[u.name] ?? u.default)) objectInputs.add(`${i}:${u.name}`);
+      const content = all.some(u => u.content) || objectInputs.size || (all.some(u => u.sdf) && !cfg.shape) ? await cfg.content?.() : null;
       if (v !== this.version || this.disposed) return;
       if (content) tex.set('@content', { src: { image: content, w: content.width, h: content.height, mipmap: all.some(u => u.content && u.mipmap) }, key: content, version: v });
       if (all.some(u => u.sdf)) {
@@ -598,7 +608,7 @@ export class ShaderRunner {
         for (const u of (p as any).uniforms as UniformInfo[]) {
           if (u.type !== 'sampler2D' || !isUserUniform(u)) continue;
           const url = coerce(u, cfg.passes[i].uniforms?.[u.name] ?? u.default);
-          if (!url) continue;
+          if (!url || objectInputs.has(`${i}:${u.name}`)) continue;
           try {
             const img = await loadImage(cfg.resolveUrl(url));
             tex.set(`${i}:${u.name}`, { src: { image: img, w: img.naturalWidth, h: img.naturalHeight, mipmap: u.mipmap }, key: img, version: 1 });
@@ -611,6 +621,7 @@ export class ShaderRunner {
       this.cfg = cfg;
       this.srcs = srcs;
       this.tex = tex;
+      this.objectInputs = objectInputs;
       this.error = '';
       this.needsAnim = all.some(u => u.time || u.mouse);
       if (this.needsAnim) {
@@ -715,7 +726,7 @@ export class ShaderRunner {
         else if (u.type === 'sampler2D') {
           const t = u.sdf
             ? this.tex.get('@sdf')
-            : u.content
+            : u.content || this.objectInputs.has(`${i}:${u.name}`)
               ? i > 0 && prevOut
                 ? { src: { image: prevOut, w: prevOut.width, h: prevOut.height, mipmap: u.mipmap }, key: prevOut, version: Math.random() }
                 : this.tex.get('@content')
