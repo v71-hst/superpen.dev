@@ -131,6 +131,10 @@ async function phase(name, act) {
   return after;
 }
 
+// SWEEP=1: instead of the per-zoom phases, one continuous zoom from the first zoom in to 100% and back out (12 big
+// Ctrl+wheel steps each way, like a quick zoom with a mouse wheel), where every step changes the size things are
+// drawn at: new far-zoom copies, sharper pictures, larger shader images.
+const sweep = !!process.env.SWEEP;
 const settled = await settle();
 console.log(`renderer ${renderer}, perf ${perf}${process.env.PEN_CPU_SLOW ? `, CPU ${process.env.PEN_CPU_SLOW}x slower` : ''}; ${settled.frames} frames, ${settled.eligible} Skia-eligible, reasons ${JSON.stringify(settled.reasons)}`);
 const bounds = await page.evaluate(() => {
@@ -141,6 +145,25 @@ const bounds = await page.evaluate(() => {
   return { cx: (Math.min(...xs) + x1) / 2, cy: (Math.min(...ys) + y1) / 2 };
 });
 
+if (sweep) {
+  const zoom = Number(zoomsArg.split(',')[0]);
+  await page.evaluate(({ zoom, cx, cy }) => window.__penStore.getState().setView({ zoom, x: 700 - cx * zoom, y: 500 - cy * zoom }), { zoom, ...bounds });
+  await settle();
+  await page.mouse.move(700, 500);
+  const steps = Math.ceil(Math.log(1 / zoom) / 0.35);
+  for (const [name, dy] of [['in', -100], ['out', 100]])
+    await phase(name, async () => {
+      await page.keyboard.down('Control');
+      for (let i = 0; i < steps; i++) {
+        await page.mouse.wheel({ deltaY: dy });
+        await sleep(50);
+      }
+      await page.keyboard.up('Control');
+      await sleep(1000);
+    });
+  await browser.close();
+  process.exit(0);
+}
 for (const zoom of zoomsArg.split(',').map(Number)) {
   await page.evaluate(({ zoom, cx, cy }) => window.__penStore.getState().setView({ zoom, x: 700 - cx * zoom, y: 500 - cy * zoom }), { zoom, ...bounds });
   const c = await settle();

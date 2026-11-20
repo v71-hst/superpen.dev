@@ -46,6 +46,7 @@ function watchAssets() {
     const known = [...infos.keys()];
     infos.clear();
     broken.clear();
+    brokenEffects.clear();
     lastReady.clear();
     textCache.clear();
     forgetImages(PREFIX);
@@ -205,6 +206,106 @@ export function shaderFillImage(resolveUrl: (u: string) => string, n: RNode, p: 
   return { type: 'image', url: use, wanted: key, mode: 'stretch', opacity: f.opacity, blendMode: f.blendMode, shader: true };
 }
 
+// ---------- shader effects ----------
+// A shader effect reads the node's own rendering (@content) and draws its output in the node's place, over the node's
+// box grown by a margin for shadows and blurs. A still one (no time, pointer or backdrop) is run once into a picture,
+// like a still shader fill: the node is drawn alone by Skia for its @content (painter.ts drawShaderEffects). On the
+// page-element renderer every effect captured its node again each time the zoom grew 1.4x, which made zooming crawl
+// on designs with many of them (2 fps on a friend's PC, docs/SKIA_REWORK.md 2026-11-20).
+
+export const isShaderEffect = (e: any) => e && typeof e === 'object' && e.type === 'shader' && e.enabled !== false && e.url;
+
+/** Chains of effects (urls in order) that failed, with the message: the node is drawn as is with a dashed outline. */
+const brokenEffects = new Map<string, string>();
+
+/** The page-element renderer's margin around a node with a shader effect (ShaderLayer.tsx visualMargin). */
+export function effectMargin(p: any): number {
+  let m = 2;
+  const sw = typeof p.strokeWidth === 'number' ? p.strokeWidth : 1;
+  if (p.stroke) m = Math.max(m, sw + 2);
+  const fx = Array.isArray(p.effect) ? p.effect : p.effect ? [p.effect] : [];
+  for (const e of fx) {
+    if (e.enabled === false) continue;
+    if (e.type === 'shadow') m = Math.max(m, Math.abs(e.offset?.x ?? 0) + Math.abs(e.offset?.y ?? 0) + (e.blur ?? 0) * 1.5 + Math.abs(e.spread ?? 0) + 4);
+    if (e.type === 'blur') m = Math.max(m, (e.radius ?? 0) * 1.5 + 4);
+  }
+  return Math.min(400, Math.ceil(m));
+}
+
+/** Why Skia cannot draw this shader effect (as for shaderFillBlocker); a failing one is drawn, with its outline. */
+export function shaderEffectBlocker(resolveUrl: (u: string) => string, n: RNode, e: any): string | null {
+  const url = resolveUrl(e.url);
+  if (broken.has(url)) return null;
+  const info = infoOf(url);
+  if (info.state === 'loading') return SHADERS_LOADING;
+  if (info.state === 'failed') return null;
+  if (info.animated) return `animated shader effect on ${n.key}`;
+  if (info.backdrop) return `shader effect on ${n.key} reads what is behind it`;
+  return null;
+}
+
+/**
+ * The still shader effects `effects` of node `n` (w x h, output over the box grown by `margin`) as a picture fill for
+ * that grown box; { error } when they fail (the page-element renderer then shows the node as is, outlined); null while
+ * not ready. `signature` identifies what the node looks like (a new one runs the effects again); `content(k)` draws the
+ * node alone, without these effects, at k pixels per unit, margin included.
+ */
+export function shaderEffectImage(
+  resolveUrl: (u: string) => string,
+  n: RNode,
+  effects: any[],
+  w: number,
+  h: number,
+  margin: number,
+  signature: string,
+  content: (k: number) => HTMLCanvasElement | null,
+): { error: string } | any | null {
+  if (!effects.length || !(w > 0) || !(h > 0)) return null;
+  const urls = effects.map(e => resolveUrl(e.url));
+  const chain = JSON.stringify(urls);
+  const failed = brokenEffects.get(chain) ?? urls.map(u => broken.get(u)).find(m => m !== undefined);
+  if (failed !== undefined) return { error: failed };
+  const infos = urls.map(infoOf);
+  if (infos.some(i => i.state === 'loading' || (i.state === 'ready' && (i.animated || i.backdrop)))) return null;
+  const W = Math.round(w * 100) / 100, H = Math.round(h * 100) / 100;
+  const passes = effects.map(e => ({ url: e.url, uniforms: e.uniforms ?? {} }));
+  const key = PREFIX + 'fx/' + hash(JSON.stringify([urls, passes.map(p => p.uniforms), W, H, margin, signature, assetEpoch]));
+  const fullW = W + margin * 2, fullH = H + margin * 2;
+  registerImageSource(key, async side => {
+    const maxScale = perfLimits().shaderMaxScale;
+    const scale = Math.max(0.05, Math.min(maxScale, side / Math.max(fullW, fullH)));
+    const canvas = document.createElement('canvas');
+    const runner = new ShaderRunner(canvas, true);
+    try {
+      await runner.update({ passes, width: W, height: H, margin, shape: null, content: async () => content(Math.min(scale, 2)), backdrop: null, resolveUrl, scale });
+      if (runner.error) {
+        brokenEffects.set(chain, runner.error);
+        for (const u of urls) bumpImageStamp(shaderInfoKey(u));
+        throw new Error(runner.error);
+      }
+    } finally {
+      runner.dispose();
+    }
+    return {
+      w0: Math.max(1, Math.round(fullW * maxScale)),
+      h0: Math.max(1, Math.round(fullH * maxScale)),
+      make: () => {
+        const ck = kitIfLoaded();
+        return ck && canvas.width > 0 && canvas.height > 0 ? ck.MakeImageFromCanvasImageSource(canvas) : null;
+      },
+      discard: () => undefined,
+    };
+  });
+  const slot = `${n.key}#effect`;
+  let use = key;
+  if (getImage(key, false).status === 'ready') lastReady.set(slot, key);
+  else {
+    const prev = lastReady.get(slot);
+    if (prev && prev !== key && getImage(prev, false).status === 'ready') use = prev;
+  }
+  return { type: 'image', url: use, wanted: key, mode: 'stretch', shader: true };
+}
+
 /**
  * The page-element renderer's marker for a shader that fails (ShaderLayer.tsx ShaderError: a dashed red box with
  * "Shader error: …" in it, over a cleared canvas) as a picture fill of the node's size. Not given the fill's opacity
@@ -265,6 +366,7 @@ function errorFill(message: string, W: number, H: number) {
 export function resetShaderFills() {
   infos.clear();
   broken.clear();
+  brokenEffects.clear();
   lastReady.clear();
   textCache.clear();
 }

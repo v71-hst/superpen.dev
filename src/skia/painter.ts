@@ -13,7 +13,7 @@ import { scriptState } from '../editor/scriptHost';
 import { Scope, free, own } from './lifetime';
 import { familyList, fontBlocker, fontCollection, fontEpoch, fontStyleKey } from './fonts';
 import { getImage } from './images';
-import { SHADERS_LOADING, shaderFillBlocker, shaderFillImage, shaderInfoKey } from './shaderFills';
+import { SHADERS_LOADING, effectMargin, isShaderEffect, shaderEffectBlocker, shaderEffectImage, shaderFillBlocker, shaderFillImage, shaderInfoKey } from './shaderFills';
 import { iconLibrarySupported, iconPaths } from './icons';
 import { meshOf, tessellate } from '../render/mesh';
 
@@ -92,7 +92,15 @@ export function skiaEligible(ctx: PaintContext, n: RNode, editingKey?: string | 
   const p = propsOf(ctx, n);
   if (p.enabled === false) return null;
   if (n.key === editingKey) return 'text being edited';
-  if (effectList(p.effect).some((e: any) => e.type === 'shader')) return `shader effect on ${n.key}`;
+  // Still shader effects are drawn from a picture of their output (drawShaderEffects); the others leave the frame.
+  let effectsLoading = false;
+  for (const e of effectList(p.effect)) {
+    if (!isShaderEffect(e)) continue;
+    deps?.images.add(shaderInfoKey(ctx.resolveUrl(e.url)));
+    const why = shaderEffectBlocker(ctx.resolveUrl, n, e);
+    if (why === SHADERS_LOADING) effectsLoading = true;
+    else if (why) return why;
+  }
   switch (n.type) {
     case 'frame':
     case 'rectangle':
@@ -130,7 +138,7 @@ export function skiaEligible(ctx: PaintContext, n: RNode, editingKey?: string | 
   }
   // Pictures that are still loading do not stop the walk: stopping at the first one asked for a frame's pictures
   // one per try, each only after the one before it had arrived.
-  let loading = false;
+  let loading = effectsLoading;
   // Shader fills: still ones are drawn from an image of their output (shaderFills.ts); the others, and shader fills
   // on kinds of node that image cannot be made for, leave the frame to the page-element renderer as before.
   for (const f of fillList(p.fill)) {
@@ -323,6 +331,8 @@ type Rec = {
   detail: boolean;
   /** Pictures the recording asked for that were not there yet: the frame records again when they are. */
   pending?: Set<string>;
+  /** The node drawn alone for its shader effects' @content: without those effects, its opacity and its filters. */
+  bare?: string;
 };
 
 function drawNode(r: Rec, pn: PaintNode, parentWorld: Mat) {
@@ -333,7 +343,8 @@ function drawNode(r: Rec, pn: PaintNode, parentWorld: Mat) {
   c.save();
   c.concat(skMat(mul(invert(parentWorld), pn.world)));
   let layers = 0;
-  const opacity = p.opacity !== undefined ? num(p.opacity, 1) : 1;
+  const bare = r.bare === pn.key;
+  const opacity = p.opacity !== undefined && !bare ? num(p.opacity, 1) : 1;
   if (opacity < 1) {
     c.saveLayer(r.scope.own(paintWith(ck, pt => pt.setAlphaf(Math.max(0, opacity))), 'paint'));
     layers++;
@@ -341,10 +352,16 @@ function drawNode(r: Rec, pn: PaintNode, parentWorld: Mat) {
   const fx = effectList(p.effect);
   // Box nodes use box-shadow (drawn in drawBox); groups, shapes and icons use filter drop-shadow; blur applies to all.
   const boxLike = pn.node.type === 'frame' || pn.node.type === 'rectangle';
-  const filter = filterFor(ck, r.scope, fx, boxLike || pn.node.type === 'text');
+  const filter = bare ? null : filterFor(ck, r.scope, fx, boxLike || pn.node.type === 'text');
   if (filter) {
     c.saveLayer(r.scope.own(paintWith(ck, pt => pt.setImageFilter(filter)), 'paint'));
     layers++;
+  }
+  const shaderFx = bare ? [] : fx.filter(isShaderEffect);
+  if (shaderFx.length && drawShaderEffects(r, pn, p, shaderFx)) {
+    for (let i = 0; i < layers; i++) c.restore();
+    c.restore();
+    return;
   }
   switch (pn.node.type) {
     case 'frame':
@@ -375,6 +392,103 @@ function drawNode(r: Rec, pn: PaintNode, parentWorld: Mat) {
   }
   for (let i = 0; i < layers; i++) c.restore();
   c.restore();
+}
+
+/**
+ * What node `pn` looks like, for the cache key of its shader effects' output: its resolved props and box and those of
+ * everything inside it, placed relative to it.
+ */
+function nodeSignature(ctx: PaintContext, pn: PaintNode, origin: Mat = invert(pn.world)): string {
+  const m = mul(origin, pn.world).map(v => Math.round(v * 1000) / 1000);
+  return JSON.stringify([pn.node.type, propsOf(ctx, pn.node), Math.round(pn.w * 100) / 100, Math.round(pn.h * 100) / 100, m, pn.children.map(ch => nodeSignature(ctx, ch, origin))]);
+}
+
+/** Node `pn` drawn alone (bare: without its shader effects, opacity and filters), in its own units. */
+function recordBare(ctx: PaintContext, pn: PaintNode, margin: number, pending?: Set<string>): SkPicture {
+  const { ck } = ctx;
+  const scope = new Scope();
+  const rec = new ck.PictureRecorder();
+  const c = rec.beginRecording(ck.LTRBRect(-margin, -margin, pn.w + margin, pn.h + margin));
+  try {
+    drawNode({ c, ck, scope, ctx, detail: true, pending, bare: pn.key }, pn, pn.world);
+    return own(rec.finishRecordingAsPicture(), 'picture');
+  } finally {
+    rec.delete();
+    scope.dispose();
+  }
+}
+
+/**
+ * Draws node `pn` through its still shader effects (shaderFills.ts shaderEffectImage) and returns true, or false to
+ * have it drawn as it is: while its output is being made, or while what it shows is still loading, or with the dashed
+ * outline the page-element renderer puts on a node whose effect fails.
+ */
+function drawShaderEffects(r: Rec, pn: PaintNode, p: any, effects: any[]): boolean {
+  const { c, ck } = r;
+  const margin = effectMargin(p);
+  // What the node shows must be complete before the effect runs on it. Fonts and pictures are (skiaEligible waits for
+  // them); made pictures inside it (shader fills) are the frame's dependencies, and are waited for here.
+  const inside = new Set<string>();
+  free(recordBare(r.ctx, pn, margin, inside));
+  for (const u of inside) r.pending?.add(u);
+  if ([...inside].some(u => getImage(u, false).status !== 'ready')) return false;
+  const ctx = r.ctx;
+  const content = (k: number) => {
+    const w = Math.max(1, Math.round((pn.w + margin * 2) * k)), h = Math.max(1, Math.round((pn.h + margin * 2) * k));
+    const surface = ck.MakeSurface(w, h);
+    if (!surface) return null;
+    const pic = recordBare(ctx, pn, margin);
+    try {
+      const sc = surface.getCanvas();
+      sc.clear(ck.TRANSPARENT);
+      sc.scale(k, k);
+      sc.translate(margin, margin);
+      sc.drawPicture(pic);
+      surface.flush();
+      const img = surface.makeImageSnapshot();
+      const px = img.readPixels(0, 0, { width: w, height: h, colorType: ck.ColorType.RGBA_8888, alphaType: ck.AlphaType.Unpremul, colorSpace: ck.ColorSpace.SRGB });
+      img.delete();
+      if (!px) return null;
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(px.buffer, px.byteOffset, px.byteLength), w, h), 0, 0);
+      return canvas;
+    } finally {
+      free(pic);
+      surface.delete();
+    }
+  };
+  const made = shaderEffectImage(r.ctx.resolveUrl, pn.node, effects, pn.w, pn.h, margin, nodeSignature(r.ctx, pn), content);
+  if (made && 'error' in made) {
+    // As is, with a 1px dashed outline just outside the (margin-grown) box, as CSS draws `outline` on the canvas.
+    drawBareInPlace(r, pn);
+    const pt = r.scope.own(new ck.Paint(), 'paint');
+    pt.setAntiAlias(true);
+    pt.setStyle(ck.PaintStyle.Stroke);
+    pt.setStrokeWidth(1);
+    pt.setColor(color(ck, '#f43f5e'));
+    pt.setPathEffect(r.scope.own(ck.PathEffect.MakeDash([3, 3], 0)!, 'pathEffect'));
+    c.drawRect(ck.LTRBRect(-margin - 0.5, -margin - 0.5, pn.w + margin + 0.5, pn.h + margin + 0.5), pt);
+    return true;
+  }
+  if (!made) return false;
+  // The output replaces the node: until the first one is made, the node is drawn as it is.
+  r.pending?.add(made.wanted);
+  if (getImage(made.url, false).status !== 'ready') {
+    r.pending?.add(made.url);
+    return false;
+  }
+  drawFill(r, pn.world, made, -margin, -margin, pn.w + margin * 2, pn.h + margin * 2, false);
+  return true;
+}
+
+/** The node as it is, here (inside drawNode's transform and layers), without its shader effects. */
+function drawBareInPlace(r: Rec, pn: PaintNode) {
+  const saved = r.bare;
+  r.bare = pn.key;
+  drawNode(r, pn, pn.world);
+  r.bare = saved;
 }
 
 /**

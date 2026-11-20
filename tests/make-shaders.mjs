@@ -5,10 +5,13 @@
 // frames stayed on the page-element renderer and were never snapshotted, so they kept every shader canvas live far out.
 // `broken=1`: those paths use a shader with a compile error instead (sdf-broken.glsl): such a frame used to go back to the
 // page-element renderer too, for its error marker.
-// Usage: node make-shaders.mjs <out.spen> [frames=64] [sdfPaths=0] [broken=0]
+// `effects`: that many small shapes per frame with a still shader EFFECT (it reads the node's own rendering, @content),
+// like a halftone or CRT look: before the skia-only work such frames went to the page-element renderer, which captures
+// the node again for each effect whenever the zoom grows 1.4x (2 fps while zooming on a friend's PC, 2026-11-20).
+// Usage: node make-shaders.mjs <out.spen> [frames=64] [sdfPaths=0] [broken=0] [effects=0]
 import fs from 'node:fs';
 import path from 'node:path';
-const [, , out, framesArg = '64', sdfArg = '0', brokenArg = '0'] = process.argv;
+const [, , out, framesArg = '64', sdfArg = '0', brokenArg = '0', fxArg = '0'] = process.argv;
 if (!out) {
   console.error('usage: node make-shaders.mjs <out.spen> [frames] [sdfPaths] [broken]');
   process.exit(2);
@@ -84,6 +87,29 @@ void main() {
 }
 `,
 );
+// A still effect: halftone dots from the node's own rendering.
+fs.writeFileSync(
+  path.join(dir, 'shaders', 'still-halftone.glsl'),
+  `precision highp float;
+/** @resolution */ uniform vec2 u_resolution;
+/** @content */ uniform sampler2D u_content;
+/**
+ * @label Dot size
+ * @default 6
+ * @range 2, 24
+ */
+uniform float u_dot;
+void main() {
+  vec2 uv = gl_FragCoord.xy / u_resolution;
+  vec4 c = texture2D(u_content, uv);
+  vec2 cell = mod(gl_FragCoord.xy, u_dot) - u_dot * 0.5;
+  float l = dot(c.rgb, vec3(0.3, 0.59, 0.11));
+  float r = u_dot * 0.5 * sqrt(1.0 - l);
+  float ink = 1.0 - smoothstep(r - 0.75, r + 0.75, length(cell));
+  gl_FragColor = vec4(mix(c.rgb, c.rgb * 0.35, ink), c.a);
+}
+`,
+);
 // An animated one (it reads the time), not used by the design: shaderfill.mjs switches a fill to it.
 fs.writeFileSync(
   path.join(dir, 'shaders', 'moving.glsl'),
@@ -117,8 +143,13 @@ for (let i = 0; i < n; i++) {
         geometry: SHAPES[k % SHAPES.length], viewBox: [0, 0, 24, 24],
         fill: { type: 'shader', url: Number(brokenArg) ? './shaders/sdf-broken.glsl' : './shaders/sdf-metal.glsl', uniforms: { u_tint: tints[(i + k) % tints.length] } },
       })),
+      ...Array.from({ length: Number(fxArg) }, (_, k) => ({
+        type: 'rectangle', id: `f${i}e${k}`, x: 24 + (k % 6) * 58, y: 790 - Math.floor(k / 6) * 58, width: 48, height: 48, cornerRadius: 10,
+        fill: { type: 'gradient', gradientType: 'linear', rotation: 45, colors: [{ color: tints[(i + k) % tints.length], position: 0 }, { color: '#FFFFFF', position: 1 }] },
+        effect: { type: 'shader', url: './shaders/still-halftone.glsl', uniforms: { u_dot: 4 + (k % 3) * 2 } },
+      })),
     ],
   });
 }
 fs.writeFileSync(out, JSON.stringify({ version: '2.21', children }, null, 1));
-console.log(`${out}: ${n} frames, ${n * (3 + sdfPaths)} shader fills (${n * sdfPaths} on paths reading their outline)`);
+console.log(`${out}: ${n} frames, ${n * (3 + sdfPaths)} shader fills (${n * sdfPaths} on paths reading their outline), ${n * Number(fxArg)} shader effects`);
