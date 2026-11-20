@@ -4,7 +4,6 @@
 import { useStore } from './store';
 import { currentTree } from './tree';
 import { nodeScreenRect } from './measure';
-import { ensureRendered } from './culling';
 import { deepResolve } from '../model/resolve';
 import { displayName } from '../model/doc';
 import { fillList, parseColor } from '../render/paint';
@@ -41,7 +40,6 @@ export async function exportRoblox(key: string, opts: RobloxOptions = {}): Promi
   const doc = useStore.getState().doc;
   const root = tree?.byKey.get(key);
   if (!tree || !doc || !root) throw new Error(`node "${key}" not found`);
-  ensureRendered([key]);
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
   await document.fonts.ready;
   const zoom = useStore.getState().view.zoom;

@@ -1,75 +1,31 @@
-// Which renderer draws the canvas (docs/SKIA_REWORK.md). `pen.renderer` in localStorage picks it: `full` (the default
-// since 0.4.0: Skia draws every frame it can), `overview` (Skia draws far frames only) or `dom` (the browser draws every
-// node, the renderer before 0.4.0). If Skia cannot start, or loses its graphics context for good, the editor falls back
-// to `dom` for the rest of the session.
+// The canvas is drawn by Skia (CanvasKit): on the graphics card, or in software when there is none (SkiaLayer.tsx).
+// The page-element renderer that drew every layer as browser elements (before 0.4.0, then the fallback) was removed on
+// 2026-11-20 (docs/SKIA_REWORK.md, "Skia only"). What is left here: whether Skia itself failed (CanvasKit did not load,
+// or aborted), which the editor reports instead of drawing.
 import { useSyncExternalStore } from 'react';
 
-export type RendererMode = 'dom' | 'overview' | 'full';
-
-const KEY = 'pen.renderer';
-const MODES: RendererMode[] = ['dom', 'overview', 'full'];
-const DEFAULT: RendererMode = 'full';
-
-function readMode(): RendererMode {
-  // Test builds only (dev server or PEN_PROD=1): `?renderer=overview` in the URL, so every suite in tests/ can run in
-  // any mode without touching storage. The extension build ignores it.
-  if (import.meta.env.DEV || import.meta.env.VITE_PEN_HOOKS) {
-    const q = new URLSearchParams(location.search).get('renderer') as RendererMode | null;
-    if (q && MODES.includes(q)) return q;
-  }
-  try {
-    const v = localStorage.getItem(KEY) as RendererMode | null;
-    return v && MODES.includes(v) ? v : DEFAULT;
-  } catch {
-    return DEFAULT;
-  }
-}
-
-let requested: RendererMode = readMode();
 let failure: string | null = null;
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach(l => l());
 
-/** The mode the user asked for. */
-export function requestedRenderer(): RendererMode {
-  return requested;
-}
-
-/** The mode in effect: the requested one, or `dom` once Skia has failed. */
-export function activeRenderer(): RendererMode {
-  return failure ? 'dom' : requested;
-}
-
+/** Why Skia stopped (null while it draws). */
 export function rendererFailure(): string | null {
   return failure;
 }
 
-/** Changes the switch (persisted). A new choice clears an earlier failure so Skia gets another try. */
-export function setRenderer(mode: RendererMode) {
-  if (!MODES.includes(mode)) throw new Error(`renderer must be one of ${MODES.join(', ')}`);
-  requested = mode;
-  failure = null;
-  try {
-    localStorage.setItem(KEY, mode);
-  } catch {
-    // Storage blocked: the choice lasts for this session only.
-  }
-  emit();
-}
-
-/** Called by the Skia layer when it cannot draw: the current renderer takes over. */
+/** Called by the Skia layer when it cannot draw at all, even in software. */
 export function failRenderer(reason: string) {
   if (failure) return;
   failure = reason;
   emit();
 }
 
-export function useActiveRenderer(): RendererMode {
+export function useRendererFailure(): string | null {
   return useSyncExternalStore(
     l => {
       listeners.add(l);
       return () => listeners.delete(l);
     },
-    activeRenderer,
+    rendererFailure,
   );
 }

@@ -108,11 +108,13 @@ let skia: SkiaGeometry | null = null;
 export function setSkiaGeometry(g: SkiaGeometry | null) {
   skia = g;
 }
-/** Whether the node is in a top-level frame Skia draws (its geometry comes from the layout engine). */
+/**
+ * Whether the node's geometry comes from the layout engine: every frame since the page-element renderer was removed
+ * (2026-11-20), drawn by Skia yet or not (a frame still loading has no elements to measure either).
+ */
 export const skiaOwns = (key: string) => {
   if (!skia) return false;
-  const r = skia.rootOf(key);
-  return !!r && skia.drawn(r);
+  return !!skia.rootOf(key);
 };
 function worldToScreen(r: WorldRect): DOMRect {
   const { view } = useStore.getState();

@@ -1,30 +1,25 @@
 // Infinite canvas: renders the document, selection/hover overlay, frame labels and all pointer gestures.
 import { BrowserOverlays } from './BrowserOverlays';
 import { TextEditOverlay } from './TextEditOverlay';
-import React, { memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { NodeView, RenderCtx, type RenderContextValue } from '../render/NodeView';
+import React, { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { SkiaLayer } from '../skia/SkiaLayer';
-import { activeRenderer, useActiveRenderer } from '../skia/renderer';
+import { useRendererFailure } from '../skia/renderer';
+import { layoutWorldRect } from '../skia/layoutIndex';
 import { elementsAtPoint, nodeChainAtEvent, nodeChainOf as chainFromElement, nodeKeyOf, nodesInScreenRect } from '../editor/measure';
-import { pictureFrameFor, pictureFramePending, setPictureFrames, type PictureFrame } from '../skia/pictureFrames';
-import { canDraw, overviewOn, setSceneFrames, useSceneVersion, type SceneFrame } from '../skia/scene';
+import { pictureFrameFor, setPictureFrames, type PictureFrame } from '../skia/pictureFrames';
+import { setSceneFrames, useSceneVersion, type SceneFrame } from '../skia/scene';
 import { pickAt, colorFromChain } from '../editor/eyedropper';
 import { useStore, keySource, applyProps } from '../editor/store';
 import { useTree, ancestry, currentTree, type Tree } from '../editor/tree';
 import { canvasRect, clientToWorld, elFor, isAbsolutelyPositioned, markUserViewChange, moveNode, parentLayoutOf, screenRectOf, worldRectOf, zoomBy } from '../editor/ops';
-import { makeUrlResolver } from '../editor/fileio';
 import { allIds, displayName, locate, newId } from '../model/doc';
 import type { PenNode, RNode } from '../model/types';
 import { fmt } from './common';
-import { nearRoots, onViewChanged, pointerTarget, rootWorldRect, scheduleCull } from '../editor/culling';
 import { AiPenLayer } from './AiPen';
 import { canvasHiddenIds } from '../editor/sections';
-import { LOD_ZOOM, bitmapUrl, getBitmap, hasFixedSize, lodEligible, lodInteraction, requestBitmap, type Bitmap } from '../editor/lod';
 import { deepResolve } from '../model/resolve';
 import { scaleSubtree } from '../model/scale';
-import { fillList, fillsToBackground, primaryColor, type UrlResolver } from '../render/paint';
-import { pickImageUrl, useImageEpoch } from '../render/imageLod';
-import { ErrorBoundary, NodeErrorBox } from './ErrorBoundary';
+import { fillList, primaryColor } from '../render/paint';
 import { snapMove, type Guides } from '../editor/snapping';
 import { addComment } from '../editor/comments';
 import { CanvasExtras } from './CanvasExtras';
@@ -138,13 +133,6 @@ export function Canvas() {
   const [penPoints, setPenPoints] = useState<Anchor[]>([]);
   const [penHover, setPenHover] = useState<{ x: number; y: number } | null>(null);
 
-  const resolveUrl: UrlResolver = useMemo(() => {
-    const base = makeUrlResolver(file?.path ?? null);
-    // On the canvas, image fills are drawn from copies sized for the current zoom (see imageLod.ts).
-    // Diagnostic switch (set in localStorage) to compare against full-size pictures; tests/images.mjs uses it.
-    if (localStorage.getItem('pen.debug.noImageLod')) return base;
-    return (u, box) => (box ? pickImageUrl(base(u), box) : base(u));
-  }, [file?.path]);
   const onTextCommit = useCallback((key: string, text: string | null) => {
     const s = useStore.getState();
     if (s.editingKey !== key) return;
@@ -161,8 +149,6 @@ export function Canvas() {
     }
     if (text !== n.props.content) s.edit(d => applyProps(d, key, { content: text }));
   }, []);
-  const vars = doc?.variables;
-  const renderCtx: RenderContextValue = useMemo(() => ({ doc: { variables: vars }, resolveUrl, editingKey, onTextCommit }), [vars, resolveUrl, editingKey, onTextCommit]);
 
   // ---- keyboard: space to pan, pen tool finish ----
   useEffect(() => {
@@ -282,7 +268,6 @@ export function Canvas() {
     };
   }, []);
 
-  useEffect(() => onViewChanged(), [view]);
 
   // The view is positioned purely by transform; if anything ever scrolls the canvas container or the page
   // (focus, scrollIntoView, drag auto-scroll), snap it back so the screen and the editor's math stay in sync.
@@ -302,13 +287,12 @@ export function Canvas() {
       document.removeEventListener('scroll', fix);
     };
   }, []);
-  useEffect(() => scheduleCull(), [tree]);
 
   const panning = space || tool === 'hand';
 
   // ---- pointer gestures ----
   const onPointerDown = (e: React.PointerEvent) => {
-    const target = pointerTarget(e);
+    const target = (e.target as HTMLElement);
     if (target.closest('[data-editing]')) return;
     if (target.closest('.island, .menu, .popover')) return;
     // Stop the browser's own text selection / native drag-and-drop: they cancel our pointer gestures mid-drag
@@ -499,7 +483,6 @@ export function Canvas() {
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
-    lodInteraction();
     // A release outside the webview (or a lost pointer capture) can swallow pointerup. If no button is down any
     // more, finish the gesture instead of letting a stale drag yank the view or the selection around.
     if (drag.current && e.buttons === 0 && e.pointerType === 'mouse') {
@@ -511,11 +494,11 @@ export function Canvas() {
     if (!d) {
       if (tool === 'pen') setPenHover(clientToWorld(e.clientX, e.clientY));
       if (tool === 'eyedropper' && !panning) {
-        const k = colorFromChain(nodeChainAtEvent(e, pointerTarget(e)))?.key ?? null;
+        const k = colorFromChain(nodeChainAtEvent(e, (e.target as HTMLElement)))?.key ?? null;
         if (k !== s.hover) s.set({ hover: k });
       }
       if ((tool === 'select' || tool === 'scale') && !panning && tree) {
-        const t = pointerTarget(e);
+        const t = (e.target as HTMLElement);
         const lk = t.closest<HTMLElement>('[data-label-k]')?.dataset.labelK;
         const chain = nodeChainAtEvent(e, t);
         const k = lk ?? (chain.length ? pickFromChain(chain, s.selection, tree, e.ctrlKey || e.metaKey) : null);
@@ -860,7 +843,7 @@ export function Canvas() {
     canvasRef.current!.setPointerCapture(e.pointerId);
   };
 
-  const renderer = useActiveRenderer();
+  const failure = useRendererFailure();
   const cursor = drag.current?.kind === 'pan' ? 'grabbing' : panning ? 'grab' : tool !== 'select' && tool !== 'scale' ? 'crosshair' : 'default';
 
   return (
@@ -877,12 +860,17 @@ export function Canvas() {
       onPointerLeave={() => useStore.getState().hover && useStore.getState().set({ hover: null })}
       onContextMenu={e => e.preventDefault()}
     >
-      {renderer !== 'dom' && <SkiaLayer />}
+      <SkiaLayer />
+      {failure && (
+        <div className="canvas-failure" role="alert">
+          The canvas could not be drawn ({failure}). Reload the editor to try again.
+        </div>
+      )}
       <div id="pen-world" aria-hidden style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` }}>
-        <RenderCtx.Provider value={renderCtx}>{tree && <Roots tree={tree} />}</RenderCtx.Provider>
+        {tree && <Roots tree={tree} />}
       </div>
-      {tree && renderer !== 'dom' && <BrowserOverlays tree={tree} />}
-      {tree && renderer !== 'dom' && <TextEditOverlay tree={tree} onCommit={onTextCommit} />}
+      {tree && <BrowserOverlays tree={tree} />}
+      {tree && <TextEditOverlay tree={tree} onCommit={onTextCommit} />}
       {tree && <Overlay tree={tree} onResizeStart={onResizeStart} draft={draft} />}
       {tree && <CanvasExtras tree={tree} draft={draft} onGapStart={onGapStart} dragging={!!drag.current} />}
       <CropOverlay />
@@ -998,7 +986,7 @@ function Overlay({ tree, onResizeStart, draft }: { tree: Tree; onResizeStart: (e
     const labels = tree.roots
       .filter(n => n.props.enabled !== false && !(hiddenIds.has(n.key) && !selection.includes(n.key)) && (n.type === 'frame' || n.instanceOf || n.isComponent || n.type === 'group'))
       .map(n => {
-        const w = rootWorldRect(n);
+        const w = rootBox(n);
         if (w) return { key: n.key, r: { x: w.x * view.zoom, y: w.y * view.zoom, w: w.w * view.zoom, h: w.h * view.zoom } as Rect | null };
         const b = screenRectOf(n.key, { ownBox: true });
         if (!b) return { key: n.key, r: null };
@@ -1092,188 +1080,60 @@ function Overlay({ tree, onResizeStart, draft }: { tree: Tree; onResizeStart: (e
   );
 }
 
-/**
- * Top-level frames. When zoomed out, big frames are drawn from background-rendered bitmaps (GPU textures) instead
- * of live DOM; a frame switches back to live as soon as it is selected/edited, pinned by an agent, or zoomed into.
- */
-const LIVE_MOUNTS_PER_FRAME = 3;
+/** A top-level frame's world box: from its props when it has a fixed size, else from the layout engine. */
+function rootBox(n: RNode): Rect | null {
+  const p = n.props;
+  if (typeof p.x !== 'number' || typeof p.y !== 'number' || p.rotation) return null;
+  if (typeof p.width === 'number' && typeof p.height === 'number') return { x: p.x, y: p.y, w: p.width, h: p.height };
+  return layoutWorldRect(n.key);
+}
 
+/**
+ * The top-level frames. Skia draws every one from its recorded picture (skia/pictureFrames.ts); each keeps an empty
+ * box here, in document order, for labels, selection and lookups. A frame Skia can't record yet (it is starting, or the
+ * frame's fonts and pictures are loading) shows its own colour meanwhile.
+ */
 function Roots({ tree }: { tree: Tree }) {
   const zoom = useStore(s => s.view.zoom);
   const selection = useStore(s => s.selection);
   const editingKey = useStore(s => s.editingKey);
-  const pinnedRoots = useStore(s => s.pinnedRoots);
   // AI Pen's shapes still to trace are left out of their frames' pictures (frames.ts): drawn again as they appear.
   useStore(s => s.aiPenPasses);
-  useStore(s => s.lodVersion);
   const doc = useStore(s => s.doc);
   const viewer = useStore(s => s.viewer);
   const viewerSection = useStore(s => s.viewerSection);
   const hidden = canvasHiddenIds({ doc, viewer, viewerSection });
-  // Performance mode: frames away from the viewport are unloaded, and all of them while the tab is in the background.
-  useStore(s => s.nearVersion);
-  const perfMode = useStore(s => s.perfMode);
+  // Performance mode: nothing is drawn while the tab is in the background.
   const asleep = useStore(s => s.asleep);
-  const near = perfMode ? nearRoots() : null;
-  const mounted = useRef(new Set<string>());
-  const [, setTick] = useState(0);
   useSceneVersion();
 
   const active = new Set<string>();
-  const now = Date.now();
-  let nextExpiry = Infinity;
-  for (const [k, until] of Object.entries(pinnedRoots)) {
-    if (until > now) {
-      active.add(k);
-      nextExpiry = Math.min(nextExpiry, until);
-    }
-  }
   for (const k of [...selection, ...(editingKey ? [editingKey] : [])]) active.add(ancestry(tree, k)[0]);
-
-  // Re-render when a pin expires so the frame can drop back to its bitmap.
-  useEffect(() => {
-    if (!isFinite(nextExpiry)) return;
-    const t = setTimeout(() => setTick(x => x + 1), nextExpiry - Date.now() + 20);
-    return () => clearTimeout(t);
-  }, [nextExpiry]);
-
-  const lodOn = zoom < LOD_ZOOM;
-  const dpr = devicePixelRatio || 1;
-  const want: string[] = [];
-  const nextMounted = new Set<string>();
-  // Switching many frames from bitmap to live at once stalls a frame, so only a few go live per frame (on-screen
-  // first); the others keep showing their (stretched) bitmap until their turn. Selected frames always go live.
-  const { x: vx, y: vy } = useStore.getState().view;
-  const onScreen = (p: RNode['props']) =>
-    (p.x ?? 0) * zoom + vx < innerWidth && ((p.x ?? 0) + (p.width ?? 0)) * zoom + vx > 0 && (p.y ?? 0) * zoom + vy < innerHeight && ((p.y ?? 0) + (p.height ?? 0)) * zoom + vy > 0;
-  let budget = LIVE_MOUNTS_PER_FRAME;
-  let deferred = false;
-  // Skia overview (pen.renderer=overview): snapshots whose texture is ready are drawn on the Skia canvas, with an
-  // empty element keeping the frame's place for selection, labels and lookups; the rest keep their <img>.
-  const overview = overviewOn();
+  const far = zoom < FAR_ZOOM;
   const skiaFrames: SceneFrame[] = [];
-  let imageFallbacks = 0;
-  // Stages 3–4: frames Skia draws from their own recorded picture (no DOM inside them, no snapshot needed). In full
-  // mode that's every frame Skia can draw, at any zoom; in overview mode only far frames.
-  const full = activeRenderer() === 'full';
-  const pictureRoot = (n: RNode, far: boolean) => {
-    if (!overview) return null;
-    const pf = pictureFrameFor(n);
-    if (!pf) return null;
-    skiaFrames.push({ key: n.key, url: '', x: pf.x, y: pf.y, w: pf.w, h: pf.h, record: pf.record, peek: pf.peek, seen: pf.seen, live: pf.live, placeholder: pf.placeholder, token: pf.token });
-    return <PictureRoot key={n.key} pf={pf} far={far} />;
-  };
-  const bitmapRoot = (n: RNode, bm: Bitmap) => {
-    if (overview) {
-      if (canDraw(bm.url)) {
-        skiaFrames.push({ key: n.key, url: bm.url, x: n.props.x ?? 0, y: n.props.y ?? 0, w: bm.w, h: bm.h });
-        return <SkiaRoot key={n.key} n={n} bm={bm} />;
-      }
-      imageFallbacks++;
-    }
-    return <BitmapRoot key={n.key} n={n} bm={bm} zoom={zoom} />;
-  };
-  const live = (n: RNode, bm: Bitmap | undefined) => {
-    if (bm && !mounted.current.has(n.key) && !active.has(n.key)) {
-      if (budget <= 0 || (budget < LIVE_MOUNTS_PER_FRAME && !onScreen(n.props))) {
-        deferred = true;
-        return bitmapRoot(n, bm);
-      }
-      budget--;
-    }
-    nextMounted.add(n.key);
-    return <SafeRoot key={n.key} n={n} />;
-  };
-  const order = [...tree.roots].sort((a, b) => +onScreen(b.props) - +onScreen(a.props));
-  const byKey = new Map<string, React.ReactNode>();
-  for (const n of order) {
+  const out: React.ReactNode[] = [];
+  for (const n of tree.roots) {
     if (n.props.enabled === false) continue;
-    // Frames in hidden sections (or outside the current section in the Sections viewer) aren't rendered unless
-    // selected, edited or pinned by an agent.
+    // Frames in hidden sections (or outside the current section in the Sections viewer) aren't drawn unless selected
+    // or edited.
     if (hidden.has(n.key) && !active.has(n.key)) continue;
     if (asleep && !active.has(n.key)) continue;
-    if (full) {
-      const pr = pictureRoot(n, lodOn);
-      if (pr) {
-        byKey.set(n.key, pr);
-        continue;
-      }
-      // Skia will draw it in a moment (still starting, or the frame's fonts and pictures are loading).
-      if (hasFixedSize(n) && pictureFramePending(n)) {
-        byKey.set(n.key, <PendingRoot key={n.key} n={n} />);
-        continue;
-      }
-    }
-    const eligible = lodEligible(n);
-    const bm = eligible ? getBitmap(n.key) : undefined;
-    if (near && !near.has(n.key) && !active.has(n.key) && hasFixedSize(n)) {
-      byKey.set(n.key, (!full && pictureRoot(n, true)) || (bm ? bitmapRoot(n, bm) : <PlaceholderRoot key={n.key} n={n} />));
-      continue;
-    }
-    if (lodOn && !full && !active.has(n.key) && eligible) {
-      const pr = pictureRoot(n, true);
-      if (pr) {
-        byKey.set(n.key, pr);
-        continue;
-      }
-    }
-    if (!lodOn || active.has(n.key) || !eligible) {
-      byKey.set(n.key, live(n, bm));
-      continue;
-    }
-    if (bm && bm.node !== n) want.push(n.key);
-    if (bm && zoom * dpr <= bm.ratio * 1.15) {
-      byKey.set(n.key, bitmapRoot(n, bm));
-      continue;
-    }
-    if (!bm) want.push(n.key);
-    // A frame that was live stays live while its bitmap is made (no flash), but far out a placeholder showing its
-    // fills looks the same and keeps dozens of image-heavy live frames from exhausting GPU memory.
-    const keepMounted = mounted.current.has(n.key) && zoom >= LOD_ZOOM / 2;
-    if (keepMounted || bm || !hasFixedSize(n)) byKey.set(n.key, live(n, bm));
-    else byKey.set(n.key, <PlaceholderRoot key={n.key} n={n} />);
+    const pf = pictureFrameFor(n);
+    if (pf) {
+      skiaFrames.push({ key: n.key, url: '', x: pf.x, y: pf.y, w: pf.w, h: pf.h, record: pf.record, peek: pf.peek, seen: pf.seen, live: pf.live, placeholder: pf.placeholder, token: pf.token });
+      out.push(<PictureRoot key={n.key} pf={pf} far={far} />);
+    } else out.push(<PendingRoot key={n.key} n={n} />);
   }
-  // Document order is kept so stacking doesn't change while frames switch.
-  const out = tree.roots.map(n => byKey.get(n.key) ?? null);
-  mounted.current = nextMounted;
-  const docIndex = new Map(tree.roots.map((n, i) => [n.key, i]));
-  skiaFrames.sort((a, b) => docIndex.get(a.key)! - docIndex.get(b.key)!);
-  const liveKeys = new Set(docIndex.keys());
+  const liveKeys = new Set(tree.roots.map(n => n.key));
   useLayoutEffect(() => {
-    setPictureFrames(skiaFrames.filter(f => f.record), liveKeys);
-    setSceneFrames(skiaFrames, imageFallbacks);
-  });
-  useEffect(() => {
-    for (const k of want) requestBitmap(k);
-    if (!deferred) return;
-    const id = requestAnimationFrame(() => setTick(x => x + 1));
-    return () => cancelAnimationFrame(id);
+    setPictureFrames(skiaFrames, liveKeys);
+    setSceneFrames(skiaFrames, 0);
   });
   return <>{out}</>;
 }
 
-/** A top-level frame that renders an error box instead of crashing the editor if something inside it throws. */
-function SafeRoot({ n }: { n: RNode }) {
-  return (
-    <ErrorBoundary name={`frame #${n.key}`} resetKey={n} fallback={error => <NodeErrorBox n={n} error={error} />}>
-      <NodeView n={n} parentLayout="none" />
-    </ErrorBoundary>
-  );
-}
-
-function BitmapRoot({ n, bm, zoom }: { n: RNode; bm: Bitmap; zoom: number }) {
-  const p = n.props;
-  return (
-    <img
-      data-k={n.key}
-      data-bitmap
-      src={bitmapUrl(bm, zoom)}
-      draggable={false}
-      alt=""
-      style={{ position: 'absolute', left: p.x, top: p.y, width: bm.w, height: bm.h, display: 'block', userSelect: 'none' }}
-    />
-  );
-}
+/** Below this zoom a click on a frame selects the frame (as on its far-zoom copy), not a layer inside it. */
+const FAR_ZOOM = 1 / 3;
 
 /**
  * A frame Skia draws from its recorded picture: an empty box that keeps its place for labels and lookups. Far out it
@@ -1283,36 +1143,12 @@ function PictureRoot({ pf, far }: { pf: PictureFrame; far: boolean }) {
   return <div data-k={pf.key} data-skia data-picture {...(far ? { 'data-bitmap': '' } : {})} style={{ position: 'absolute', left: pf.x, top: pf.y, width: pf.w, height: pf.h }} />;
 }
 
-/** Full mode: a frame Skia is about to draw, shown as its own colour until its fonts and pictures have loaded. */
+/** A frame Skia is about to draw, shown as its own colour until it can (Skia starting, fonts or pictures loading). */
 function PendingRoot({ n }: { n: RNode }) {
   const p = n.props;
   const vars = useStore(s => s.doc?.variables);
   const fills = fillList(deepResolve({ variables: vars } as any, p.fill, n.theme));
   return <div data-k={n.key} data-placeholder data-pending style={{ position: 'absolute', left: p.x, top: p.y, width: p.width, height: p.height, background: primaryColor(fills) ?? 'rgba(128,128,128,0.12)' }} />;
-}
-
-/** A zoomed-out frame drawn on the Skia canvas: an empty box that keeps its place for selection and lookups. */
-function SkiaRoot({ n, bm }: { n: RNode; bm: Bitmap }) {
-  const p = n.props;
-  return <div data-k={n.key} data-bitmap data-skia style={{ position: 'absolute', left: p.x, top: p.y, width: bm.w, height: bm.h }} />;
-}
-
-/** Stand-in until a frame's bitmap is ready: its own fills (background images included), so it doesn't flash grey. */
-function PlaceholderRoot({ n }: { n: RNode }) {
-  const p = n.props;
-  const vars = useStore(s => s.doc?.variables);
-  const { resolveUrl } = useContext(RenderCtx);
-  useImageEpoch();
-  const fills = fillList(deepResolve({ variables: vars } as any, p.fill, n.theme));
-  const bg = fillsToBackground(fills, p.width, p.height, resolveUrl);
-  const painted = bg.backgroundImage || bg.backgroundColor || bg.background;
-  return (
-    <div
-      data-k={n.key}
-      data-placeholder
-      style={{ ...(painted ? bg : { background: primaryColor(fills) ?? 'rgba(128,128,128,0.12)' }), position: 'absolute', left: p.x, top: p.y, width: p.width, height: p.height, borderRadius: typeof p.cornerRadius === 'number' ? p.cornerRadius : undefined }}
-    />
-  );
 }
 
 /**

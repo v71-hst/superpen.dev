@@ -1,13 +1,10 @@
 // Handles MCP requests forwarded by the extension: reads, atomic edits, screenshots, layout checks, exports.
 import { useStore } from './store';
 import { libraries } from '../model/libraries';
-import { rasterize } from '../render/rasterize';
 import { canvasSnapshot, recentLog, uiSnapshot } from './diagnostics';
-import { blankBitmapsOnCanvas, lodStats } from './lod';
 import { currentTree } from './tree';
-import { clientToWorld, elFor, insertSvg, importHtml, insertImported, removeBackgroundOf, vectorizeNode, worldRectOf, zoomToKeys } from './ops';
-import { isRendered, nodeScreenRect, nodeSize, ownerNodeKey } from './measure';
-import { ensureRendered } from './culling';
+import { clientToWorld, insertSvg, importHtml, insertImported, removeBackgroundOf, vectorizeNode, worldRectOf, zoomToKeys } from './ops';
+import { nodeScreenRect, nodeSize } from './measure';
 import { flushEdits } from './host';
 import { applyOperations, describe, nodeJson, outline, searchNodes, type Operation } from '../model/operations';
 import { defaultTheme, isVarRef } from '../model/resolve';
@@ -21,15 +18,17 @@ import { aiPenDraw, requestsForAgent } from './aipen';
 import { createSection, deleteSection, focusSections, hiddenFrameIds, sectionsOf, updateSection, viewerSections } from './sections';
 import { analyze, closeupGrid, compare, loadImageData, presentShot, zoomCrop, type Closeup } from './imageTools';
 import { checkDrawing } from './drawingCheck';
-import { imageFillUrls, imageLodStats, imagesBusy, imagesIdle } from '../render/imageLod';
+import { nodeToHtmlDocument } from '../export/html';
+import { nodeToSvg } from '../export/svg';
 import { nextFrames } from '../render/frames';
-import { activeRenderer, rendererFailure, requestedRenderer, setRenderer } from '../skia/renderer';
+import { rendererFailure } from '../skia/renderer';
 import { skiaStatus } from '../skia/SkiaLayer';
 import { renderNodeImage } from '../skia/offscreen';
 import { skiaTextMeasurer } from '../skia/layoutIndex';
 import { propsOf } from '../skia/painter';
 import { shaderErrorsOf } from '../skia/shaderFills';
 import { iconMissing } from '../skia/icons';
+import { fontStats, skiaFamily } from '../skia/fonts';
 import { scriptState } from './scriptHost';
 import { makeUrlResolver } from './fileio';
 import { runBenchmark } from './benchmark';
@@ -92,61 +91,11 @@ async function imageSource(params: { image?: string; id?: string; scale?: number
 /** A picture that is still loading is drawn from this one transparent pixel (render/imageLod.ts BLANK). */
 const BLANK_PIXEL = 'R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw';
 
-/**
- * Waits until the pictures of a node, and of everything in it, are on its page elements. A layer gets its page
- * elements when a capture asks for them, and a picture is drawn as nothing while it loads, so the first capture of
- * a picture layer used to come out blank (seen in VS Code, where pictures load slower than in tests): analyze_image
- * said "transparent 100%".
- */
-async function picturesReady(key: string, ms = 6000) {
-  const root = currentTree()?.byKey.get(key);
-  if (!root) return;
-  const keys: string[] = [];
-  const walk = (n: RNode) => {
-    if (n.props.enabled === false) return;
-    if (imageFillUrls(n.props).some(u => !/^(data|blob):/i.test(u))) keys.push(n.key);
-    n.children.forEach(walk);
-  };
-  walk(root);
-  if (!keys.length) return;
-  const real = (s: string | null | undefined) => !!s && /url\(/.test(s) && !s.includes(BLANK_PIXEL);
-  const shown = (k: string) => {
-    const el = elFor(k) as HTMLElement | null;
-    if (!el) return false;
-    if (real(el.style.backgroundImage)) return true;
-    // Cropped pictures and pictures above other fills sit one or two elements in; shapes use an svg <image>.
-    for (const c of Array.from(el.children) as HTMLElement[]) {
-      if (real(c.style?.backgroundImage)) return true;
-      for (const g of Array.from(c.children) as HTMLElement[]) if (real(g.style?.backgroundImage)) return true;
-    }
-    const href = el.querySelector('image')?.getAttribute('href');
-    return !!href && !href.includes(BLANK_PIXEL);
-  };
-  const until = performance.now() + ms;
-  while (performance.now() < until) {
-    if (imagesBusy()) await imagesIdle(Math.max(100, until - performance.now()));
-    if (keys.every(shown)) return;
-    await frames(2);
-  }
-}
-
 async function capture(key: string, format: 'png' | 'jpg' | 'svg', scale: number, maxSize: number) {
-  // Drawn by Skia off screen (skia/offscreen.ts): the layer's frame stays on the canvas, nothing is pinned live.
-  if (format !== 'svg' && activeRenderer() !== 'dom') {
-    const r = await renderNodeImage(key, { scale, maxSize, format });
-    return { dataUrl: r.dataUrl, width: r.width, height: r.height };
-  }
-  ensureRendered([key]);
-  await frames(3);
-  await document.fonts.ready;
-  await picturesReady(key);
-  const el = elFor(key);
-  if (!el) throw new Error(`node "${key}" is not rendered (it may be hidden: enabled false)`);
-  const size = nodeSize(key)!;
-  const w = size.w || nodeScreenRect(key, { ownBox: true })!.width;
-  const h = size.h || nodeScreenRect(key, { ownBox: true })!.height;
-  const ratio = Math.max(0.05, Math.min(scale, maxSize / Math.max(w, h, 1)));
-  return rasterize(el, { format, pixelRatio: ratio });
+  // PNG/JPEG drawn by Skia off screen (skia/offscreen.ts); SVG is the layer as HTML in an SVG (export/svg.ts).
+  if (format === 'svg') return nodeToSvg(key);
+  const r = await renderNodeImage(key, { scale, maxSize, format });
+  return { dataUrl: r.dataUrl, width: r.width, height: r.height };
 }
 
 function flash(keys: string[]) {
@@ -154,33 +103,16 @@ function flash(keys: string[]) {
   useStore.setState(s => ({ flashes: [...s.flashes.filter(f => t - f.t < 1400), ...keys.map(key => ({ key, t }))] }));
 }
 
-function cleanHtml(el: HTMLElement) {
-  const clone = el.cloneNode(true) as HTMLElement;
-  clone.style.left = '0px';
-  clone.style.top = '0px';
-  clone.style.position = 'relative';
-  clone.querySelectorAll('[data-k]').forEach(x => x.removeAttribute('data-k'));
-  clone.removeAttribute('data-k');
-  const fonts = [...document.querySelectorAll<HTMLLinkElement>('link[rel=stylesheet][href*="fonts.googleapis"]')].map(l => `<link rel="stylesheet" href="${l.href}">`).join('\n');
-  return `<!doctype html>\n<html>\n<head>\n<meta charset="utf-8">\n${fonts}\n</head>\n<body style="margin:0">\n${clone.outerHTML}\n</body>\n</html>\n`;
-}
 
 /** Visual/layout problems an agent should know about. */
 export async function checkLayout(rootKey?: string): Promise<string[]> {
   const s = useStore.getState();
   const tree = currentTree()!;
   const roots = rootKey ? [requireNode(rootKey)] : tree.roots;
-  // Skia: the frames are checked from the layout engine and what Skia knows (its text measurer, icon libraries, the
-  // shaders that failed when run); drawing them small first runs their shaders. The DOM renderer: pinned live and read.
-  const skia = activeRenderer() !== 'dom';
-  if (skia) {
-    for (const r of roots.slice(0, 30)) await renderNodeImage(r.key, { scale: 0.2, maxSize: 400, waitMs: 4000 }).catch(() => undefined);
-  } else {
-    ensureRendered(roots.map(r => r.key));
-    await frames(3);
-  }
-  await document.fonts.ready;
-  const measure = skia ? skiaTextMeasurer() : null;
+  // Checked from the layout engine and what Skia knows (its text measurer, icon libraries, the shaders that failed
+  // when run); drawing the frames small first runs their shaders.
+  for (const r of roots.slice(0, 30)) await renderNodeImage(r.key, { scale: 0.2, maxSize: 400, waitMs: 4000 }).catch(() => undefined);
+  const measure = skiaTextMeasurer();
   const resolveUrl = makeUrlResolver(s.file?.path ?? null);
   const issues: string[] = [];
   const vars = s.doc?.variables ?? {};
@@ -200,20 +132,16 @@ export async function checkLayout(rootKey?: string): Promise<string[]> {
       scan(v);
     }
     if (typeof p.fontFamily === 'string' && !p.fontFamily.startsWith('$')) fontsUsed.add(p.fontFamily);
-    const el = skia ? null : elFor(n.key);
-    const r = el || skia ? nodeScreenRect(n.key, { ownBox: true }) : null;
+    const r = nodeScreenRect(n.key, { ownBox: true });
     if (r) {
-      if (n.type === 'text' && (p.textGrowth === 'fixed-width-height' || p.textGrowth === 'fixed-width')) {
-        // Content size against the box: the page's scroll sizes, or Skia's paragraph at the box's width.
+      // Text that does not fit its fixed-height box: Skia's paragraph at the box's width. (Long words break onto the
+      // next line, so a fixed width never overflows.)
+      if (n.type === 'text' && p.textGrowth === 'fixed-width-height') {
         const size = nodeSize(n.key);
-        const content = el ? { w: el.scrollWidth, h: el.scrollHeight } : size && measure ? measure(n, size.w) : null;
-        const box = el ? { w: el.clientWidth, h: el.clientHeight } : size;
-        if (content && box && p.textGrowth === 'fixed-width-height' && content.h > box.h + 1) issues.push(`warning: ${label(n)} text overflows its fixed-height box (${Math.round(content.h)}px of content in ${Math.round(box.h)}px)`);
-        // Long words break onto the next line (overflow-wrap: break-word on the page, and Skia's paragraphs), so this
-        // only ever came from the page's scroll width.
-        if (el && content && box && p.textGrowth === 'fixed-width' && content.w > box.w + 1) issues.push(`warning: ${label(n)} has a word wider than its fixed width`);
+        const content = size ? measure(n, size.w) : null;
+        if (content && size && content.h > size.h + 1) issues.push(`warning: ${label(n)} text overflows its fixed-height box (${Math.round(content.h)}px of content in ${Math.round(size.h)}px)`);
       }
-      const missing = el ? !!el.querySelector('[data-missing]') : iconMissing(String(p.library ?? p.iconFontFamily ?? 'lucide'), String(p.icon ?? p.iconFontName ?? ''));
+      const missing = iconMissing(String(p.library ?? p.iconFontFamily ?? 'lucide'), String(p.icon ?? p.iconFontName ?? ''));
       if ((n.type === 'icon' || n.type === 'icon_font') && missing) issues.push(`error: ${label(n)} icon "${p.icon ?? p.iconFontName}" not found in library "${p.library ?? p.iconFontFamily ?? 'lucide'}"`);
       if ((r.width < 0.5 || r.height < 0.5) && n.type !== 'group' && n.type !== 'line' && n.type !== 'path') issues.push(`warning: ${label(n)} has zero size`);
       if (p.clip === true && n.children.length) {
@@ -242,8 +170,8 @@ export async function checkLayout(rootKey?: string): Promise<string[]> {
     n.children.forEach(visit);
   };
   roots.forEach(visit);
-  // Script and shader errors: Skia's records of them, or the markers the DOM renderer puts inside the node.
-  if (skia) {
+  // Script and shader errors: Skia's records of them.
+  {
     const visitErrors = (n: RNode) => {
       const p = propsOf({ doc: s.doc! }, n);
       if (p.enabled === false) return;
@@ -257,14 +185,11 @@ export async function checkLayout(rootKey?: string): Promise<string[]> {
     };
     roots.forEach(visitErrors);
   }
-  for (const r of skia ? [] : roots) {
-    elFor(r.key)?.querySelectorAll<HTMLElement>('[data-asset-error]').forEach(m => {
-      const k = ownerNodeKey(m.parentElement) ?? r.key;
-      const n = tree.byKey.get(k);
-      issues.push(`error: ${n ? label(n) : '#' + k}: ${m.dataset.assetError}`);
-    });
-  }
-  for (const f of fontsUsed) if (!document.fonts.check(`16px "${f}"`)) issues.push(`warning: font "${f}" did not load (check the family name on fonts.google.com)`);
+
+  // Fonts are loaded by Skia (its own files, not the page's): the ones it could not fetch. System fonts are drawn in
+  // open stand-ins, so they are not reported.
+  const failedFonts = new Set(fontStats().failedFamilies);
+  for (const f of fontsUsed) if (failedFonts.has(skiaFamily(f).toLowerCase())) issues.push(`warning: font "${f}" did not load (check the family name on fonts.google.com)`);
   return issues.slice(0, 200);
 }
 
@@ -427,10 +352,6 @@ export async function handleAgentRequest(method: string, params: any): Promise<a
     case 'checkDrawing': {
       const key = String(params.id ?? '');
       requireNode(key);
-      if (activeRenderer() === 'dom') {
-        ensureRendered([key]);
-        await frames(2);
-      }
       const { issues } = checkDrawing(key);
       const regions: { x: number; y: number; w: number; h: number }[] = Array.isArray(params.regions) ? params.regions : [];
       if (!issues.length && !regions.length) return { issues, text: 'No problem joints found: every stroke end either sits on the line it meets or is clear of it.' };
@@ -453,11 +374,7 @@ export async function handleAgentRequest(method: string, params: any): Promise<a
       const key = String(params.id ?? '');
       requireNode(key);
       const ref = await imageSource({ image: params.image, id: params.reference_id });
-      if (activeRenderer() === 'dom') {
-        ensureRendered([key]);
-        await frames(2);
-        if (!isRendered(key)) throw new Error(`node "${key}" is not rendered`);
-      }
+
       // Render at the reference's pixel size so the two line up pixel for pixel.
       const k = ref.width / Math.max(1, nodeSize(key)!.w);
       const shot = await capture(key, 'png', k, 8192);
@@ -470,11 +387,7 @@ export async function handleAgentRequest(method: string, params: any): Promise<a
       const name = displayName(n.props).replace(/[\\/:*?"<>|]+/g, '_');
       const format = params.format ?? 'png';
       if (format === 'html') {
-        ensureRendered([n.key]);
-        await frames(2);
-        const el = elFor(n.key);
-        if (!el) throw new Error('node is not rendered');
-        return { name: `${name}.html`, dataUrl: 'data:text/html;charset=utf-8,' + encodeURIComponent(cleanHtml(el)) };
+        return { name: `${name}.html`, dataUrl: 'data:text/html;charset=utf-8,' + encodeURIComponent(nodeToHtmlDocument(n.key)) };
       }
       const shot = await capture(n.key, format, params.scale ?? 2, 16384);
       return { name: `${name}.${format}`, dataUrl: shot.dataUrl };
@@ -529,20 +442,12 @@ export async function handleAgentRequest(method: string, params: any): Promise<a
       return {
         ui: uiSnapshot(),
         performanceMode: useStore.getState().perfMode,
-        renderer: { requested: requestedRenderer(), active: activeRenderer(), failure: rendererFailure(), skia: skiaStatus() },
+        renderer: { failure: rendererFailure(), skia: skiaStatus() },
         canvas: await canvasSnapshot(),
-        blankSnapshots: blankBitmapsOnCanvas(),
-        lod: lodStats(),
-        images: imageLodStats(),
         log: recentLog(),
       };
     case 'benchmark':
       return runBenchmark();
-    case 'setRenderer': {
-      setRenderer(params.mode);
-      await nextFrames(3);
-      return { requested: requestedRenderer(), active: activeRenderer(), failure: rendererFailure() };
-    }
     case 'root':
       return rootOf(params.id);
     default:

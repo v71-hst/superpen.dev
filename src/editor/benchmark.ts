@@ -6,7 +6,7 @@ import { currentTree } from './tree';
 import { canvasRect, elFor, propsRect, worldRectOf } from './ops';
 import { viewChangeSource } from './diagnostics';
 import { canvasHiddenIds } from './sections';
-import { activeRenderer } from '../skia/renderer';
+import { skiaStatus } from '../skia/SkiaLayer';
 
 /** Frames per phase; with settling, the whole run takes 10–20 s at 60 fps. */
 const STEPS = 120;
@@ -110,7 +110,8 @@ export async function runBenchmark() {
   }
   const mem = (performance as any).memory;
   return {
-    renderer: activeRenderer(),
+    // Skia on the graphics card, or in software without one.
+    renderer: skiaStatus().mode === 'software' ? 'skia (software)' : 'skia',
     performanceMode: s.perfMode,
     dpr: devicePixelRatio,
     canvas: { width: Math.round(c.width), height: Math.round(c.height) },

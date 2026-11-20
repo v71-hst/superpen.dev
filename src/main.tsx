@@ -8,7 +8,7 @@ async function boot() {
   if (import.meta.env.DEV || import.meta.env.VITE_PEN_HOOKS) {
     (window as any).__penStore = (await import('./editor/store')).useStore;
     (window as any).__penAgent = (await import('./editor/agent')).handleAgentRequest;
-    (window as any).__penRaster = await import('./render/rasterize');
+    (window as any).__penExport = await import('./export/html');
     (window as any).__penSvg = await import('./model/svgImport');
     (window as any).__penSkia = { ...(await import('./skia/renderer')), ...(await import('./skia/SkiaLayer')), ...(await import('./skia/testing')), ...(await import('./skia/frames')) };
     // Lets a test drive the page from inside (tests/memory.mjs): an attached debugger distorts memory use.

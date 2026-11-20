@@ -1,6 +1,7 @@
 // Right island: the design/properties panel for the current selection.
+import { nodeToHtml, nodeToHtmlDocument } from '../export/html';
+import { nodeToSvg } from '../export/svg';
 import { renderNodeImage } from '../skia/offscreen';
-import { activeRenderer } from '../skia/renderer';
 import React, { useState } from 'react';
 import {
   AlignCenterHorizontal,
@@ -47,7 +48,6 @@ import {
   Baseline,
   Crop,
 } from 'lucide-react';
-import { rasterize } from '../render/rasterize';
 import { useStore, applyProps, keySource } from '../editor/store';
 import { useTree } from '../editor/tree';
 import type { RNode } from '../model/types';
@@ -1159,21 +1159,6 @@ function EffectsSection({ p, set, theme }: Ctx) {
 
 // ---------- code & export ----------
 
-function cleanHtml(el: HTMLElement): string {
-  const clone = el.cloneNode(true) as HTMLElement;
-  clone.style.left = '0px';
-  clone.style.top = '0px';
-  clone.style.position = 'relative';
-  clone.querySelectorAll('[data-k]').forEach(x => x.removeAttribute('data-k'));
-  clone.removeAttribute('data-k');
-  return clone.outerHTML;
-}
-
-function htmlDocument(el: HTMLElement, title: string) {
-  const fonts = [...document.querySelectorAll<HTMLLinkElement>('link[rel=stylesheet][href*="fonts.googleapis"]')].map(l => `<link rel="stylesheet" href="${l.href}">`).join('\n');
-  return `<!doctype html>\n<html>\n<head>\n<meta charset="utf-8">\n<title>${title}</title>\n${fonts}\n</head>\n<body style="margin:0">\n${cleanHtml(el)}\n</body>\n</html>\n`;
-}
-
 function download(name: string, href: string) {
   downloadDataUrl(name, href);
 }
@@ -1187,9 +1172,7 @@ function CodeSection({ n }: { n: RNode }) {
         <button
           className="rp-btn"
           onClick={async () => {
-            const el = elFor(n.key);
-            if (!el) return;
-            await navigator.clipboard.writeText(cleanHtml(el));
+            await navigator.clipboard.writeText(nodeToHtml(n.key));
             notify('HTML copied to clipboard');
           }}
         >
@@ -1198,10 +1181,8 @@ function CodeSection({ n }: { n: RNode }) {
         <button
           className="rp-btn"
           onClick={() => {
-            const el = elFor(n.key);
-            if (!el) return;
             const name = displayName(n.props);
-            blobToDataUrl(new Blob([htmlDocument(el, name)], { type: 'text/html' })).then(url => download(`${name}.html`, url));
+            blobToDataUrl(new Blob([nodeToHtmlDocument(n.key)], { type: 'text/html' })).then(url => download(`${name}.html`, url));
           }}
         >
           Export HTML
@@ -1218,12 +1199,9 @@ function ExportSection({ n }: { n: RNode }) {
   const run = async () => {
     try {
       let url: string;
-      if (format !== 'svg' && activeRenderer() !== 'dom') url = (await renderNodeImage(n.key, { scale: Number(scale), maxSize: 16384, format: format === 'jpeg' ? 'jpg' : 'png' })).dataUrl;
-      else {
-        const el = elFor(n.key);
-        if (!el) throw new Error('the layer is not on the page');
-        url = (await rasterize(el, { format: format === 'jpeg' ? 'jpg' : (format as 'png' | 'svg'), pixelRatio: Number(scale) })).dataUrl;
-      }
+      // PNG/JPG drawn by Skia; SVG is the layer as HTML in an SVG (export/svg.ts).
+      if (format !== 'svg') url = (await renderNodeImage(n.key, { scale: Number(scale), maxSize: 16384, format: format === 'jpeg' ? 'jpg' : 'png' })).dataUrl;
+      else url = (await nodeToSvg(n.key)).dataUrl;
       download(`${displayName(n.props)}${scale === '1' ? '' : `@${scale}x`}.${format === 'jpeg' ? 'jpg' : format}`, url);
     } catch (e) {
       notify(`Export failed: ${e instanceof Error ? e.message : e}`);

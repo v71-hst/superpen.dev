@@ -74,10 +74,6 @@ type State = {
   flashes: { key: string; t: number }[];
   /** MCP sessions holding locks on this file (shown in the editor). */
   locks: { session: string; label: string; since: number; lastActive: number }[];
-  /** Bumped whenever a zoomed-out bitmap finishes rendering. */
-  lodVersion: number;
-  /** Top-level frames forced to render live (root key -> expiry time), e.g. for agent screenshots. */
-  pinnedRoots: Record<string, number>;
   /** Bumped when script output or script/shader files change. */
   assetVersion: number;
   /** A component shown in one of its states; edits inside it are stored in that state. */
@@ -88,8 +84,6 @@ type State = {
   perfMode: boolean;
   /** The tab has been in the background for a while: frames are unloaded until it is shown again (see perf.ts). */
   asleep: boolean;
-  /** Bumped when the set of frames near the viewport changes (performance mode unloads the others). */
-  nearVersion: number;
   pending: PendingReview | null;
   /** Comment pin being opened/edited on the canvas. */
   openComment: string | null;
@@ -150,14 +144,11 @@ export const useStore = create<State & Actions>((set, get) => ({
   clipboard: null,
   flashes: [],
   locks: [],
-  lodVersion: 0,
-  pinnedRoots: {},
   assetVersion: 0,
   stateView: null,
   reviewMode: localStorage.getItem('pen.reviewMode') === '1',
   perfMode: localStorage.getItem('pen.perfMode') === '1',
   asleep: false,
-  nearVersion: 0,
   pending: null,
   openComment: null,
   pickColor: null,

@@ -16,7 +16,7 @@ import { paintContext } from './testing';
 import { hitChain, layoutOf, layoutWorldRect, rootLayout, rootOf } from './layoutIndex';
 import { propsOf } from './painter';
 import { invalidateScene, setRelaxHook, surfaceIsReady } from './scene';
-import { activeRenderer, failRenderer } from './renderer';
+import { failRenderer, rendererFailure } from './renderer';
 
 export type PictureFrame = {
   key: string;
@@ -52,19 +52,13 @@ let pendingTimer: ReturnType<typeof setTimeout> | null = null;
 /** Whether the Skia surface has been ready since the layer started: a context lost later shows frames as DOM at once. */
 let everReady = false;
 
-/** Why a frame must stay DOM for reasons outside its content, or null. */
-function heldLive(n: RNode): string | null {
-  const s = useStore.getState();
-  if ((s.pinnedRoots[n.key] ?? 0) > Date.now()) return 'pinned live';
-  return null;
-}
 
 const num = (v: any) => (typeof v === 'number' && isFinite(v) ? v : null);
 
 /** Whether Skia draws this top-level frame now, and where; null if it stays DOM (or a snapshot) for now. */
 export function pictureFrameFor(n: RNode): PictureFrame | null {
   const ck = kitIfLoaded();
-  if (!ck || !surfaceIsReady() || heldLive(n) || activeRenderer() === 'dom') return null;
+  if (!ck || !surfaceIsReady()) return null;
   everReady = true;
   const ctx = paintContext(ck);
   const editing = useStore.getState().editingKey;
@@ -102,7 +96,7 @@ export function pictureFrameFor(n: RNode): PictureFrame | null {
  * it away a moment later. After a few seconds it gives up, so a font that never arrives can't keep a frame empty.
  */
 export function pictureFramePending(n: RNode): boolean {
-  if (activeRenderer() !== 'full' || heldLive(n)) return false;
+  if (rendererFailure()) return false;
   const ck = kitIfLoaded();
   let waiting: boolean;
   if (!ck || !surfaceIsReady()) waiting = !everReady;

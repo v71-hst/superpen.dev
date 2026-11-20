@@ -12,7 +12,6 @@ import { materializeRef } from '../model/resolve';
 import { applyProps, keySource, useStore } from './store';
 import { builderIndex, currentTree } from './tree';
 import { parseSizing } from '../model/props';
-import { ensureRendered } from './culling';
 import { viewChangeSource } from './diagnostics';
 import { svgToNodes, looksLikeSvg } from '../model/svgImport';
 import { vectorizeImage, type VectorizeOptions } from '../render/vectorize';
@@ -722,7 +721,6 @@ export function zoomToKeys(keys: string[], maxZoom = 1) {
   // Bounds known from the document: apply right away, so a late frame can't override the user's next zoom.
   if (fromProps.every(Boolean)) return apply();
   // Otherwise the nodes must render before they can be measured.
-  ensureRendered(keys.filter((_, i) => !fromProps[i]));
   const epoch = userViewEpoch;
   requestAnimationFrame(() => {
     if (epoch === userViewEpoch) apply();

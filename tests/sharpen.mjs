@@ -17,7 +17,7 @@ async function open(mode) {
   const page = await browser.newPage();
   await page.setViewport({ width: 1400, height: 900 });
   page.on('pageerror', e => errors.push(`${mode}: ${String(e).slice(0, 200)}`));
-  await page.goto(`${url}${url.includes('?') ? '&' : '?'}renderer=${mode}`, { waitUntil: 'domcontentloaded', timeout: 180000 });
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 180000 });
   await page.waitForSelector('#pen-world [data-k]', { timeout: 180000 });
   await page.waitForFunction(() => window.__penStore && window.__penSkia, { timeout: 60000 });
   return page;
@@ -54,19 +54,20 @@ const until = async (page, fn, ms) => {
   }
 };
 
-// --- reference: the DOM renderer, same view
-const dom = await open('dom');
+// --- reference: the same view in a page opened close up (until 2026-11-20: the DOM renderer, same view)
+const dom = await open('reference');
 const domRect = await dom.evaluate(closeUp, ZOOM);
 if (!domRect) {
   console.log('FAIL the file has no picture fills');
   process.exit(1);
 }
-await sleep(10000); // the DOM renderer sharpens its pictures progressively too
+await until(dom, s => s.images.ready > 0 && !s.images.loading && !s.images.sharpening, 30000);
+await sleep(1500);
 const domShot = await dom.screenshot({ clip: clipOf(domRect), encoding: 'base64' });
 await dom.close();
 
 // --- full, opened zoomed out
-const page = await open('full');
+const page = await open('zoomed');
 const far = () => window.__penStore.getState().setView({ x: 20, y: 20, zoom: 0.05 });
 await page.evaluate(far);
 // Everything recorded and copied ahead of need, so later counts are about pictures changing size only.
@@ -92,7 +93,7 @@ if (shots) {
   fs.writeFileSync(`${shots}/sharpen-full.png`, Buffer.from(sharpShot, 'base64'));
   fs.writeFileSync(`${shots}/sharpen-diff.png`, Buffer.from(cmp.image.split(',')[1], 'base64'));
 }
-ok('the picture then looks like the DOM renderer shows it', cmp.match >= 97 && cmp.dom > 1 && cmp.sharp >= cmp.dom * 0.85, `${cmp.match}% match; fine detail: dom ${cmp.dom.toFixed(2)}, full ${cmp.sharp.toFixed(2)}`);
+ok('the picture then looks as it does opened close up', cmp.match >= 97 && cmp.dom > 1 && cmp.sharp >= cmp.dom * 0.85, `${cmp.match}% match; fine detail: opened close up ${cmp.dom.toFixed(2)}, zoomed in ${cmp.sharp.toFixed(2)}`);
 ok('no frame was drawn as its flat colour meanwhile', sharp.placeholders === opened.placeholders, `${opened.placeholders} -> ${sharp.placeholders} placeholder draws`);
 // The file's few pictures are shared by all its frames: only the frames in view take the larger version.
 const rerecorded = sharp.pictures.recordings - opened.pictures.recordings;

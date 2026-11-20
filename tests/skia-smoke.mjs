@@ -1,7 +1,7 @@
-// Stage 0 of the Skia rework (docs/SKIA_REWORK.md): with pen.renderer=overview the Skia layer starts, draws a known
-// rectangle that reads back from the GPU, survives a forced graphics-context loss, and falls back to the DOM renderer
-// (frames still drawn, one toast) when the context never comes back. With the switch off, CanvasKit is not even
-// downloaded. Usage: node skia-smoke.mjs <url of a .pen with frames>
+// Stage 0 of the Skia rework (docs/SKIA_REWORK.md), Skia only since 2026-11-20: the Skia layer starts, draws a known
+// rectangle that reads back from the GPU, survives a forced graphics-context loss, and draws in software (frames still
+// drawn, one toast) when the context never comes back. No layer is a page element.
+// Usage: node skia-smoke.mjs <url of a .pen with frames>
 import puppeteer from 'puppeteer-core';
 import { launchOptions } from './browser.mjs';
 const [, , url] = process.argv;
@@ -20,20 +20,15 @@ const waitFor = async (fn, ms = 30000) => {
   }
   return false;
 };
-const open = async mode => {
-  await page.evaluateOnNewDocument(m => localStorage.setItem('pen.renderer', m), mode);
+const open = async () => {
   await page.goto(url, { waitUntil: 'networkidle2', timeout: 180000 });
   await page.waitForSelector('#pen-world [data-k]', { timeout: 180000 });
   await sleep(1500);
 };
-const canvaskitRequests = () => page.evaluate(() => performance.getEntriesByType('resource').filter(r => /canvaskit/i.test(r.name)).length);
-
-// 1. Switch off: nothing Skia is loaded.
-await open('dom');
-ok('switch off: no Skia canvas and CanvasKit not downloaded', !(await page.$('#pen-skia')) && (await canvaskitRequests()) === 0, `${await canvaskitRequests()} CanvasKit requests`);
-
-// 2. Switch on: the surface comes up and draws.
-await open('overview');
+// 1. The surface comes up and draws; the page holds no layers, only an empty box per top-level frame.
+await open();
+const world = await page.evaluate(() => ({ boxes: document.querySelectorAll('#pen-world > [data-k]').length, inside: document.querySelectorAll('#pen-world > [data-k] *').length, frames: window.__penStore.getState().doc.children.length }));
+ok('no layer is a page element (an empty box per top-level frame)', world.boxes > 0 && world.boxes <= world.frames && world.inside === 0, JSON.stringify(world));
 const ready = await waitFor(() => window.__penSkia.skiaStatus().surface === 'ready');
 const st = await page.evaluate(() => window.__penSkia.skiaStatus());
 ok('overview: Skia surface ready', ready, JSON.stringify({ surface: st.surface, size: [st.width, st.height], dpr: st.dpr }));
@@ -82,20 +77,19 @@ await loseCtx(false);
 const fellBack = await waitFor(() => window.__penSkia.skiaStatus().mode === 'software' && window.__penSkia.skiaStatus().surface === 'ready', 12000);
 await sleep(500);
 const after = await page.evaluate(() => ({
-  active: window.__penSkia.activeRenderer(),
+  failure: window.__penSkia.rendererFailure(),
   mode: window.__penSkia.skiaStatus().mode,
   canvas: !!document.getElementById('pen-skia'),
   frames: document.querySelectorAll('#pen-world > [data-k]').length,
   toast: window.__penStore.getState().toast?.text ?? null,
 }));
-ok('context never restored: Skia draws in software', fellBack && after.canvas && after.active !== 'dom', JSON.stringify({ active: after.active, mode: after.mode }));
+ok('context never restored: Skia draws in software', fellBack && after.canvas && !after.failure, JSON.stringify({ failure: after.failure, mode: after.mode }));
 ok('frames are still drawn after the fallback', after.frames > 0 && after.frames === framesBefore, `${framesBefore} -> ${after.frames} top-level frames`);
 ok('the user is told once', /drawing in software/.test(after.toast ?? ''), after.toast ?? 'no toast');
 const diag = await page.evaluate(() => window.__penAgent('diagnose', {}));
-ok('diagnose_editor reports the renderer', diag.renderer?.requested === 'overview' && diag.renderer?.active === 'overview' && diag.renderer?.skia?.mode === 'software', JSON.stringify({ requested: diag.renderer?.requested, active: diag.renderer?.active, mode: diag.renderer?.skia?.mode }));
+ok('diagnose_editor reports the renderer', !diag.renderer?.failure && diag.renderer?.skia?.mode === 'software', JSON.stringify({ failure: diag.renderer?.failure, mode: diag.renderer?.skia?.mode }));
 const px3 = await probe();
 ok('and draws in software (readback of the known rectangle)', isRed(px3), JSON.stringify(px3));
 await page.evaluate(() => window.__penSkia.setDebugRects([]));
 
-await page.evaluate(() => localStorage.removeItem('pen.renderer'));
 await browser.close();

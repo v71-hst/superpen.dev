@@ -14,14 +14,14 @@ const page = await browser.newPage();
 await page.setViewport({ width: 1400, height: 900 });
 const errors = [];
 page.on('pageerror', e => errors.push(String(e).slice(0, 300)));
-await page.goto(`${url}${url.includes('?') ? '&' : '?'}renderer=full`, { waitUntil: 'domcontentloaded' });
+await page.goto(url, { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => window.__penStore?.getState().doc && window.__penAgent, { timeout: 60000 });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const ok = (name, cond, info = '') => {
   console.log(`${cond ? 'PASS' : 'FAIL'} ${name}${info ? ' — ' + info : ''}`);
   if (!cond) process.exitCode = 1;
 };
-const diag = () => page.evaluate(() => window.__penAgent('diagnose').then(d => ({ active: d.renderer.active, pictures: d.renderer.skia?.pictures, images: d.renderer.skia?.images, all: d.canvas.all, onScreen: d.canvas.onScreen })));
+const diag = () => page.evaluate(() => window.__penAgent('diagnose').then(d => ({ active: d.renderer.failure ? 'failed' : 'skia', pictures: d.renderer.skia?.pictures, images: d.renderer.skia?.images, all: d.canvas.all, onScreen: d.canvas.onScreen })));
 const settle = async (want, ms = 15000) => {
   const until = Date.now() + ms;
   let d;
@@ -40,7 +40,7 @@ const spread = c => Math.max(...c) - Math.min(...c);
 
 const opened = await settle(d => d.images?.loading === 0 && d.pictures?.recorded >= d.pictures?.eligible && d.pictures?.eligible > 0 && d.images.made > 0);
 const frames = await page.evaluate(() => window.__penStore.getState().doc.children.length);
-ok('every frame with still shader fills is drawn by Skia', opened.active === 'full' && opened.pictures.eligible === frames && opened.all.live === 0 && opened.all.skia === frames, JSON.stringify({ frames, eligible: opened.pictures?.eligible, canvas: opened.all, reasons: opened.pictures?.reasons }));
+ok('every frame with still shader fills is drawn by Skia', opened.active === 'skia' && opened.pictures.eligible === frames && opened.all.live === 0 && opened.all.skia === frames, JSON.stringify({ frames, eligible: opened.pictures?.eligible, canvas: opened.all, reasons: opened.pictures?.reasons }));
 ok('the shaders were run into images', opened.images.made > 0 && opened.images.failed === 0, `${opened.images.made} images, ${opened.images.smallMB} MB`);
 
 // Close up on the first frame: its top shader fill covers the top of the frame.

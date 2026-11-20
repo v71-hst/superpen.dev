@@ -1,5 +1,5 @@
-// Stage 4 of the Skia rework (docs/SKIA_REWORK.md): with pen.renderer=full, frames Skia can draw have no DOM inside
-// them and still behave like the DOM renderer: same pixels, same boxes for every lookup, clicks and hover reach their
+// Stage 4 of the Skia rework (docs/SKIA_REWORK.md), Skia only since 2026-11-20: frames have no DOM inside them and
+// still behave like the DOM renderer did: same pixels, same boxes for every lookup, clicks and hover reach their
 // layers, text editing works (the frame goes DOM while edited), edits re-record the picture, agent screenshots work,
 // far zoom draws rasterised copies, and losing the graphics context for good falls back with every frame visible.
 // Usage: node full.mjs <url of a make-big.mjs file> [shot dir]
@@ -38,18 +38,9 @@ const rectOf = async key => {
   return r && { x: r.x, y: r.y, w: r.width, h: r.height };
 };
 
-// --- reference: the DOM renderer
-const dom = await open('dom');
-const ids = await dom.evaluate(setup);
-// The DOM renderer loads picture fills progressively (zoom-sized copies): give them time so the reference is complete.
-await sleep(10000);
-const domRect = await dom.evaluate(rectOf, ids.title);
-const domShot = await dom.screenshot({ encoding: 'base64' });
-await dom.close();
-
 // --- full
 const page = await open('full');
-await page.evaluate(setup);
+const ids = await page.evaluate(setup);
 const ready = await page.evaluate(async () => {
   for (let i = 0; i < 300; i++) {
     const st = window.__penSkia.skiaStatus();
@@ -63,19 +54,31 @@ const st = await page.evaluate(k => ({ skia: window.__penSkia.skiaStatus().pictu
 ok('full: frames are drawn from Skia pictures', ready && st.picture && st.skia.eligible > 0, JSON.stringify(st.skia));
 ok('no DOM inside Skia-drawn frames', st.inside === 0, `${st.world} elements in #pen-world`);
 
-const fullShot = await page.screenshot({ encoding: 'base64' });
-const cmp = await page.evaluate(async (a, b) => {
+// On screen (the scene: far-zoom copies, the atlas, pictures replayed) against the same frame drawn off screen
+// (skia/offscreen.ts, what screenshots and exports use): two ways of drawing that must agree. (Until the DOM renderer
+// was removed, 2026-11-20, this compared against it: 99.97%, and a layer's box to within 0.01 px.)
+const frameRect = await page.evaluate(rectOf, ids.frame);
+const onScreen = await page.screenshot({ encoding: 'base64', clip: { x: Math.round(frameRect.x), y: Math.round(frameRect.y), width: Math.round(Math.min(frameRect.w, 1400 - frameRect.x)), height: Math.round(Math.min(frameRect.h, 900 - frameRect.y)) } });
+const offScreen = await page.evaluate(id => window.__penAgent('screenshot', { id, scale: 1, max_size: 4000 }), ids.frame);
+const cmp = await page.evaluate(async (a, b, w, h) => {
   const t = await import('/src/editor/imageTools.ts');
-  const [x, y] = await Promise.all([t.loadImageData('data:image/png;base64,' + a), t.loadImageData('data:image/png;base64,' + b)]);
-  const c = t.compare(x, y);
-  return { match: Number(c.text.match(/match ([\d.]+)%/)?.[1] ?? 0), image: c.dataUrl };
-}, domShot, fullShot);
-if (shots) fs.writeFileSync(`${shots}/full-vs-dom.png`, Buffer.from(cmp.image.split(',')[1], 'base64'));
-ok('looks like the DOM renderer (same view, page pixels)', cmp.match >= 97, `${cmp.match}% match`);
+  const [x, y0] = await Promise.all([t.loadImageData('data:image/png;base64,' + a), t.loadImageData(b)]);
+  // The off-screen picture cut to what is on screen.
+  const c = document.createElement('canvas');
+  c.width = x.width;
+  c.height = x.height;
+  const g = c.getContext('2d');
+  g.putImageData(y0, 0, 0);
+  const y = g.getImageData(0, 0, x.width, x.height);
+  const r = t.compare(x, y);
+  return { match: Number(r.text.match(/match ([\d.]+)%/)?.[1] ?? 0), image: r.dataUrl };
+}, onScreen, offScreen.dataUrl);
+if (shots) fs.writeFileSync(`${shots}/full-screen-vs-offscreen.png`, Buffer.from(cmp.image.split(',')[1], 'base64'));
+ok('on screen looks like the off-screen render of the frame', cmp.match >= 97, `${cmp.match}% match`);
 
 const fullRect = await page.evaluate(rectOf, ids.title);
-const off = domRect && fullRect ? Math.max(Math.abs(domRect.x - fullRect.x), Math.abs(domRect.y - fullRect.y), Math.abs(domRect.w - fullRect.w), Math.abs(domRect.h - fullRect.h)) : Infinity;
-ok('a layer inside reports the same box as in the DOM renderer', off <= 0.6, `${JSON.stringify(domRect)} vs ${JSON.stringify(fullRect)}`);
+const inside = fullRect && fullRect.w > 0 && fullRect.h > 0 && fullRect.x >= frameRect.x && fullRect.y >= frameRect.y && fullRect.x + fullRect.w <= frameRect.x + frameRect.w + 0.5;
+ok('a layer inside reports its box (layout engine)', !!inside, `${JSON.stringify(fullRect)} in ${JSON.stringify(frameRect)}`);
 
 // Hover and clicks reach the layers through the layout tree.
 const cx = fullRect.x + fullRect.w / 2, cy = fullRect.y + fullRect.h / 2;
@@ -144,7 +147,7 @@ await page.evaluate(() => window.__penStore.getState().setView({ x: 300, y: 20, 
 await sleep(500);
 await page.evaluate(() => { const c = document.getElementById('pen-skia'); (c.getContext('webgl2') || c.getContext('webgl')).getExtension('WEBGL_lose_context').loseContext(); });
 await sleep(7000);
-const fb = await page.evaluate(() => ({ active: window.__penSkia.activeRenderer(), mode: window.__penSkia.skiaStatus().mode, surface: window.__penSkia.skiaStatus().surface, pictures: document.querySelectorAll('[data-picture]').length, frames: document.querySelectorAll('#pen-world > [data-k]').length }));
-ok('context lost for good: Skia draws in software, frames drawn', fb.active === 'full' && fb.mode === 'software' && fb.surface === 'ready' && fb.pictures > 0, JSON.stringify(fb));
+const fb = await page.evaluate(() => ({ failure: window.__penSkia.rendererFailure(), mode: window.__penSkia.skiaStatus().mode, surface: window.__penSkia.skiaStatus().surface, pictures: document.querySelectorAll('[data-picture]').length, frames: document.querySelectorAll('#pen-world > [data-k]').length }));
+ok('context lost for good: Skia draws in software, frames drawn', !fb.failure && fb.mode === 'software' && fb.surface === 'ready' && fb.pictures > 0, JSON.stringify(fb));
 ok('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();

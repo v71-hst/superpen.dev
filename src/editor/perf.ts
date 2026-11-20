@@ -3,8 +3,6 @@
 // zoomed-out snapshots and pictures use half the resolution, shader animation runs slower and coarser, and a design
 // whose tab is in the background lets go of its frames until the tab is shown again.
 import { useStore } from './store';
-import { resetLod } from './lod';
-import { scheduleCull } from './culling';
 
 const KEY = 'pen.perfMode';
 
@@ -16,11 +14,8 @@ export function perfModeChosen() {
 export function setPerfMode(on: boolean, remember = true) {
   if (remember) localStorage.setItem(KEY, on ? '1' : '0');
   if (useStore.getState().perfMode === on) return;
+  // Skia reads its limits (perfLimits.ts) as it draws.
   useStore.setState({ perfMode: on, asleep: false });
-  // Snapshots are made at the mode's resolution: start them over.
-  resetLod();
-  useStore.setState(s => ({ lodVersion: s.lodVersion + 1 }));
-  scheduleCull();
 }
 
 /** On first use, machines with 16 GB of memory or less start in performance mode. Returns true if it was turned on. */

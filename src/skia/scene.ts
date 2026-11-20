@@ -12,7 +12,6 @@ import { addToFarAtlas, beginFarAtlas, drawFarAtlas, farAtlasStats, packFarAtlas
 import { beginWantPass, setImageQuietSource, trimImages } from './images';
 import { kitIfLoaded } from './kit';
 import { free, own } from './lifetime';
-import { activeRenderer } from './renderer';
 import { useStore } from '../editor/store';
 import { log } from '../editor/diagnostics';
 
@@ -107,7 +106,7 @@ export function useSceneVersion() {
 
 /** Whether zoomed-out frames are drawn by Skia (overview or full mode, with a working surface). */
 export function overviewOn(): boolean {
-  return activeRenderer() !== 'dom';
+  return true;
 }
 
 export function surfaceIsReady() {

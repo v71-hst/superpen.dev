@@ -18,12 +18,10 @@ already piling up. `lockout.mjs` checks both.
 Always work on copies: several scripts edit the file they open. `browser.mjs` picks the browser (Edge or Chrome if
 installed, or the executable named in `PEN_BROWSER`).
 
-**Renderer modes.** Add `&renderer=dom` (or `overview`, `full`) to any test URL to run a suite with that renderer
-(docs/SKIA_REWORK.md); without it the editor uses `localStorage['pen.renderer']`, `full` (Skia) by default since
-0.4.0. Suites about the DOM renderer's own machinery (snapshots, picture levels: `images.mjs`, `lodswitch.mjs`,
-`invisible.mjs`, `zoomout.mjs`, `imgzoom.mjs`, the snapshot checks of `blank.mjs`) need `&renderer=dom`. Only test builds
-(the dev server, or `PEN_PROD=1`) read the URL parameter. On Linux `browser.mjs` turns on software WebGL
-(SwiftShader), so the Skia canvas and shaders also run in containers without a GPU.
+**One renderer.** Since 2026-11-20 the canvas is drawn by Skia only (the DOM renderer and `&renderer=` are gone; see
+docs/SKIA_REWORK.md, "Skia only"). The suites that tested the DOM renderer's own machinery or compared Skia against it
+(`blank`, `images`, `invisible`, `layout-diff`, `overview`, `paint-diff`, `lodswitch`, `zoomout`, `imgzoom`, `svgretain2`)
+were removed with it; their last results are in the status log.
 
 `features.mjs` and `aipen.mjs` import `/src` modules and need the dev server. The memory and trace scripts are
 closer to the real extension with `PEN_PROD=1 node start.mjs <folder>` (a production build with test hooks).
@@ -38,15 +36,11 @@ closer to the real extension with `PEN_PROD=1 node start.mjs <folder>` (a produc
 | `drawcheck.mjs <url> <shot dir>` | `check_drawing` finds stroke ends just off the line they meet | copy of `fixtures/features.pen` | 7 PASS |
 | `subpixel.mjs <url> <shot dir>` | Shapes at fractional coordinates line up when zoomed in | copy of `fixtures/features.pen` | 1 PASS |
 | `hiddentab.mjs <url>` | Screenshots of a background tab return; background tabs unload and come back | any file with frames | 6 PASS |
-| `blank.mjs <url> <shot dir>` | Frames stay visible when snapshots or their copies come out blank | a big file (10+ filled frames on screen when zoomed out) | 7 PASS |
-| `images.mjs <url> <shot dir>` | Zoom-sized copies of picture fills | 15 frames with 2-4K picture fills | 13 PASS |
 | `imagetools.mjs <url> <shot dir>` | `analyze_image` / `compare_to_reference` | copy of `fixtures/features.pen`; needs two reference files that are not in the repo | 16 PASS |
-| `skia-smoke.mjs <url>` | Skia layer (`pen.renderer=overview`): draws and reads back, survives a lost graphics context, falls back to the DOM renderer when it never returns; switch off loads no CanvasKit | copy of `fixtures/features.pen` | 11 PASS |
-| `layout-diff.mjs <url> [more urls]` | `src/layout/layout.ts` against the DOM: every node's world box, text sizes from the browser (0.5px tolerance); also reports how close the canvas text measurer gets and `layoutAll` time | copies of `fixtures/features.pen`, `fixtures/layout.pen`, `examples/showcase.spen`, a `make-big.mjs` file | PASS, 0 offenders each |
-| `overview.mjs <url> <shot dir>` | Skia overview (stage 1): zoomed-out snapshot frames drawn by Skia, all visible, no `<img>` for them, a moved frame follows, zooming in goes live, a lost context puts the snapshot images back | a `make-big.mjs` file | 12 PASS |
-| `full.mjs <url> [shot dir]` | Skia full mode (stage 4): frames drawn from pictures with no DOM inside, same pixels and boxes as the DOM renderer, hover/click/deep-select reach layers, text editing (frame goes DOM while edited), edits re-record, agent screenshot, far-zoom copies, fallback when the context is lost for good with 0 CanvasKit objects left | a `make-big.mjs` file | 14 PASS |
-| `sharpen.mjs <url> [shot dir]` | Skia's two sizes of pictures: zoomed out only the small versions are held, a picture seen close up gets a larger one and matches the DOM renderer, larger ones are let go again when nothing needs them, and no frame flashes its flat colour meanwhile. About 90 s | a `make-big.mjs` file with big pictures (`make-big.mjs big2k.spen 60 3 12 2048`) | 11 PASS |
-| `paint-diff.mjs <url> <out dir> [threshold] [layout=dom\|engine] [max frames]` | Skia painter against the DOM renderer, frame by frame (stage 3), with side-by-side images | copies of `fixtures/features.pen`, `examples/showcase.spen`, a `make-big.mjs` file | see the status log |
+| `skia-smoke.mjs <url>` | Skia layer: no layer is a page element, draws and reads back, survives a lost graphics context, draws in software (read back too) when it never returns | copy of `fixtures/features.pen` | 11 PASS |
+| `full.mjs <url> [shot dir]` | Skia full mode (stage 4): frames drawn from pictures with no DOM inside, on screen the same as the off-screen render, layer boxes from the layout engine, hover/click/deep-select reach layers, text editing (frame goes DOM while edited), edits re-record, agent screenshot, far-zoom copies, fallback when the context is lost for good with 0 CanvasKit objects left | a `make-big.mjs` file | 14 PASS |
+| `sharpen.mjs <url> [shot dir]` | Skia's two sizes of pictures: zoomed out only the small versions are held, a picture seen close up gets a larger one and matches a page opened close up, larger ones are let go again when nothing needs them, and no frame flashes its flat colour meanwhile. About 90 s | a `make-big.mjs` file with big pictures (`make-big.mjs big2k.spen 60 3 12 2048`) | 11 PASS |
+| `htmlexport.mjs <url> [out dir] [threshold=97] [max frames=200]` | The HTML exporter (`src/export/html.ts`, boxes from the layout engine) against how Skia draws the same frame (the agent's screenshot): the exported page rendered in a fresh tab at the screenshot's size and scored with `compare()`, per top-level frame; writes the HTML and a side-by-side image. Shader fills and effects can't be HTML, so frames with them score lower | copies of `fixtures/features.pen`, `examples/showcase.spen` (with its `scripts/` and `shaders/`) | features 100%, showcase 97.7% (2026-11-20; against the old DOM-clone export it was 100% / 99.7%, layout.pen 98.0%) |
 | `v1.mjs <url> [shot dir]` | The 1.0 features: Scale tool, Alt + hover distances, image crop, masks, gradient and mesh handles, path point editing and pen curves, slots, libraries, remove background, HTML import, Figma import (file, dialog, paste, hand-over from the MCP tool). Adds its own layers far from the file's content. Run it with `&renderer=dom` and without. Needs the dev server. The Figma checks are skipped unless `dev/fixtures/figma/` holds `structure.fig`, `stacks_wrap.fig` (from sketch-hq/fig2sketch `tests/data/`) and `frame-with-r-g-b-rect.clipboard.html` (from gridaco/grida `fixtures/test-fig/clipboard/`); they are other people's files, so they are not in this repository | copy of `fixtures/features.pen` | 55 PASS (49 without the Figma samples) |
 | `skills.mjs [mcp.cjs]` | Design skills through the built MCP server: the index, each skill whole, aliases, unknown names, the prompts, and that every tool a skill mentions exists. No browser; run `npm run build:mcp` first | none | 11 PASS |
 | `fig-import.mjs [--out <folder>] [--page <name>] [--all-pages] <file.fig \| clipboard.html> ...` | Figma import on real files: converts each one, checks the result is a valid design (unique ids, known node types, numbers that are numbers, pictures present) and reports how many auto layout children land where Figma had them. No browser. Bring your own `.fig` files | none | `invariants: OK` per file |
@@ -71,9 +65,8 @@ closer to the real extension with `PEN_PROD=1 node start.mjs <folder>` (a produc
 | `picload.mjs <url> [perf=0\|1]` | How pictures load in the Skia renderer: time from opening until every picture is in and every frame is drawn, time until pictures are sharp after the first zoom-in, the longest frame in each, and the same zoom-in twice more (what only happens the first time is over by then). `PEN_PROD=1`; `PEN_CPU_SLOW=4`; `PEN_LINKS=1` lists the programs the graphics card had to compile during the zoom-in; `PEN_PROFILE=1` (dev server) prints where the time went. Needs a design with many large pictures (`make-big.mjs pics.spen 60 3 48 2048`). 2026-11-19: first zoom-in worst frame 183 ms before, 29-34 ms after |
 | `bench.mjs <url>` | Frame times for zoom, pan and hover. Headless runs use software graphics: treat single long frames as noise |
 | `memory.mjs <url> [perf=0\|1]` | Process memory without a debugger attached (a debugger inflates it). Windows only |
-| `zoomout.mjs`, `imgzoom.mjs`, `tracezoom.mjs`, `prof2.mjs`, `zoomfast.mjs` | GPU memory, decode work, traces and CPU profiles during zooming |
-| `lodswitch.mjs`, `panelzoom.mjs`, `precision.mjs`, `invisible.mjs` | Narrow checks: snapshot-to-live switching, Ctrl+wheel over panels, coordinate precision, frames missing while zoomed out |
+| `tracezoom.mjs`, `prof2.mjs`, `zoomfast.mjs` | Traces and CPU profiles during zooming |
+| `panelzoom.mjs`, `precision.mjs` | Narrow checks: Ctrl+wheel over panels, coordinate precision |
 | `featshot.mjs`, `svgshot.mjs`, `svgshot2x.mjs` | Screenshots to look at |
 | `uishot.mjs <url> <out prefix>` | The whole interface to look at: both themes, the menus, layer search, the FPS readout, a narrow window |
 | `figshot.mjs <url> <out prefix> [max]` | An imported Figma page to look at: its top-level layers and close-ups of cropped pictures. Convert with `fig-import.mjs --out` into the folder the dev server serves first |
-| `svgretain2.mjs` | Shows how much memory a browser holds per SVG data URL. Windows only |

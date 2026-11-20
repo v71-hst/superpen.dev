@@ -41,7 +41,8 @@ async function settle(maxMs = 180000) {
   while (performance.now() - t0 < maxMs && quiet < 4) {
     await sleep(700);
     const r = await window.__penAgent('diagnose', {});
-    quiet = r.lod.queued + r.lod.levelQueue + (r.lod.working ? 1 : 0) ? 0 : quiet + 1;
+    const im = r.renderer?.skia?.images ?? {};
+    quiet = (im.loading ?? 0) + (im.sharpening ?? 0) ? 0 : quiet + 1;
   }
   return Math.round(performance.now() - t0);
 }
